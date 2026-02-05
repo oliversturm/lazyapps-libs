@@ -1,0 +1,24 @@
+{
+  "name": "@lazyapps/command-processor",
+  "version": "0.0.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "eslint": "^8.46.0",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@lazyapps/aggregatestore-inmemory": "workspace:^",
+    "@lazyapps/eventbus-mqemitter-redis": "workspace:^",
+    "@lazyapps/eventstore-mongodb": "workspace:^",
+    "@lazyapps/logger": "workspace:^",
+    "nanoid": "^5.0.7"
+  },
+  "type": "module"
+}
