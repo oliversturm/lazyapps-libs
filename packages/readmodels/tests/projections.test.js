@@ -49,7 +49,6 @@ describe('collectProjections', () => {
     return collectProjections(
       readModels,
       { type: 'event1', timestamp: 4 },
-      false
     ).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([
@@ -77,7 +76,6 @@ describe('collectProjections', () => {
     return collectProjections(
       readModels,
       { type: 'event3', timestamp: 4 },
-      false
     ).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([]);
@@ -97,34 +95,11 @@ describe('collectProjections', () => {
     return collectProjections(
       readModels,
       { type: 'event1', timestamp: 4 },
-      false
     ).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([
         ['rm1', readModels.rm1.projections.event1],
       ]);
-    });
-  });
-
-  test('log error and ignore event out of sequence', () => {
-    const readModels = {
-      rm1: {
-        lastProjectedEventTimestamp: 10,
-        projections: {
-          event1: () => 'projection result 1',
-          event2: () => 'projection result 2',
-        },
-      },
-      rm2: {},
-    };
-    return collectProjections(
-      readModels,
-      { type: 'event1', timestamp: 4 },
-      false
-    ).then((projections) => {
-      expect(projections).toBeDefined();
-      expect(projections).toStrictEqual([]);
-      expect(log.error).toBeCalledTimes(1);
     });
   });
 });
@@ -142,13 +117,13 @@ describe('logProjections', () => {
 
   test('empty list', () => {
     const projs = [];
-    expect(logProjections(false)(projs)).toBe(projs);
+			expect(logProjections(log, false)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledTimes(0);
   });
 
   test('inReplay false', () => {
     const projs = [['rm1'], ['rm2']];
-    expect(logProjections(false)(projs)).toBe(projs);
+			expect(logProjections(log, false)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledWith(
       'Projecting event for read models: ["rm1","rm2"] (inReplay=false)'
     );
@@ -156,7 +131,7 @@ describe('logProjections', () => {
 
   test('inReplay true', () => {
     const projs = [['rm1'], ['rm2']];
-    expect(logProjections(true)(projs)).toBe(projs);
+			expect(logProjections(log, true)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledWith(
       'Projecting event for read models: ["rm1","rm2"] (inReplay=true)'
     );
@@ -195,10 +170,11 @@ describe('updateTimestamp', () => {
     const storage = {
       updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
     };
-    return updateTimestamp(storage, 'rm1', 99).then(() => {
+			return updateTimestamp('correlation', storage, 'rm1', 99).then(() => {
       // any result we receive is irrelevant and depends on what the
       // read model projection does
-      expect(storage.updateLastProjectedEventTimestamps).toHaveBeenCalledWith(
+					expect(storage.updateLastProjectedEventTimestamps).toHaveBeenCalledWith(
+							'correlation',
         ['rm1'],
         99
       );
@@ -218,7 +194,7 @@ describe('handleProjections', () => {
   });
 
   const projContext = {};
-  const getProjectionContext = () => vi.fn().mockReturnValue(projContext);
+		const getProjectionContext =()=> () => vi.fn().mockReturnValue(projContext);
   const context = {
     storage: {
       updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
@@ -233,7 +209,8 @@ describe('handleProjections', () => {
       ['rm1', f1],
       ['rm2', f2],
     ];
-    return handleProjections(
+			return handleProjections(
+					'correlation',log,
       context,
       getProjectionContext,
       false,
@@ -257,7 +234,8 @@ describe('handleProjections', () => {
       ['rm1', f1],
       ['rm2', f2],
     ];
-    return handleProjections(
+			return handleProjections(
+					'correlation',log,
       context,
       getProjectionContext,
       false,

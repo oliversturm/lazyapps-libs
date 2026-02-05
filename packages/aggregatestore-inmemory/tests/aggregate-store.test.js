@@ -41,7 +41,7 @@ describe('applyAggregateProjection', () => {
       type: 'CREATED',
       timestamp: 55,
     };
-    expect(store.applyAggregateProjection(event)).toEqual(event);
+			expect(store.applyAggregateProjection('correlation')(event)).toEqual(event);
 
     // Not the cleanest stuff to test, but it confirms
     // the algorithm does what it should. For now.
@@ -60,7 +60,7 @@ describe('applyAggregateProjection', () => {
       type: 'DOMAGIC',
       timestamp: 55,
     };
-    expect(store.applyAggregateProjection(event)).toEqual(event);
+    expect(store.applyAggregateProjection('correlation')(event)).toEqual(event);
 
     // Not the cleanest stuff to test, but it confirms
     // the algorithm does what it should. For now.
@@ -77,16 +77,15 @@ describe('applyAggregateProjection', () => {
       type: 'CREATED',
       timestamp: 55,
     };
-    store.applyAggregateProjection(event1);
+    store.applyAggregateProjection('correlation')(event1);
     const event2 = {
       aggregateName: 'thing',
       aggregateId: 'id-2',
       type: 'CREATED',
       timestamp: 33,
     };
-    expect(() => store.applyAggregateProjection(event2)).toThrowError(
-      'Event out of sequence'
-    );
+			store.applyAggregateProjection('correlation')(event2);
+			expect(log.debug).toBeCalledTimes(3); // 1 for event1, 2 for event 2 (projection + out of sequence notice)
   });
 
   test('random event order allowed in replay', () => {
@@ -97,7 +96,7 @@ describe('applyAggregateProjection', () => {
       type: 'CREATED',
       timestamp: 55,
     };
-    store.applyAggregateProjection(event1);
+    store.applyAggregateProjection('correlation')(event1);
     const event2 = {
       aggregateName: 'thing',
       aggregateId: 'id-2',
@@ -105,6 +104,6 @@ describe('applyAggregateProjection', () => {
       timestamp: 33,
     };
     store.startReplay();
-    store.applyAggregateProjection(event2);
+    store.applyAggregateProjection('correlation')(event2);
   });
 });
