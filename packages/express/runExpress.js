@@ -4,12 +4,8 @@ import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { expressjwt } from 'express-jwt';
-import { getStream } from '@lazyapps/logger';
+import { getLogger, getStream } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
-import {
-  defaultExpressJwtConfig,
-  defaultExpressJwtExpiryHandler,
-} from '@lazyapps/tokens/express.js';
 
 const correlationId = (correlationConfig) => (req, res, next) => {
   // check where a correlation Id might already exist
@@ -57,13 +53,33 @@ export const runExpress =
 
       if (jwtSecret) {
         app.use(
-          expressjwt(
-            defaultExpressJwtConfig(
-              jwtSecret,
-              authCookieName,
-              credentialsRequired,
-            ),
-          ),
+          expressjwt({
+            secret: jwtSecret,
+            algorithms: ['HS256'],
+            credentialsRequired: credentialsRequired || false,
+            getToken: (req) => {
+              const tokenLog = getLogger(
+                'Tokens/GetT',
+                req.body.correlationId,
+              );
+              if (
+                req.headers.authorization &&
+                req.headers.authorization.split(' ')[0] === 'Bearer'
+              ) {
+                tokenLog.debug('Using Authorization header');
+                return req.headers.authorization.split(' ')[1];
+              }
+              if (authCookieName) {
+                const token = req.cookies[authCookieName || 'access_token'];
+                if (token) {
+                  tokenLog.debug('Using cookie');
+                  return token;
+                }
+              }
+              tokenLog.debug('No token found');
+              return null;
+            },
+          }),
         );
       }
 
@@ -71,8 +87,21 @@ export const runExpress =
 
       customizeExpress(context, app);
 
-      // Add error handling middleware after all other middleware and routes
-      app.use(defaultExpressJwtExpiryHandler(authCookieName));
+      // Handle JWT authentication errors
+      app.use((err, req, res, next) => {
+        if (err.name === 'UnauthorizedError') {
+          res.clearCookie(authCookieName || 'access_token', {
+            httpOnly: true,
+            sameSite: 'strict',
+          });
+          res.status(401).json({
+            error: 'Token expired or invalid',
+            code: 'token_expired',
+          });
+        } else {
+          next(err);
+        }
+      });
 
       const server = app.listen(port, interfaceIp || '0.0.0.0');
 

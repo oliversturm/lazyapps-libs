@@ -28,7 +28,6 @@ export function start({
   commands,
   readModels,
   changeNotifier,
-  tokens,
   svelte,
 }) {
   if (commands) {
@@ -46,12 +45,6 @@ export function start({
   if (changeNotifier) {
     log.debug('Starting change notifier');
     changeNotifier.listener(correlationConfig).then((server) => {
-      handleSignals(server);
-    });
-  }
-  if (tokens) {
-    log.debug('Starting tokens');
-    tokens.listener(correlationConfig).then((server) => {
       handleSignals(server);
     });
   }
