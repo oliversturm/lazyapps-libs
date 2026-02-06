@@ -11,7 +11,7 @@
   "license": "ISC",
   "devDependencies": {
     "eslint": "^8.46.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.0.18"
   },
   "dependencies": {
     "@lazyapps/logger": "workspace:^",

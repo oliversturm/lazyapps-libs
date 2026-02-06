@@ -4,6 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest --run --coverage",
     "pnpm-update": "pnpm --recursive update --latest"
   },
   "repository": {
@@ -18,7 +21,8 @@
   },
   "homepage": "https://github.com/oliversturm/lazyapps-libs#readme",
   "devDependencies": {
-    "vitest": "^2.1.8"
+    "@vitest/coverage-v8": "^4.0.18",
+    "vitest": "^4.0.18"
   },
   "module": "true",
   "packageManager": "pnpm@8.6.12+sha512.1336b80b948efd7979218a33ba96d9e4d380e6578144f6319979977deec6e3fe2e0a444b864b3ce2b077dda8adc4d654fee32b9c31868f0acb92da0abcf8ea1c"
