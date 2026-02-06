@@ -1,14 +1,30 @@
 {
   "name": "@lazyapps/command-processor",
-  "version": "0.0.1",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Transport-agnostic command validation and aggregate execution engine for LazyApps",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["*.js"],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["event-sourcing", "cqrs", "lazyapps", "command-processing", "aggregates"],
+  "author": "Oliver Sturm",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/command-processor"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/command-processor#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
   "devDependencies": {
     "eslint": "^8.46.0",
     "vitest": "^4.0.18"

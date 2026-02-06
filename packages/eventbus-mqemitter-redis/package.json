@@ -1,14 +1,33 @@
 {
   "name": "@lazyapps/eventbus-mqemitter-redis",
-  "version": "0.0.1",
-  "description": "",
+  "version": "0.1.0",
+  "description": "MQEmitter-based event bus with Redis backing for LazyApps",
   "main": "index.js",
+  "exports": {
+    "./command-receiver": "./command-receiver/index.js",
+    "./command-receiver/index.js": "./command-receiver/index.js",
+    "./readmodels": "./readmodels/index.js",
+    "./readmodels/index.js": "./readmodels/index.js"
+  },
+  "files": ["*.js", "command-receiver/", "readmodels/"],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["event-sourcing", "cqrs", "lazyapps", "event-bus", "mqemitter", "redis"],
+  "author": "Oliver Sturm",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/eventbus-mqemitter-redis"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/eventbus-mqemitter-redis#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
   "devDependencies": {
     "eslint": "^8.46.0",
     "vitest": "^4.0.18"

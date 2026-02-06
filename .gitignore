@@ -159,3 +159,6 @@ scratch.js
 .DS_Store
 command-records/
 *~
+
+# Generated license files in packages (root LICENSE is the source of truth)
+packages/*/LICENSE

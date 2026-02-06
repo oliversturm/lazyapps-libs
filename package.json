@@ -1,28 +1,32 @@
 {
   "name": "lazyapps",
+  "private": true,
+  "type": "module",
   "version": "0.0.1",
-  "description": "",
-  "main": "index.js",
+  "description": "LazyApps event-sourcing and CQRS framework for Node.js",
   "scripts": {
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage",
     "format": "prettier --write \"packages/**/*.js\" --ignore-path .gitignore",
     "format:check": "prettier --check \"packages/**/*.js\" --ignore-path .gitignore",
-    "pnpm-update": "pnpm --recursive update --latest"
+    "pnpm-update": "pnpm --recursive update --latest",
+    "version": "changeset version",
+    "release": "node scripts/copy-license.js && changeset publish"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/oliversturm/lazyapps-libs.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Oliver Sturm",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/oliversturm/lazyapps-libs/issues"
   },
   "homepage": "https://github.com/oliversturm/lazyapps-libs#readme",
   "devDependencies": {
+    "@changesets/cli": "^2.29.8",
     "@testcontainers/mongodb": "^11.11.0",
     "@testcontainers/rabbitmq": "^11.11.0",
     "@testcontainers/redis": "^11.11.0",
@@ -31,6 +35,5 @@
     "testcontainers": "^11.11.0",
     "vitest": "^4.0.18"
   },
-  "module": "true",
   "packageManager": "pnpm@8.6.12+sha512.1336b80b948efd7979218a33ba96d9e4d380e6578144f6319979977deec6e3fe2e0a444b864b3ce2b077dda8adc4d654fee32b9c31868f0acb92da0abcf8ea1c"
 }

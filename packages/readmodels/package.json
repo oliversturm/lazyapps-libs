@@ -1,14 +1,30 @@
 {
   "name": "@lazyapps/readmodels",
-  "version": "0.0.1",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Event projection and query resolution engine for LazyApps",
   "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["*.js"],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["event-sourcing", "cqrs", "lazyapps", "read-models", "projections"],
+  "author": "Oliver Sturm",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/readmodels"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/readmodels#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
   "devDependencies": {
     "eslint": "^8.46.0",
     "vitest": "^4.0.18"

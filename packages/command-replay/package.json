@@ -1,19 +1,37 @@
 {
   "name": "@lazyapps/command-replay",
-  "version": "1.0.0",
-  "description": "Tool to replay recorded commands into a running LazyApps system",
+  "version": "0.1.0",
+  "description": "CLI tool to replay recorded commands for testing and recovery in LazyApps",
   "main": "index.js",
-  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": ["index.js"],
   "bin": {
     "command-replay": "./index.js"
   },
-  "dependencies": {
-    "@lazyapps/logger": "workspace:*",
-    "enquirer": "^2.3.6",
-    "node-fetch": "^3.3.0"
+  "scripts": {},
+  "keywords": ["event-sourcing", "cqrs", "lazyapps", "command-replay", "cli"],
+  "author": "Oliver Sturm",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/command-replay"
   },
-  "devDependencies": {
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/command-replay#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
+  "type": "module",
+  "dependencies": {
+    "@lazyapps/logger": "workspace:^",
     "commander": "^13.1.0",
-    "jsonwebtoken": "^9.0.2"
+    "enquirer": "^2.3.6",
+    "jsonwebtoken": "^9.0.2",
+    "node-fetch": "^3.3.0"
   }
 }
