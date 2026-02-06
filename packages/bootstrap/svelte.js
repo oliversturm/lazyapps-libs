@@ -13,7 +13,7 @@ const viteLog = getLogger('BS/Svelte/Vite');
 const viteOrigLogger = createViteLogger();
 // Sometimes vite sends empty output with a
 // warn level, so prevent this from being logged.
-const wrap = (f) => (msg) => msg ? f(msg) : undefined;
+const wrap = (f) => (msg) => (msg ? f(msg) : undefined);
 const customLogger = {
   ...viteOrigLogger,
   info: wrap(viteLog.info), // ignoring second parameter options
@@ -54,7 +54,7 @@ export const startSvelteKit = ({
     .then((server) =>
       server.listen().then(() => {
         server.printUrls();
-      })
+      }),
     )
     .then(() => {
       log.debug(`SvelteKit frontend started on ${host}:${port}`);
@@ -62,7 +62,7 @@ export const startSvelteKit = ({
     .catch((err) => {
       log.error(
         `An error occurred starting the SvelteKit frontend on ${host}:${port}`,
-        err
+        err,
       );
     });
 };

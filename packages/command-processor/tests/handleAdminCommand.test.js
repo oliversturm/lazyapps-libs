@@ -102,9 +102,9 @@ describe('handleAdminCommand', () => {
     const handler = handleAdminCommand(true);
     // Source accesses params.state in error message before rejecting,
     // so null params causes a TypeError
-    expect(() =>
-      handler({}, 'setReplayState', null, null, 'corr-1'),
-    ).toThrow(TypeError);
+    expect(() => handler({}, 'setReplayState', null, null, 'corr-1')).toThrow(
+      TypeError,
+    );
   });
 
   test('rejects when eventBus is missing', () => {

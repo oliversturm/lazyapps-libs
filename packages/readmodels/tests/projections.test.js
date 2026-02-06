@@ -46,10 +46,10 @@ describe('collectProjections', () => {
         },
       },
     };
-    return collectProjections(
-      readModels,
-      { type: 'event1', timestamp: 4 },
-    ).then((projections) => {
+    return collectProjections(readModels, {
+      type: 'event1',
+      timestamp: 4,
+    }).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([
         ['rm1', readModels.rm1.projections.event1],
@@ -73,10 +73,10 @@ describe('collectProjections', () => {
         },
       },
     };
-    return collectProjections(
-      readModels,
-      { type: 'event3', timestamp: 4 },
-    ).then((projections) => {
+    return collectProjections(readModels, {
+      type: 'event3',
+      timestamp: 4,
+    }).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([]);
     });
@@ -92,10 +92,10 @@ describe('collectProjections', () => {
       },
       rm2: {},
     };
-    return collectProjections(
-      readModels,
-      { type: 'event1', timestamp: 4 },
-    ).then((projections) => {
+    return collectProjections(readModels, {
+      type: 'event1',
+      timestamp: 4,
+    }).then((projections) => {
       expect(projections).toBeDefined();
       expect(projections).toStrictEqual([
         ['rm1', readModels.rm1.projections.event1],
@@ -117,23 +117,23 @@ describe('logProjections', () => {
 
   test('empty list', () => {
     const projs = [];
-			expect(logProjections(log, false)(projs)).toBe(projs);
+    expect(logProjections(log, false)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledTimes(0);
   });
 
   test('inReplay false', () => {
     const projs = [['rm1'], ['rm2']];
-			expect(logProjections(log, false)(projs)).toBe(projs);
+    expect(logProjections(log, false)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledWith(
-      'Projecting event for read models: ["rm1","rm2"] (inReplay=false)'
+      'Projecting event for read models: ["rm1","rm2"] (inReplay=false)',
     );
   });
 
   test('inReplay true', () => {
     const projs = [['rm1'], ['rm2']];
-			expect(logProjections(log, true)(projs)).toBe(projs);
+    expect(logProjections(log, true)(projs)).toBe(projs);
     expect(log.debug).toHaveBeenCalledWith(
-      'Projecting event for read models: ["rm1","rm2"] (inReplay=true)'
+      'Projecting event for read models: ["rm1","rm2"] (inReplay=true)',
     );
   });
 });
@@ -150,7 +150,7 @@ describe('updateInternalReadModelTimestamps', () => {
     const projections = [['rm1'], ['rm2']];
     return updateInternalReadModelTimestamps(
       event,
-      readModels
+      readModels,
     )(projections).then((projs) => {
       expect(projs).toBe(projections);
       expect(readModels.rm1.lastProjectedEventTimestamp).toEqual(5);
@@ -170,13 +170,13 @@ describe('updateTimestamp', () => {
     const storage = {
       updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
     };
-			return updateTimestamp('correlation', storage, 'rm1', 99).then(() => {
+    return updateTimestamp('correlation', storage, 'rm1', 99).then(() => {
       // any result we receive is irrelevant and depends on what the
       // read model projection does
-					expect(storage.updateLastProjectedEventTimestamps).toHaveBeenCalledWith(
-							'correlation',
+      expect(storage.updateLastProjectedEventTimestamps).toHaveBeenCalledWith(
+        'correlation',
         ['rm1'],
-        99
+        99,
       );
     });
   });
@@ -194,7 +194,7 @@ describe('handleProjections', () => {
   });
 
   const projContext = {};
-		const getProjectionContext =()=> () => vi.fn().mockReturnValue(projContext);
+  const getProjectionContext = () => () => vi.fn().mockReturnValue(projContext);
   const context = {
     storage: {
       updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
@@ -209,12 +209,13 @@ describe('handleProjections', () => {
       ['rm1', f1],
       ['rm2', f2],
     ];
-			return handleProjections(
-					'correlation',log,
+    return handleProjections(
+      'correlation',
+      log,
       context,
       getProjectionContext,
       false,
-      event
+      event,
     )(projections).then((res) => {
       expect(res).toSatisfy((r) => Array.isArray(r));
       expect(res.length).toBe(2);
@@ -234,12 +235,13 @@ describe('handleProjections', () => {
       ['rm1', f1],
       ['rm2', f2],
     ];
-			return handleProjections(
-					'correlation',log,
+    return handleProjections(
+      'correlation',
+      log,
       context,
       getProjectionContext,
       false,
-      event
+      event,
     )(projections).then((res) => {
       expect(res).toSatisfy((r) => Array.isArray(r));
       expect(res.length).toBe(2);

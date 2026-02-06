@@ -9,7 +9,7 @@ describe('context', () => {
     };
     const storage = vi.fn().mockResolvedValue(storageResult);
     const eventBus = vi.fn().mockResolvedValue();
-			return initializeContext({}, { readModels, storage, eventBus }).then(
+    return initializeContext({}, { readModels, storage, eventBus }).then(
       (context) => {
         expect(context).toBeDefined();
         expect(context.storage).toBeDefined();
@@ -18,7 +18,7 @@ describe('context', () => {
         expect(context.changeNotification).toBeDefined();
         expect(context.projectionHandler).toBeDefined();
         expect(eventBus).toHaveBeenCalledOnce();
-      }
+      },
     );
   });
 });

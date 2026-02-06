@@ -7,6 +7,8 @@
     "test": "vitest --run",
     "test:watch": "vitest",
     "test:coverage": "vitest --run --coverage",
+    "format": "prettier --write \"packages/**/*.js\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"packages/**/*.js\" --ignore-path .gitignore",
     "pnpm-update": "pnpm --recursive update --latest"
   },
   "repository": {
@@ -21,7 +23,12 @@
   },
   "homepage": "https://github.com/oliversturm/lazyapps-libs#readme",
   "devDependencies": {
+    "@testcontainers/mongodb": "^11.11.0",
+    "@testcontainers/rabbitmq": "^11.11.0",
+    "@testcontainers/redis": "^11.11.0",
     "@vitest/coverage-v8": "^4.0.18",
+    "prettier": "^3.8.1",
+    "testcontainers": "^11.11.0",
     "vitest": "^4.0.18"
   },
   "module": "true",

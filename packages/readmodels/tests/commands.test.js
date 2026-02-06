@@ -17,9 +17,11 @@ describe('createCommandHandler', () => {
     const handler = createCommandHandler({ commandSender })('corr-1');
     const cmd = { aggregateName: 'thing', command: 'CREATE' };
 
-    return handler.execute(cmd)().then(() => {
-      expect(commandSender.sendCommand).toHaveBeenCalledWith('corr-1', cmd);
-    });
+    return handler
+      .execute(cmd)()
+      .then(() => {
+        expect(commandSender.sendCommand).toHaveBeenCalledWith('corr-1', cmd);
+      });
   });
 
   test('execute returns a lazy function', () => {

@@ -58,10 +58,7 @@ export const runExpress =
             algorithms: ['HS256'],
             credentialsRequired: credentialsRequired || false,
             getToken: (req) => {
-              const tokenLog = getLogger(
-                'Tokens/GetT',
-                req.body.correlationId,
-              );
+              const tokenLog = getLogger('Tokens/GetT', req.body.correlationId);
               if (
                 req.headers.authorization &&
                 req.headers.authorization.split(' ')[0] === 'Bearer'

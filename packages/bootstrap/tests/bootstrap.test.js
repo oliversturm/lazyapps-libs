@@ -9,15 +9,12 @@ vi.mock('@lazyapps/logger', () => {
   return { getLogger };
 });
 
-const {
-  mockStartCommandProcessor,
-  mockStartReadModels,
-  mockStartSvelteKit,
-} = vi.hoisted(() => ({
-  mockStartCommandProcessor: vi.fn().mockResolvedValue({ close: vi.fn() }),
-  mockStartReadModels: vi.fn().mockResolvedValue({ close: vi.fn() }),
-  mockStartSvelteKit: vi.fn(),
-}));
+const { mockStartCommandProcessor, mockStartReadModels, mockStartSvelteKit } =
+  vi.hoisted(() => ({
+    mockStartCommandProcessor: vi.fn().mockResolvedValue({ close: vi.fn() }),
+    mockStartReadModels: vi.fn().mockResolvedValue({ close: vi.fn() }),
+    mockStartSvelteKit: vi.fn(),
+  }));
 
 vi.mock('@lazyapps/command-processor', () => ({
   startCommandProcessor: mockStartCommandProcessor,

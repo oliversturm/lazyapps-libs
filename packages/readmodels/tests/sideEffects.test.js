@@ -30,7 +30,10 @@ describe('createSideEffectsHandler', () => {
       const handler = result.getSideEffectsHandler('corr-1', false);
       const effect = vi.fn().mockResolvedValue();
       return handler
-        .schedule(() => effect(), { name: 'test-effect', execution: 'liveOnly' })
+        .schedule(() => effect(), {
+          name: 'test-effect',
+          execution: 'liveOnly',
+        })
         .then(() => {
           expect(effect).toHaveBeenCalledOnce();
         });
@@ -42,7 +45,10 @@ describe('createSideEffectsHandler', () => {
       const handler = result.getSideEffectsHandler('corr-1', true);
       const effect = vi.fn().mockResolvedValue();
       return handler
-        .schedule(() => effect(), { name: 'test-effect', execution: 'liveOnly' })
+        .schedule(() => effect(), {
+          name: 'test-effect',
+          execution: 'liveOnly',
+        })
         .then(() => {
           expect(effect).not.toHaveBeenCalled();
         });
@@ -107,10 +113,12 @@ describe('createSideEffectsHandler', () => {
     return createSideEffectsHandler().then((result) => {
       const handler = result.getSideEffectsHandler('corr-1', true);
       const effect = vi.fn().mockResolvedValue();
-      return handler.schedule(() => effect()).then(() => {
-        // Default execution is 'liveOnly', should skip in replay
-        expect(effect).not.toHaveBeenCalled();
-      });
+      return handler
+        .schedule(() => effect())
+        .then(() => {
+          // Default execution is 'liveOnly', should skip in replay
+          expect(effect).not.toHaveBeenCalled();
+        });
     });
   });
 

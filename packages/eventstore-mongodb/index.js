@@ -46,8 +46,8 @@ export const mongodb =
     const connectUrl = url
       ? url
       : user && pwd && scheme && host
-      ? (url = `${scheme}://${user}:${pwd}@${host}/${urlPath}`)
-      : 'mongodb://127.0.0.1:27017';
+        ? (url = `${scheme}://${user}:${pwd}@${host}/${urlPath}`)
+        : 'mongodb://127.0.0.1:27017';
 
     // Keep location separate for logging, so that the password
     // doesn't get into the log.

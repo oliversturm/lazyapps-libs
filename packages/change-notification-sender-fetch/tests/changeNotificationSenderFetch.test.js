@@ -18,14 +18,11 @@ describe('changeNotificationSenderFetch', () => {
     const content = { readModelName: 'items', changeKind: 'all' };
 
     return sender.sendChangeNotification('corr-1', content).then(() => {
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:3000/notify',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...content, correlationId: 'corr-1' }),
-        },
-      );
+      expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...content, correlationId: 'corr-1' }),
+      });
     });
   });
 

@@ -41,7 +41,7 @@ describe('applyAggregateProjection', () => {
       type: 'CREATED',
       timestamp: 55,
     };
-			expect(store.applyAggregateProjection('correlation')(event)).toEqual(event);
+    expect(store.applyAggregateProjection('correlation')(event)).toEqual(event);
 
     // Not the cleanest stuff to test, but it confirms
     // the algorithm does what it should. For now.
@@ -84,8 +84,8 @@ describe('applyAggregateProjection', () => {
       type: 'CREATED',
       timestamp: 33,
     };
-			store.applyAggregateProjection('correlation')(event2);
-			expect(log.debug).toBeCalledTimes(3); // 1 for event1, 2 for event 2 (projection + out of sequence notice)
+    store.applyAggregateProjection('correlation')(event2);
+    expect(log.debug).toBeCalledTimes(3); // 1 for event1, 2 for event 2 (projection + out of sequence notice)
   });
 
   test('random event order allowed in replay', () => {

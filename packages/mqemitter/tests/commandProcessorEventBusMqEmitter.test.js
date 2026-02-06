@@ -1,0 +1,90 @@
+import { describe, test, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('@lazyapps/logger', () => ({
+  getLogger: vi.fn().mockReturnValue({
+    debug: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+  }),
+}));
+
+const mockEmitter = vi.hoisted(() => ({
+  emit: vi.fn(),
+  on: vi.fn(),
+}));
+
+vi.mock('../mqEmitterRegistry.js', () => ({
+  getSharedMqEmitter: vi.fn().mockReturnValue(mockEmitter),
+}));
+
+const { commandProcessorEventBusMqEmitter } =
+  await import('../commandProcessorEventBusMqEmitter.js');
+
+describe('commandProcessorEventBusMqEmitter', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('factory returns publishEvent and publishReplayState', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        expect(bus).toHaveProperty('publishEvent');
+        expect(bus).toHaveProperty('publishReplayState');
+        expect(typeof bus.publishEvent).toBe('function');
+        expect(typeof bus.publishReplayState).toBe('function');
+      },
+    );
+  });
+
+  test('publishEvent emits event to events topic', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const event = { timestamp: 12345, type: 'CREATED' };
+        const result = bus.publishEvent('corr-1')(event);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'events',
+          payload: event,
+        });
+        expect(result).toBe(event);
+      },
+    );
+  });
+
+  test('publishEvent sets correlationId on event', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const event = { timestamp: 12345 };
+        bus.publishEvent('corr-99')(event);
+
+        expect(event.correlationId).toBe('corr-99');
+      },
+    );
+  });
+
+  test('publishReplayState emits to __system topic', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const result = bus.publishReplayState('corr-1')(true);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__system',
+          payload: {
+            type: 'SET_REPLAY_STATE',
+            state: true,
+            correlationId: 'corr-1',
+          },
+        });
+        expect(result).toBe(true);
+      },
+    );
+  });
+
+  test('publishReplayState returns the state value', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        expect(bus.publishReplayState('corr-1')(false)).toBe(false);
+      },
+    );
+  });
+});
