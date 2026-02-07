@@ -3,7 +3,14 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     hookTimeout: 60000,
-    projects: ['packages/*'],
+    projects: [
+      {
+        extends: true,
+        test: {
+          include: ['packages/*/tests/**/*.test.js'],
+        },
+      },
+    ],
     coverage: {
       provider: 'v8',
       include: ['packages/**/*.js'],
