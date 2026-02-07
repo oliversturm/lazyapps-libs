@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import chalk from 'chalk';
 import { createInterface } from 'node:readline';
 import { stdin as input, stdout as output } from 'node:process';

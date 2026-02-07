@@ -3,14 +3,25 @@
   "version": "0.1.0",
   "description": "Log output formatting and syntax highlighting for LazyApps",
   "main": "index.js",
+  "bin": {
+    "log-highlight": "./index.js"
+  },
   "exports": {
     ".": "./index.js"
   },
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "logging", "highlighting"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "logging",
+    "highlighting"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {
