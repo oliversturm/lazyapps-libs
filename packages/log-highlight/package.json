@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/log-highlight",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Log output formatting and syntax highlighting for LazyApps",
   "main": "index.js",
   "bin": {
