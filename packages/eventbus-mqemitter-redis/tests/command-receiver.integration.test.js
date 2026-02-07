@@ -43,7 +43,7 @@ beforeAll(async () => {
 afterAll(async () => {
   suppressErrors = true;
   if (container) await container.stop();
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 2000));
   process.removeListener('uncaughtException', errorHandler);
 });
 
