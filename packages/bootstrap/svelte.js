@@ -26,6 +26,7 @@ export const startSvelteKit = (
   {
     port = 5173,
     host = 'localhost',
+    allowedHosts,
     logLevel = 'info',
     mqCommandsPort = 51883,
     mqQueriesPort = 51884,
@@ -37,6 +38,7 @@ export const startSvelteKit = (
     server: {
       host,
       port,
+      ...(allowedHosts !== undefined && { allowedHosts }),
     },
 
     define: {
