@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "description": "In-process message queue with role-specific sub-modules for LazyApps",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js"
-  },
   "files": ["*.js"],
   "scripts": {
     "test": "vitest"

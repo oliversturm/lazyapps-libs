@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "description": "In-memory aggregate state cache for the LazyApps command processing pipeline",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js"
-  },
   "files": ["index.js"],
   "scripts": {
     "test": "vitest"

@@ -3,10 +3,6 @@
   "version": "0.1.3",
   "description": "Composition orchestrator for LazyApps applications",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js",
-    "./svelte": "./svelte.js"
-  },
   "files": [
     "*.js"
   ],

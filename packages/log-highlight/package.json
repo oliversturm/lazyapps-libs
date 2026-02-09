@@ -6,9 +6,6 @@
   "bin": {
     "log-highlight": "./index.js"
   },
-  "exports": {
-    ".": "./index.js"
-  },
   "files": [
     "index.js"
   ],

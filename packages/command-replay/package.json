@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "description": "CLI tool to replay recorded commands for testing and recovery in LazyApps",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js"
-  },
   "files": ["index.js"],
   "bin": {
     "command-replay": "./index.js"
