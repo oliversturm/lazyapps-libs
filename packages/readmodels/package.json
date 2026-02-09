@@ -3,9 +3,6 @@
   "version": "0.1.0",
   "description": "Event projection and query resolution engine for LazyApps",
   "main": "index.js",
-  "exports": {
-    ".": "./index.js"
-  },
   "files": ["*.js"],
   "scripts": {
     "test": "vitest"

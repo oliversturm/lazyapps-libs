@@ -3,12 +3,6 @@
   "version": "0.1.0",
   "description": "RabbitMQ-based distributed event bus for LazyApps",
   "main": "index.js",
-  "exports": {
-    "./command-receiver": "./command-receiver/index.js",
-    "./command-receiver/index.js": "./command-receiver/index.js",
-    "./readmodels": "./readmodels/index.js",
-    "./readmodels/index.js": "./readmodels/index.js"
-  },
   "files": ["*.js", "command-receiver/", "readmodels/"],
   "scripts": {
     "test": "vitest"
