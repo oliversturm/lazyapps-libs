@@ -60,11 +60,13 @@ describe('start', () => {
     expect(listener).toHaveBeenCalledWith(correlation);
   });
 
-  test('starts svelte when svelte config provided', () => {
+  test('starts svelte when svelte config provided', async () => {
     const svelte = { port: 5173 };
     const correlation = { serviceId: 'TEST' };
     start({ correlation, svelte });
-    expect(mockStartSvelteKit).toHaveBeenCalledWith(correlation, svelte);
+    await vi.waitFor(() => {
+      expect(mockStartSvelteKit).toHaveBeenCalledWith(correlation, svelte);
+    });
   });
 
   test('does not start command processor when not configured', () => {
@@ -77,7 +79,7 @@ describe('start', () => {
     expect(mockStartReadModels).not.toHaveBeenCalled();
   });
 
-  test('starts all subsystems when fully configured', () => {
+  test('starts all subsystems when fully configured', async () => {
     const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
     start({
       correlation: { serviceId: 'TEST' },
@@ -86,9 +88,11 @@ describe('start', () => {
       changeNotifier: { listener },
       svelte: { port: 5173 },
     });
+    await vi.waitFor(() => {
+      expect(mockStartSvelteKit).toHaveBeenCalledOnce();
+    });
     expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
     expect(mockStartReadModels).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledOnce();
-    expect(mockStartSvelteKit).toHaveBeenCalledOnce();
   });
 });

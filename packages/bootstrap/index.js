@@ -1,7 +1,6 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
 import { getLogger } from '@lazyapps/logger';
-import { startSvelteKit } from './svelte.js';
 
 const log = getLogger('BS', 'INIT');
 
@@ -50,6 +49,8 @@ export function start({
   }
   if (svelte) {
     log.debug('Starting SvelteKit frontend');
-    startSvelteKit(correlationConfig, svelte);
+    import('./svelte.js').then(({ startSvelteKit }) => {
+      startSvelteKit(correlationConfig, svelte);
+    });
   }
 }
