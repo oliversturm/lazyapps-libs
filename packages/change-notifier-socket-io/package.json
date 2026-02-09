@@ -1,16 +1,25 @@
 {
   "name": "@lazyapps/change-notifier-socket-io",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Socket.io-based change notification broadcaster for LazyApps",
   "main": "index.js",
   "exports": {
     ".": "./index.js"
   },
-  "files": ["*.js"],
+  "files": [
+    "*.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "change-notification", "socket.io", "websocket"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "change-notification",
+    "socket.io",
+    "websocket"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {
