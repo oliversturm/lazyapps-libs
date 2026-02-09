@@ -1,13 +1,20 @@
 {
   "name": "@lazyapps/change-notification-sender-fetch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "HTTP-based change notification sender for LazyApps",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "change-notification"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "change-notification"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

@@ -1,13 +1,21 @@
 {
   "name": "@lazyapps/mqemitter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "In-process message queue with role-specific sub-modules for LazyApps",
   "main": "index.js",
-  "files": ["*.js"],
+  "files": [
+    "*.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "message-queue", "mqemitter"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "message-queue",
+    "mqemitter"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

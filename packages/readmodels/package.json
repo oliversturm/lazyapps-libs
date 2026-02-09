@@ -1,13 +1,21 @@
 {
   "name": "@lazyapps/readmodels",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Event projection and query resolution engine for LazyApps",
   "main": "index.js",
-  "files": ["*.js"],
+  "files": [
+    "*.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "read-models", "projections"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "read-models",
+    "projections"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {
