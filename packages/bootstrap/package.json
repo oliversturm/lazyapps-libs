@@ -1,17 +1,25 @@
 {
   "name": "@lazyapps/bootstrap",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Composition orchestrator for LazyApps applications",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
     "./svelte": "./svelte.js"
   },
-  "files": ["*.js"],
+  "files": [
+    "*.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "bootstrap", "orchestrator"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "bootstrap",
+    "orchestrator"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {
