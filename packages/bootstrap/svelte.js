@@ -21,13 +21,16 @@ const customLogger = {
   error: wrap(viteLog.error),
 };
 
-export const startSvelteKit = ({
-  port = 5173,
-  host = 'localhost',
-  logLevel = 'info',
-  mqCommandsPort = 51883,
-  mqQueriesPort = 51884,
-} = {}) => {
+export const startSvelteKit = (
+  _correlationConfig,
+  {
+    port = 5173,
+    host = 'localhost',
+    logLevel = 'info',
+    mqCommandsPort = 51883,
+    mqQueriesPort = 51884,
+  } = {},
+) => {
   const config = {
     plugins: [sveltekit()],
 
