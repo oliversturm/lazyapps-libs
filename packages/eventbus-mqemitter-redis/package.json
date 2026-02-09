@@ -1,13 +1,24 @@
 {
   "name": "@lazyapps/eventbus-mqemitter-redis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MQEmitter-based event bus with Redis backing for LazyApps",
   "main": "index.js",
-  "files": ["*.js", "command-receiver/", "readmodels/"],
+  "files": [
+    "*.js",
+    "command-receiver/",
+    "readmodels/"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "event-bus", "mqemitter", "redis"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "event-bus",
+    "mqemitter",
+    "redis"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

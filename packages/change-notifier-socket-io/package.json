@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/change-notifier-socket-io",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Socket.io-based change notification broadcaster for LazyApps",
   "main": "index.js",
   "files": [

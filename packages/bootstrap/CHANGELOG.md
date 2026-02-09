@@ -1,5 +1,15 @@
 # @lazyapps/bootstrap
 
+## 0.1.4
+
+### Patch Changes
+
+- 4863d93: Remove exports field from all packages to allow direct subpath imports. Add missing express-jwt dependency to change-notifier-socket-io.
+- Updated dependencies [4863d93]
+  - @lazyapps/command-processor@0.1.1
+  - @lazyapps/logger@0.1.1
+  - @lazyapps/readmodels@0.1.1
+
 ## 0.1.3
 
 ### Patch Changes

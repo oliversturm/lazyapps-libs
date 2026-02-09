@@ -1,14 +1,22 @@
 {
   "name": "@lazyapps/command-replay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI tool to replay recorded commands for testing and recovery in LazyApps",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "bin": {
     "command-replay": "./index.js"
   },
   "scripts": {},
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "command-replay", "cli"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "command-replay",
+    "cli"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

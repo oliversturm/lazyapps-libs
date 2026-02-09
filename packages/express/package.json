@@ -1,13 +1,23 @@
 {
   "name": "@lazyapps/express",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Express HTTP bindings for LazyApps command receiver, read model queries, and change notification listener",
   "main": "index.js",
-  "files": ["*.js", "command-receiver/", "readmodels/"],
+  "files": [
+    "*.js",
+    "command-receiver/",
+    "readmodels/"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "express", "http"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "express",
+    "http"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

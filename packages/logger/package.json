@@ -1,13 +1,21 @@
 {
   "name": "@lazyapps/logger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Centralized logging with correlation IDs for the LazyApps framework",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "logging", "correlation-id"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "logging",
+    "correlation-id"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

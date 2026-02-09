@@ -1,13 +1,24 @@
 {
   "name": "@lazyapps/eventbus-rabbitmq",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "RabbitMQ-based distributed event bus for LazyApps",
   "main": "index.js",
-  "files": ["*.js", "command-receiver/", "readmodels/"],
+  "files": [
+    "*.js",
+    "command-receiver/",
+    "readmodels/"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "event-bus", "rabbitmq", "amqp"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "event-bus",
+    "rabbitmq",
+    "amqp"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

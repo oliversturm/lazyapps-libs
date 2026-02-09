@@ -1,13 +1,20 @@
 {
   "name": "@lazyapps/aggregatestore-inmemory",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "In-memory aggregate state cache for the LazyApps command processing pipeline",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "aggregate-store"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "aggregate-store"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

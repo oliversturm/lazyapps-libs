@@ -1,13 +1,21 @@
 {
   "name": "@lazyapps/readmodelstorage-mongodb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MongoDB-backed read model storage for LazyApps",
   "main": "index.js",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "scripts": {
     "test": "vitest"
   },
-  "keywords": ["event-sourcing", "cqrs", "lazyapps", "read-models", "mongodb"],
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "read-models",
+    "mongodb"
+  ],
   "author": "Oliver Sturm",
   "license": "ISC",
   "repository": {

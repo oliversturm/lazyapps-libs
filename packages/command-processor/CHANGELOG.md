@@ -1,15 +1,12 @@
-# @lazyapps/change-notifier-socket-io
-
-## 0.1.2
-
-### Patch Changes
-
-- 4863d93: Remove exports field from all packages to allow direct subpath imports. Add missing express-jwt dependency to change-notifier-socket-io.
-- Updated dependencies [4863d93]
-  - @lazyapps/logger@0.1.1
+# @lazyapps/command-processor
 
 ## 0.1.1
 
 ### Patch Changes
 
-- 5eae63c: Add acknowledgment callback to socket.io register event for reliable registration confirmation.
+- 4863d93: Remove exports field from all packages to allow direct subpath imports. Add missing express-jwt dependency to change-notifier-socket-io.
+- Updated dependencies [4863d93]
+  - @lazyapps/aggregatestore-inmemory@0.1.1
+  - @lazyapps/eventbus-mqemitter-redis@0.1.1
+  - @lazyapps/eventstore-mongodb@0.1.2
+  - @lazyapps/logger@0.1.1
