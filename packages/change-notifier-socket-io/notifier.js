@@ -32,7 +32,7 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
       ioLog.debug(`Communication error with ${socket.id}: ${error}`);
     });
 
-    socket.on('register', (resolvers) => {
+    socket.on('register', (resolvers, ack) => {
       try {
         if (!ioAuthHandler(socket.decoded_token, resolvers)) {
           ioLog.error(
@@ -40,6 +40,7 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
               socket.decoded_token
             })`,
           );
+          if (typeof ack === 'function') ack({ error: 'unauthorized' });
           socket.disconnect();
           return;
         }
@@ -49,12 +50,14 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
           ),
         );
         ioLog.debug(`Registered ${socket.id} for ${JSON.stringify(resolvers)}`);
+        if (typeof ack === 'function') ack();
       } catch (err) {
         ioLog.error(
           `Can't register ${socket.id} for ${JSON.stringify(
             resolvers,
           )}: ${err}`,
         );
+        if (typeof ack === 'function') ack({ error: String(err) });
       }
     });
   });

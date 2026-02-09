@@ -160,6 +160,88 @@ describe('initSockets', () => {
 
     expect(socket.join).toHaveBeenCalledWith(['ep1/rm1/res1', 'ep2/rm2/res2']);
   });
+
+  test('on register: invokes ack callback on successful registration', () => {
+    const io = createMockIo();
+    initSockets({ serviceId: 'SVC' }, io, () => true);
+
+    const connectHandler = io.on.mock.calls[0][1];
+    const socket = createMockSocket();
+    connectHandler(socket);
+
+    const registerHandler = socket.on.mock.calls.find(
+      (c) => c[0] === 'register',
+    )[1];
+    const ack = vi.fn();
+    registerHandler(
+      [{ endpointName: 'ep', readModelName: 'rm', resolverName: 'res' }],
+      ack,
+    );
+
+    expect(ack).toHaveBeenCalledWith();
+  });
+
+  test('on register: invokes ack callback with error on unauthorized', () => {
+    const io = createMockIo();
+    initSockets({ serviceId: 'SVC' }, io, () => false);
+
+    const connectHandler = io.on.mock.calls[0][1];
+    const socket = createMockSocket();
+    connectHandler(socket);
+
+    const registerHandler = socket.on.mock.calls.find(
+      (c) => c[0] === 'register',
+    )[1];
+    const ack = vi.fn();
+    registerHandler(
+      [{ endpointName: 'ep', readModelName: 'rm', resolverName: 'res' }],
+      ack,
+    );
+
+    expect(ack).toHaveBeenCalledWith({ error: 'unauthorized' });
+  });
+
+  test('on register: invokes ack callback with error on exception', () => {
+    const io = createMockIo();
+    const ioAuthHandler = vi.fn().mockImplementation(() => {
+      throw new Error('auth explosion');
+    });
+    initSockets({ serviceId: 'SVC' }, io, ioAuthHandler);
+
+    const connectHandler = io.on.mock.calls[0][1];
+    const socket = createMockSocket();
+    connectHandler(socket);
+
+    const registerHandler = socket.on.mock.calls.find(
+      (c) => c[0] === 'register',
+    )[1];
+    const ack = vi.fn();
+    registerHandler(
+      [{ endpointName: 'ep', readModelName: 'rm', resolverName: 'res' }],
+      ack,
+    );
+
+    expect(ack).toHaveBeenCalledWith({ error: 'Error: auth explosion' });
+  });
+
+  test('on register: no error when ack callback not provided', () => {
+    const io = createMockIo();
+    initSockets({ serviceId: 'SVC' }, io, () => true);
+
+    const connectHandler = io.on.mock.calls[0][1];
+    const socket = createMockSocket();
+    connectHandler(socket);
+
+    const registerHandler = socket.on.mock.calls.find(
+      (c) => c[0] === 'register',
+    )[1];
+
+    expect(() =>
+      registerHandler([
+        { endpointName: 'ep', readModelName: 'rm', resolverName: 'res' },
+      ]),
+    ).not.toThrow();
+  });
 });
 
 describe('createNotifier', () => {
