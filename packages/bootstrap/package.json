@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/bootstrap",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Composition orchestrator for LazyApps applications",
   "main": "index.js",
   "exports": {
