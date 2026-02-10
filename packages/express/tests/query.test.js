@@ -61,6 +61,40 @@ describe('createApiHandler (query)', () => {
     });
   });
 
+  test('returns 400 on ValidationError', () => {
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = {
+      storage: { perRequest: mockPerRequest },
+    };
+    const err = new Error('validation failed');
+    err.name = 'ValidationError';
+    const resolver = vi.fn().mockRejectedValue(err);
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const req = mockReq({ correlationId: 'corr-1' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(400);
+    });
+  });
+
+  test('returns 403 on AuthorizationError', () => {
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = {
+      storage: { perRequest: mockPerRequest },
+    };
+    const err = new Error('not authorized');
+    err.name = 'AuthorizationError';
+    const resolver = vi.fn().mockRejectedValue(err);
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const req = mockReq({ correlationId: 'corr-1' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(403);
+    });
+  });
+
   test('returns 500 when resolver rejects', () => {
     const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
     const context = {
