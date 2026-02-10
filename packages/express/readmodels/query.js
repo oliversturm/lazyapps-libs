@@ -11,14 +11,15 @@ export const createApiHandler =
         req.body,
       )}`,
     );
-    return Promise.resolve(
-      resolver(
-        context.storage.perRequest(req.body.correlationId),
-        req.body,
-        req.auth,
-        req.body.correlationId,
-      ),
-    )
+    return Promise.resolve()
+      .then(() =>
+        resolver(
+          context.storage.perRequest(req.body.correlationId),
+          req.body,
+          req.auth,
+          req.body.correlationId,
+        ),
+      )
       .then((result) => {
         res.status(200).json(result);
       })
