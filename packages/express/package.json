@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/express",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Express HTTP bindings for LazyApps command receiver, read model queries, and change notification listener",
   "main": "index.js",
   "files": [
