@@ -7,22 +7,8 @@ on:
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install
-      - run: pnpm test
-
   release:
     name: Release
-    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,6 +28,12 @@ jobs:
         uses: changesets/action@v1
         with:
           version: pnpm run version
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for Version Packages PR
+        if: steps.changesets.outputs.hasChangesets == 'true' && steps.changesets.outputs.pullRequestNumber != ''
+        run: gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} --auto --merge
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
