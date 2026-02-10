@@ -67,6 +67,40 @@ describe('adminHandler', () => {
     });
   });
 
+  test('returns 400 on ValidationError', () => {
+    const err = new Error('validation failed');
+    err.name = 'ValidationError';
+    const handleAdminCommand = vi.fn().mockRejectedValue(err);
+    const context = { handleAdminCommand };
+    const handler = adminHandler(context);
+    const req = mockReq(
+      { correlationId: 'corr-1', params: {} },
+      { command: 'rebuild' },
+    );
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(400);
+    });
+  });
+
+  test('returns 403 on AuthorizationError', () => {
+    const err = new Error('not authorized');
+    err.name = 'AuthorizationError';
+    const handleAdminCommand = vi.fn().mockRejectedValue(err);
+    const context = { handleAdminCommand };
+    const handler = adminHandler(context);
+    const req = mockReq(
+      { correlationId: 'corr-1', params: {} },
+      { command: 'rebuild' },
+    );
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(403);
+    });
+  });
+
   test('returns 500 when handler rejects', () => {
     const handleAdminCommand = vi
       .fn()

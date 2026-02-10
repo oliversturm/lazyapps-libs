@@ -28,6 +28,12 @@ export const createApiHandler =
             req.body,
           )}: ${err}`,
         );
-        res.sendStatus(500);
+        if (err.name === 'ValidationError') {
+          res.sendStatus(400);
+        } else if (err.name === 'AuthorizationError') {
+          res.sendStatus(403);
+        } else {
+          res.sendStatus(500);
+        }
       });
   };
