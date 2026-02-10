@@ -95,6 +95,25 @@ describe('createApiHandler (query)', () => {
     });
   });
 
+  test('returns 403 when resolver throws AuthorizationError synchronously', () => {
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = {
+      storage: { perRequest: mockPerRequest },
+    };
+    const err = new Error('not authorized');
+    err.name = 'AuthorizationError';
+    const resolver = vi.fn().mockImplementation(() => {
+      throw err;
+    });
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const req = mockReq({ correlationId: 'corr-1' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(403);
+    });
+  });
+
   test('returns 500 when resolver rejects', () => {
     const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
     const context = {
