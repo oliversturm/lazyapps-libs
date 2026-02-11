@@ -50,7 +50,8 @@ jobs:
         if: steps.check.outputs.has_changesets == 'true'
         run: |
           npm install -g npm@latest
-          pnpm run release -- --tag ${{ steps.tag.outputs.tag }}
+          node scripts/copy-license.js
+          npx changeset publish --tag ${{ steps.tag.outputs.tag }}
 
       - name: Summary
         if: steps.check.outputs.has_changesets == 'true'
