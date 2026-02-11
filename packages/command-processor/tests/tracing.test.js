@@ -27,15 +27,15 @@ describe('withSpan', () => {
   });
 
   test('creates a span with given name and attributes', () =>
-    withSpan('test.span', { key: 'value' }, () =>
-      Promise.resolve('ok'),
-    ).then(() => {
-      expect(mockStartActiveSpan).toHaveBeenCalledWith(
-        'test.span',
-        { attributes: { key: 'value' } },
-        expect.any(Function),
-      );
-    }));
+    withSpan('test.span', { key: 'value' }, () => Promise.resolve('ok')).then(
+      () => {
+        expect(mockStartActiveSpan).toHaveBeenCalledWith(
+          'test.span',
+          { attributes: { key: 'value' } },
+          expect.any(Function),
+        );
+      },
+    ));
 
   test('returns the result of the function', () =>
     withSpan('test.span', {}, () => Promise.resolve('result')).then(
@@ -65,11 +65,9 @@ describe('withSpan', () => {
 
   test('ends the span on failure', () => {
     const error = new Error('test error');
-    return withSpan('test.span', {}, () => Promise.reject(error)).catch(
-      () => {
-        expect(mockSpan.end).toHaveBeenCalledOnce();
-      },
-    );
+    return withSpan('test.span', {}, () => Promise.reject(error)).catch(() => {
+      expect(mockSpan.end).toHaveBeenCalledOnce();
+    });
   });
 
   test('re-throws the error after recording it', () => {

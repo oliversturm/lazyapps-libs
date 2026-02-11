@@ -42,13 +42,17 @@
   },
   "peerDependencies": {
     "vite": ">=5.0.0",
-    "@sveltejs/kit": ">=2.0.0"
+    "@sveltejs/kit": ">=2.0.0",
+    "@lazyapps/observability": ">=0.1.0"
   },
   "peerDependenciesMeta": {
     "vite": {
       "optional": true
     },
     "@sveltejs/kit": {
+      "optional": true
+    },
+    "@lazyapps/observability": {
       "optional": true
     }
   },

@@ -89,7 +89,10 @@ describe('createResource', () => {
       environment: 'production',
     });
     const callArgs = mockResourceFromAttributes.mock.calls.at(-1)[0];
-    expect(callArgs).toHaveProperty('deployment.environment.name', 'production');
+    expect(callArgs).toHaveProperty(
+      'deployment.environment.name',
+      'production',
+    );
     expect(callArgs).not.toHaveProperty('environment');
   });
 

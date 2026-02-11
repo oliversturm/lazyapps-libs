@@ -26,6 +26,45 @@ prefix.apply(log, {
   },
 });
 
+let otelEnabled = false;
+let otelLogger = null;
+let otelTrace = null;
+let otelContext = null;
+let severityMap = {};
+
+export const configureOtel = () =>
+  Promise.all([import('@opentelemetry/api'), import('@opentelemetry/api-logs')])
+    .then(([{ trace, context }, { logs, SeverityNumber }]) => {
+      otelLogger = logs.getLogger('@lazyapps/logger');
+      otelTrace = trace;
+      otelContext = context;
+      severityMap = {
+        trace: SeverityNumber.TRACE,
+        debug: SeverityNumber.DEBUG,
+        info: SeverityNumber.INFO,
+        warn: SeverityNumber.WARN,
+        error: SeverityNumber.ERROR,
+      };
+      otelEnabled = true;
+    })
+    .catch(() => {
+      // @opentelemetry/api or api-logs not available — silently skip
+    });
+
+const emitOtelLog = (methodName, loggerName, correlationId, msg) => {
+  if (!otelEnabled || !otelLogger) return;
+
+  otelLogger.emit({
+    severityNumber: severityMap[methodName],
+    severityText: methodName.toUpperCase(),
+    body: msg,
+    attributes: {
+      'logger.name': loggerName,
+      'correlation.id': correlationId,
+    },
+  });
+};
+
 const getStream = (output) =>
   new Writable({
     write: (chunk, encoding, callback) => {
@@ -34,12 +73,6 @@ const getStream = (output) =>
     },
   });
 
-/**
- * Get a logger with a specific name.
- * @param {string} name The name of the logger.
- * @param {string} correlationId The correlation ID to use.
- * @returns {object} The logger object.
- */
 export const getLogger = (name, correlationId) => {
   const logger = log.getLogger(name);
   const cid = correlationId || `CORR-NONE`;
@@ -50,13 +83,39 @@ export const getLogger = (name, correlationId) => {
     warnBare: (msg) => logger.warn(msg),
     errorBare: (msg) => logger.error(msg),
     logBare: (msg) => logger.log(msg),
-    trace: (msg) => logger.trace(`[${cid}] ${msg}`),
-    debug: (msg) => logger.debug(`[${cid}] ${msg}`),
-    info: (msg) => logger.info(`[${cid}] ${msg}`),
-    warn: (msg) => logger.warn(`[${cid}] ${msg}`),
-    error: (msg) => logger.error(`[${cid}] ${msg}`),
-    log: (msg) => logger.log(`[${cid}] ${msg}`),
+    trace: (msg) => {
+      logger.trace(`[${cid}] ${msg}`);
+      emitOtelLog('trace', name, cid, msg);
+    },
+    debug: (msg) => {
+      logger.debug(`[${cid}] ${msg}`);
+      emitOtelLog('debug', name, cid, msg);
+    },
+    info: (msg) => {
+      logger.info(`[${cid}] ${msg}`);
+      emitOtelLog('info', name, cid, msg);
+    },
+    warn: (msg) => {
+      logger.warn(`[${cid}] ${msg}`);
+      emitOtelLog('warn', name, cid, msg);
+    },
+    error: (msg) => {
+      logger.error(`[${cid}] ${msg}`);
+      emitOtelLog('error', name, cid, msg);
+    },
+    log: (msg) => {
+      logger.log(`[${cid}] ${msg}`);
+      emitOtelLog('info', name, cid, msg);
+    },
   };
+};
+
+export const __resetOtelForTesting = () => {
+  otelEnabled = false;
+  otelLogger = null;
+  otelTrace = null;
+  otelContext = null;
+  severityMap = {};
 };
 
 export { getStream };

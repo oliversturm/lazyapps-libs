@@ -7,7 +7,20 @@ export { createConfig } from './config.js';
 export { createResource } from './resource.js';
 export { createExporters } from './exporters.js';
 
+let initialized = false;
+
+export const isInitialized = () => initialized;
+
+export const __resetForTesting = () => {
+  initialized = false;
+};
+
 export const initialize = (userConfig) => {
+  if (initialized) {
+    return;
+  }
+  initialized = true;
+
   const config = createConfig(userConfig);
   const resource = createResource(config);
   const exporters = createExporters(config);

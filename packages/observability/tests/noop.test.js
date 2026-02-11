@@ -32,19 +32,21 @@ describe('noop behavior without SDK', () => {
 
   test('noop startActiveSpan works with promise chains', () => {
     const tracer = trace.getTracer('test-noop');
-    return tracer.startActiveSpan('test-span', (span) =>
-      Promise.resolve('async-result')
-        .then((val) => {
-          span.setAttribute('key', val);
-          return val;
-        })
-        .then((val) => {
-          span.end();
-          return val;
-        }),
-    ).then((result) => {
-      expect(result).toBe('async-result');
-    });
+    return tracer
+      .startActiveSpan('test-span', (span) =>
+        Promise.resolve('async-result')
+          .then((val) => {
+            span.setAttribute('key', val);
+            return val;
+          })
+          .then((val) => {
+            span.end();
+            return val;
+          }),
+      )
+      .then((result) => {
+        expect(result).toBe('async-result');
+      });
   });
 
   test('metrics.getMeter returns a noop meter', () => {

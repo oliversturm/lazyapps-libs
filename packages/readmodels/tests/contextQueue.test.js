@@ -75,14 +75,8 @@ describe('createContextQueue', () => {
       queue.add(() => Promise.resolve('a')),
       queue.add(() => Promise.resolve('b')),
     ]).then(() => {
-      expect(mockWith).toHaveBeenCalledWith(
-        'context-1',
-        expect.any(Function),
-      );
-      expect(mockWith).toHaveBeenCalledWith(
-        'context-2',
-        expect.any(Function),
-      );
+      expect(mockWith).toHaveBeenCalledWith('context-1', expect.any(Function));
+      expect(mockWith).toHaveBeenCalledWith('context-2', expect.any(Function));
     });
   });
 

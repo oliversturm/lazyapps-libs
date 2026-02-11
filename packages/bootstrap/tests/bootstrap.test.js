@@ -13,14 +13,21 @@ vi.mock('@opentelemetry/api', () => ({
   },
 }));
 
+const mockConfigureOtel = vi.hoisted(() => vi.fn().mockResolvedValue());
+const mockInitialize = vi.hoisted(() => vi.fn());
+
 vi.mock('@lazyapps/logger', () => {
   const getLogger = vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),
     error: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, configureOtel: mockConfigureOtel };
 });
+
+vi.mock('@lazyapps/observability', () => ({
+  initialize: mockInitialize,
+}));
 
 const { mockStartCommandProcessor, mockStartReadModels, mockStartSvelteKit } =
   vi.hoisted(() => ({
@@ -48,29 +55,35 @@ describe('start', () => {
     vi.clearAllMocks();
   });
 
-  test('starts command processor when commands config provided', () => {
+  test('starts command processor when commands config provided', async () => {
     const commands = { receiver: vi.fn() };
     const correlation = { serviceId: 'TEST' };
     start({ correlation, commands });
-    expect(mockStartCommandProcessor).toHaveBeenCalledWith(
-      correlation,
-      commands,
-    );
+    await vi.waitFor(() => {
+      expect(mockStartCommandProcessor).toHaveBeenCalledWith(
+        correlation,
+        commands,
+      );
+    });
   });
 
-  test('starts read models when readModels config provided', () => {
+  test('starts read models when readModels config provided', async () => {
     const readModels = { listener: vi.fn() };
     const correlation = { serviceId: 'TEST' };
     start({ correlation, readModels });
-    expect(mockStartReadModels).toHaveBeenCalledWith(correlation, readModels);
+    await vi.waitFor(() => {
+      expect(mockStartReadModels).toHaveBeenCalledWith(correlation, readModels);
+    });
   });
 
-  test('starts change notifier when changeNotifier config provided', () => {
+  test('starts change notifier when changeNotifier config provided', async () => {
     const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
     const changeNotifier = { listener };
     const correlation = { serviceId: 'TEST' };
     start({ correlation, changeNotifier });
-    expect(listener).toHaveBeenCalledWith(correlation);
+    await vi.waitFor(() => {
+      expect(listener).toHaveBeenCalledWith(correlation);
+    });
   });
 
   test('starts svelte when svelte config provided', async () => {
@@ -82,13 +95,19 @@ describe('start', () => {
     });
   });
 
-  test('does not start command processor when not configured', () => {
+  test('does not start command processor when not configured', async () => {
     start({ correlation: { serviceId: 'TEST' } });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
     expect(mockStartCommandProcessor).not.toHaveBeenCalled();
   });
 
-  test('does not start read models when not configured', () => {
+  test('does not start read models when not configured', async () => {
     start({ correlation: { serviceId: 'TEST' } });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
     expect(mockStartReadModels).not.toHaveBeenCalled();
   });
 
@@ -115,20 +134,24 @@ describe('observability integration', () => {
     vi.clearAllMocks();
   });
 
-  test('creates bootstrap.start span on start', () => {
+  test('creates bootstrap.start span on start', async () => {
     start({ correlation: { serviceId: 'TEST' } });
-    expect(mockStartSpan).toHaveBeenCalledWith(
-      'lazyapps.bootstrap.start',
-      expect.any(Object),
-    );
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalledWith(
+        'lazyapps.bootstrap.start',
+        expect.any(Object),
+      );
+    });
   });
 
-  test('ends the start span', () => {
+  test('ends the start span', async () => {
     start({ correlation: { serviceId: 'TEST' } });
-    expect(mockSpan.end).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(mockSpan.end).toHaveBeenCalledOnce();
+    });
   });
 
-  test('span attributes reflect configured components', () => {
+  test('span attributes reflect configured components', async () => {
     const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
     start({
       correlation: { serviceId: 'TEST' },
@@ -136,8 +159,12 @@ describe('observability integration', () => {
       readModels: { listener: vi.fn() },
       changeNotifier: { listener },
     });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
     const spanArgs = mockStartSpan.mock.calls[0][1];
     expect(spanArgs.attributes).toEqual({
+      'bootstrap.observability': false,
       'bootstrap.commands': true,
       'bootstrap.readModels': true,
       'bootstrap.changeNotifier': true,
@@ -145,10 +172,14 @@ describe('observability integration', () => {
     });
   });
 
-  test('span attributes are all false when nothing configured', () => {
+  test('span attributes are all false when nothing configured', async () => {
     start({ correlation: { serviceId: 'TEST' } });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
     const spanArgs = mockStartSpan.mock.calls[0][1];
     expect(spanArgs.attributes).toEqual({
+      'bootstrap.observability': false,
       'bootstrap.commands': false,
       'bootstrap.readModels': false,
       'bootstrap.changeNotifier': false,
@@ -161,9 +192,71 @@ describe('observability integration', () => {
       correlation: { serviceId: 'TEST' },
       svelte: { port: 5173 },
     });
-    expect(mockStartSpan).toHaveBeenCalledOnce();
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalledOnce();
+    });
     expect(mockSpan.end).toHaveBeenCalledOnce();
     const spanArgs = mockStartSpan.mock.calls[0][1];
     expect(spanArgs.attributes['bootstrap.svelte']).toBe(true);
+  });
+});
+
+describe('bootstrap-managed observability init', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('calls initialize when observability config provided', async () => {
+    const observability = {
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    };
+    start({ correlation: { serviceId: 'TEST' }, observability });
+    await vi.waitFor(() => {
+      expect(mockInitialize).toHaveBeenCalledWith(observability);
+    });
+  });
+
+  test('calls configureOtel after initialize', async () => {
+    const observability = { serviceName: 'test-service' };
+    start({ correlation: { serviceId: 'TEST' }, observability });
+    await vi.waitFor(() => {
+      expect(mockConfigureOtel).toHaveBeenCalledOnce();
+    });
+  });
+
+  test('does not call initialize when observability not configured', async () => {
+    start({ correlation: { serviceId: 'TEST' } });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
+    expect(mockInitialize).not.toHaveBeenCalled();
+    expect(mockConfigureOtel).not.toHaveBeenCalled();
+  });
+
+  test('starts components after observability init completes', async () => {
+    const commands = { receiver: vi.fn() };
+    const observability = { serviceName: 'test-service' };
+    start({
+      correlation: { serviceId: 'TEST' },
+      observability,
+      commands,
+    });
+    await vi.waitFor(() => {
+      expect(mockStartCommandProcessor).toHaveBeenCalled();
+    });
+    expect(mockInitialize).toHaveBeenCalledBefore(mockStartCommandProcessor);
+  });
+
+  test('span attributes include observability true when configured', async () => {
+    start({
+      correlation: { serviceId: 'TEST' },
+      observability: { serviceName: 'test-service' },
+    });
+    await vi.waitFor(() => {
+      expect(mockStartSpan).toHaveBeenCalled();
+    });
+    const spanArgs = mockStartSpan.mock.calls[0][1];
+    expect(spanArgs.attributes['bootstrap.observability']).toBe(true);
   });
 });
