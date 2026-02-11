@@ -37,7 +37,8 @@
   "dependencies": {
     "@lazyapps/command-processor": "workspace:^",
     "@lazyapps/logger": "workspace:^",
-    "@lazyapps/readmodels": "workspace:^"
+    "@lazyapps/readmodels": "workspace:^",
+    "@opentelemetry/api": "^1.9.0"
   },
   "peerDependencies": {
     "vite": ">=5.0.0",

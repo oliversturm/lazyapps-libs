@@ -1,6 +1,9 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
 import { getLogger } from '@lazyapps/logger';
+import { trace } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('@lazyapps/bootstrap');
 
 const log = getLogger('BS', 'INIT');
 
@@ -29,6 +32,15 @@ export function start({
   changeNotifier,
   svelte,
 }) {
+  const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
+    attributes: {
+      'bootstrap.commands': !!commands,
+      'bootstrap.readModels': !!readModels,
+      'bootstrap.changeNotifier': !!changeNotifier,
+      'bootstrap.svelte': !!svelte,
+    },
+  });
+
   if (commands) {
     log.debug('Starting command processor');
     startCommandProcessor(correlationConfig, commands).then((server) => {
@@ -53,4 +65,6 @@ export function start({
       startSvelteKit(correlationConfig, svelte);
     });
   }
+
+  startSpan.end();
 }

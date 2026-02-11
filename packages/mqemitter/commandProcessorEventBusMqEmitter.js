@@ -1,5 +1,8 @@
 import { getLogger } from '@lazyapps/logger';
+import { trace } from '@opentelemetry/api';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
+
+const tracer = trace.getTracer('@lazyapps/mqemitter');
 
 export const commandProcessorEventBusMqEmitter =
   ({ mqName }) =>
@@ -12,7 +15,11 @@ export const commandProcessorEventBusMqEmitter =
           const log = getLogger('CP/EB/MQE', correlationId);
           log.debug(`Publishing event timestamp ${event.timestamp}`);
           event.correlationId = correlationId;
+          const span = tracer.startSpan('lazyapps.mqemitter.emit', {
+            attributes: { topic: 'events' },
+          });
           mq.emit({ topic: 'events', payload: event });
+          span.end();
           return event;
         },
         publishReplayState: (correlationId) => (state) => {
