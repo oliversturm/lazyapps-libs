@@ -54,6 +54,9 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
+      '@lazyapps/observability':
+        specifier: '>=0.1.0'
+        version: link:../observability
       '@lazyapps/readmodels':
         specifier: workspace:^
         version: link:../readmodels
@@ -150,6 +153,9 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       nanoid:
         specifier: ^5.0.7
         version: 5.0.7
@@ -326,6 +332,9 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       mqemitter-cs:
         specifier: ^1.0.1
         version: 1.0.1(mqemitter@2.2.0)
@@ -397,6 +406,9 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
