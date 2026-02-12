@@ -37,9 +37,15 @@ export const configureOtel = ({
   SeverityNumber,
   trace,
   context,
+  loggerProvider,
 } = {}) => {
-  if (!logs || !SeverityNumber) return;
-  otelLogger = logs.getLogger('@lazyapps/logger');
+  if (!SeverityNumber) return;
+  if (!loggerProvider && !logs) return;
+  // Prefer direct LoggerProvider to avoid pnpm duplicate-package issues
+  // with global registration in @opentelemetry/api-logs
+  otelLogger = loggerProvider
+    ? loggerProvider.getLogger('@lazyapps/logger')
+    : logs.getLogger('@lazyapps/logger');
   otelTrace = trace || null;
   otelContext = context || null;
   severityMap = {

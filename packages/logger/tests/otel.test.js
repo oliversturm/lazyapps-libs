@@ -148,6 +148,34 @@ describe('configureOtel', () => {
   });
 });
 
+describe('configureOtel with direct loggerProvider', () => {
+  beforeEach(() => {
+    __resetOtelForTesting();
+    vi.clearAllMocks();
+  });
+
+  test('uses loggerProvider.getLogger when loggerProvider is provided', () => {
+    const providerEmit = vi.fn();
+    const providerGetLogger = vi.fn(() => ({ emit: providerEmit }));
+    configureOtel({
+      SeverityNumber: mockOtelApis.SeverityNumber,
+      trace: mockOtelApis.trace,
+      context: mockOtelApis.context,
+      loggerProvider: { getLogger: providerGetLogger },
+    });
+    const log = getLogger('Test', 'c');
+    log.info('direct provider');
+    expect(providerGetLogger).toHaveBeenCalledWith('@lazyapps/logger');
+    expect(providerEmit).toHaveBeenCalledOnce();
+    expect(mockGetLogger).not.toHaveBeenCalled();
+  });
+
+  test('falls back to logs.getLogger when no loggerProvider', () => {
+    configureOtel(mockOtelApis);
+    expect(mockGetLogger).toHaveBeenCalledWith('@lazyapps/logger');
+  });
+});
+
 describe('configureOtel graceful degradation', () => {
   beforeEach(() => {
     __resetOtelForTesting();

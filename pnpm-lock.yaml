@@ -400,6 +400,9 @@ importers:
         specifier: ^1.39.0
         version: 1.39.0
     devDependencies:
+      '@lazyapps/logger':
+        specifier: workspace:*
+        version: link:../logger
       eslint:
         specifier: ^8.46.0
         version: 8.46.0

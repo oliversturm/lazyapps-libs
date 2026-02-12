@@ -1,5 +1,7 @@
 ---
 '@lazyapps/observability': minor
+'@lazyapps/logger': minor
+'@lazyapps/bootstrap': patch
 ---
 
-Register LoggerProvider globally so structured logs reach the OTLP collector. NodeSDK does not register its internal LoggerProvider with the global api-logs, causing logs.getLogger() to return a NOOP logger that silently discards all log records. The fix creates a LoggerProvider manually and registers it via logs.setGlobalLoggerProvider().
+Fix structured logs not reaching OTLP collector. Pass LoggerProvider directly from observability to logger's configureOtel, bypassing the global @opentelemetry/api-logs registry which fails when pnpm resolves duplicate package versions.

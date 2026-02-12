@@ -43,10 +43,15 @@ vi.mock('@lazyapps/logger', () => {
 });
 
 const mockShutdown = vi.hoisted(() => vi.fn().mockResolvedValue());
+const mockLoggerProvider = vi.hoisted(() => ({
+  getLogger: vi.fn(),
+}));
+const mockGetLoggerProvider = vi.hoisted(() => vi.fn(() => mockLoggerProvider));
 
 vi.mock('@lazyapps/observability', () => ({
   initialize: mockInitialize,
   shutdown: mockShutdown,
+  getLoggerProvider: mockGetLoggerProvider,
 }));
 
 const { mockStartCommandProcessor, mockStartReadModels, mockStartSvelteKit } =
@@ -237,7 +242,7 @@ describe('bootstrap-managed observability init', () => {
     });
   });
 
-  test('calls configureOtel after initialize', async () => {
+  test('calls configureOtel after initialize with loggerProvider', async () => {
     const observability = { serviceName: 'test-service' };
     start({ correlation: { serviceId: 'TEST' }, observability });
     await vi.waitFor(() => {
@@ -246,6 +251,7 @@ describe('bootstrap-managed observability init', () => {
         SeverityNumber: mockSeverityNumber,
         trace: expect.objectContaining({ getTracer: mockGetTracer }),
         context: mockContext,
+        loggerProvider: mockLoggerProvider,
       });
     });
   });

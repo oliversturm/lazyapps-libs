@@ -33,6 +33,7 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "devDependencies": {
+    "@lazyapps/logger": "workspace:*",
     "eslint": "^8.46.0",
     "vitest": "^4.0.18"
   },

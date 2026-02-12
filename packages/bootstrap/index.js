@@ -39,14 +39,22 @@ const handleSignals = (server) => {
 const initObservability = (observability) =>
   observability
     ? import('@lazyapps/observability')
-        .then(({ initialize, shutdown }) => {
+        .then(({ initialize, shutdown, getLoggerProvider }) => {
           initialize(observability);
           shutdownOtel = shutdown;
+          return getLoggerProvider();
         })
-        .then(() => import('@opentelemetry/api-logs'))
-        .then(({ logs, SeverityNumber }) => {
-          configureOtel({ logs, SeverityNumber, trace, context });
-        })
+        .then((loggerProvider) =>
+          import('@opentelemetry/api-logs').then(({ logs, SeverityNumber }) => {
+            configureOtel({
+              logs,
+              SeverityNumber,
+              trace,
+              context,
+              loggerProvider,
+            });
+          }),
+        )
     : Promise.resolve();
 
 export function start({

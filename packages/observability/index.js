@@ -17,6 +17,7 @@ let sdkInstance = null;
 let loggerProviderInstance = null;
 
 export const isInitialized = () => initialized;
+export const getLoggerProvider = () => loggerProviderInstance;
 
 export const shutdown = () =>
   Promise.all([
