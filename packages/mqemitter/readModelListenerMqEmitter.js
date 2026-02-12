@@ -1,6 +1,9 @@
 import { getLogger } from '@lazyapps/logger';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
 import { nanoid } from 'nanoid';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('@lazyapps/mqemitter');
 
 export const readModelListenerMqEmitter =
   ({ mqName }) =>
@@ -43,26 +46,42 @@ export const readModelListenerMqEmitter =
             cb();
             return;
           }
-          // Run the promise, then call cb and return
-          // The promise will send the reply
-          // asynchronously
-          Promise.resolve(
-            resolver(context.storage.perRequest(correlationId), args),
-          )
-            .then((result) => {
-              const payload = {
-                correlationId,
-                result,
-              };
-              mq.emit({ topic: replyTopic, payload });
-            })
-            .catch((err) => {
-              log.error(
-                `An error occurred handling query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
-                  args,
-                )}: ${err}`,
-              );
-            });
+
+          tracer.startActiveSpan(
+            'lazyapps.readmodel.query',
+            {
+              attributes: {
+                'readmodel.name': readModelName,
+                'readmodel.resolver': resolverName,
+              },
+            },
+            (span) => {
+              Promise.resolve(
+                resolver(context.storage.perRequest(correlationId), args),
+              )
+                .then((result) => {
+                  span.end();
+                  const payload = {
+                    correlationId,
+                    result,
+                  };
+                  mq.emit({ topic: replyTopic, payload });
+                })
+                .catch((err) => {
+                  span.recordException(err);
+                  span.setStatus({
+                    code: SpanStatusCode.ERROR,
+                    message: err.message,
+                  });
+                  span.end();
+                  log.error(
+                    `An error occurred handling query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
+                      args,
+                    )}: ${err}`,
+                  );
+                });
+            },
+          );
 
           cb();
         });

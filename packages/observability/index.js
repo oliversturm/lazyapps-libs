@@ -8,11 +8,16 @@ export { createResource } from './resource.js';
 export { createExporters } from './exporters.js';
 
 let initialized = false;
+let sdkInstance = null;
 
 export const isInitialized = () => initialized;
 
+export const shutdown = () =>
+  sdkInstance ? sdkInstance.shutdown() : Promise.resolve();
+
 export const __resetForTesting = () => {
   initialized = false;
+  sdkInstance = null;
 };
 
 export const initialize = (userConfig) => {
@@ -34,6 +39,7 @@ export const initialize = (userConfig) => {
   });
 
   sdk.start();
+  sdkInstance = sdk;
 
   return sdk;
 };

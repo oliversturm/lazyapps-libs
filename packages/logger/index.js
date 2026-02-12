@@ -32,24 +32,25 @@ let otelTrace = null;
 let otelContext = null;
 let severityMap = {};
 
-export const configureOtel = () =>
-  Promise.all([import('@opentelemetry/api'), import('@opentelemetry/api-logs')])
-    .then(([{ trace, context }, { logs, SeverityNumber }]) => {
-      otelLogger = logs.getLogger('@lazyapps/logger');
-      otelTrace = trace;
-      otelContext = context;
-      severityMap = {
-        trace: SeverityNumber.TRACE,
-        debug: SeverityNumber.DEBUG,
-        info: SeverityNumber.INFO,
-        warn: SeverityNumber.WARN,
-        error: SeverityNumber.ERROR,
-      };
-      otelEnabled = true;
-    })
-    .catch(() => {
-      // @opentelemetry/api or api-logs not available — silently skip
-    });
+export const configureOtel = ({
+  logs,
+  SeverityNumber,
+  trace,
+  context,
+} = {}) => {
+  if (!logs || !SeverityNumber) return;
+  otelLogger = logs.getLogger('@lazyapps/logger');
+  otelTrace = trace || null;
+  otelContext = context || null;
+  severityMap = {
+    trace: SeverityNumber.TRACE,
+    debug: SeverityNumber.DEBUG,
+    info: SeverityNumber.INFO,
+    warn: SeverityNumber.WARN,
+    error: SeverityNumber.ERROR,
+  };
+  otelEnabled = true;
+};
 
 const emitOtelLog = (methodName, loggerName, correlationId, msg) => {
   if (!otelEnabled || !otelLogger) return;

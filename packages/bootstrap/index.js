@@ -1,20 +1,31 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
-import { getLogger } from '@lazyapps/logger';
-import { trace } from '@opentelemetry/api';
+import { getLogger, configureOtel } from '@lazyapps/logger';
+import { trace, context } from '@opentelemetry/api';
 
 const tracer = trace.getTracer('@lazyapps/bootstrap');
 
 const log = getLogger('BS', 'INIT');
 
 let signalHandlersInstalled = false;
+let shutdownOtel = () => Promise.resolve();
+
 const handleSignals = (server) => {
   const handler = (signal) => {
     log.info(`Signal ${signal} received`);
-    server.close(() => {
-      log.info('Server closed, exiting process');
-      process.exit(0);
-    });
+    // Force exit after 5s in case graceful shutdown hangs
+    setTimeout(() => {
+      log.warn('Forced exit after timeout');
+      process.exit(1);
+    }, 5000).unref();
+    shutdownOtel()
+      .catch(() => {})
+      .then(() => {
+        server.close(() => {
+          log.info('Server closed, exiting process');
+          process.exit(0);
+        });
+      });
   };
 
   if (!signalHandlersInstalled) {
@@ -28,9 +39,14 @@ const handleSignals = (server) => {
 const initObservability = (observability) =>
   observability
     ? import('@lazyapps/observability')
-        .then(({ initialize }) => initialize(observability))
-        .then(() => import('@lazyapps/logger'))
-        .then(({ configureOtel }) => configureOtel())
+        .then(({ initialize, shutdown }) => {
+          initialize(observability);
+          shutdownOtel = shutdown;
+        })
+        .then(() => import('@opentelemetry/api-logs'))
+        .then(({ logs, SeverityNumber }) => {
+          configureOtel({ logs, SeverityNumber, trace, context });
+        })
     : Promise.resolve();
 
 export function start({

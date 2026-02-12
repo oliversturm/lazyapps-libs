@@ -29,12 +29,7 @@ vi.mock('loglevel-plugin-prefix', () => ({
   },
 }));
 
-vi.mock('@opentelemetry/api', () => ({
-  trace: { getSpanContext: vi.fn() },
-  context: { active: vi.fn() },
-}));
-
-vi.mock('@opentelemetry/api-logs', () => ({
+const mockOtelApis = {
   logs: { getLogger: mockGetLogger },
   SeverityNumber: {
     TRACE: 1,
@@ -43,7 +38,9 @@ vi.mock('@opentelemetry/api-logs', () => ({
     WARN: 13,
     ERROR: 17,
   },
-}));
+  trace: { getSpanContext: vi.fn() },
+  context: { active: vi.fn() },
+};
 
 const { getLogger, configureOtel, __resetOtelForTesting } =
   await import('../index.js');
@@ -54,62 +51,62 @@ describe('configureOtel', () => {
     vi.clearAllMocks();
   });
 
-  test('enables OTEL log emission after configureOtel resolves', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'corr-1');
-      log.info('hello');
-      expect(mockEmit).toHaveBeenCalledOnce();
-    }));
+  test('enables OTEL log emission after configureOtel', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'corr-1');
+    log.info('hello');
+    expect(mockEmit).toHaveBeenCalledOnce();
+  });
 
-  test('emits OTEL log records with correct severity', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'corr-1');
-      log.info('info msg');
-      expect(mockEmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          severityNumber: 9,
-          severityText: 'INFO',
+  test('emits OTEL log records with correct severity', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'corr-1');
+    log.info('info msg');
+    expect(mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityNumber: 9,
+        severityText: 'INFO',
+      }),
+    );
+  });
+
+  test('emits OTEL log records with logger name and correlation ID', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('MyService', 'req-456');
+    log.debug('debug msg');
+    expect(mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: 'debug msg',
+        attributes: expect.objectContaining({
+          'logger.name': 'MyService',
+          'correlation.id': 'req-456',
         }),
-      );
-    }));
+      }),
+    );
+  });
 
-  test('emits OTEL log records with logger name and correlation ID', () =>
-    configureOtel().then(() => {
-      const log = getLogger('MyService', 'req-456');
-      log.debug('debug msg');
-      expect(mockEmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          body: 'debug msg',
-          attributes: expect.objectContaining({
-            'logger.name': 'MyService',
-            'correlation.id': 'req-456',
-          }),
-        }),
-      );
-    }));
+  test('emits correct severity for each log level', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'c');
+    log.trace('t');
+    log.debug('d');
+    log.info('i');
+    log.warn('w');
+    log.error('e');
+    expect(mockEmit).toHaveBeenCalledTimes(5);
+    expect(mockEmit.mock.calls[0][0].severityNumber).toBe(1);
+    expect(mockEmit.mock.calls[1][0].severityNumber).toBe(5);
+    expect(mockEmit.mock.calls[2][0].severityNumber).toBe(9);
+    expect(mockEmit.mock.calls[3][0].severityNumber).toBe(13);
+    expect(mockEmit.mock.calls[4][0].severityNumber).toBe(17);
+  });
 
-  test('emits correct severity for each log level', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'c');
-      log.trace('t');
-      log.debug('d');
-      log.info('i');
-      log.warn('w');
-      log.error('e');
-      expect(mockEmit).toHaveBeenCalledTimes(5);
-      expect(mockEmit.mock.calls[0][0].severityNumber).toBe(1);
-      expect(mockEmit.mock.calls[1][0].severityNumber).toBe(5);
-      expect(mockEmit.mock.calls[2][0].severityNumber).toBe(9);
-      expect(mockEmit.mock.calls[3][0].severityNumber).toBe(13);
-      expect(mockEmit.mock.calls[4][0].severityNumber).toBe(17);
-    }));
-
-  test('stdout output continues unchanged after configureOtel', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'c');
-      log.info('hello');
-      expect(mockLogger.info).toHaveBeenCalledWith('[c] hello');
-    }));
+  test('stdout output continues unchanged after configureOtel', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'c');
+    log.info('hello');
+    expect(mockLogger.info).toHaveBeenCalledWith('[c] hello');
+  });
 
   test('does not emit OTEL log records before configureOtel is called', () => {
     const log = getLogger('Test', 'c');
@@ -117,24 +114,38 @@ describe('configureOtel', () => {
     expect(mockEmit).not.toHaveBeenCalled();
   });
 
-  test('bare methods do not emit OTEL log records', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'c');
-      log.infoBare('bare msg');
-      expect(mockEmit).not.toHaveBeenCalled();
-    }));
+  test('bare methods do not emit OTEL log records', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'c');
+    log.infoBare('bare msg');
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
 
-  test('log method maps to INFO severity', () =>
-    configureOtel().then(() => {
-      const log = getLogger('Test', 'c');
-      log.log('generic msg');
-      expect(mockEmit).toHaveBeenCalledWith(
-        expect.objectContaining({
-          severityNumber: 9,
-          severityText: 'INFO',
-        }),
-      );
-    }));
+  test('log method maps to INFO severity', () => {
+    configureOtel(mockOtelApis);
+    const log = getLogger('Test', 'c');
+    log.log('generic msg');
+    expect(mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severityNumber: 9,
+        severityText: 'INFO',
+      }),
+    );
+  });
+
+  test('does nothing when called without arguments', () => {
+    configureOtel();
+    const log = getLogger('Test', 'c');
+    log.info('hello');
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
+
+  test('does nothing when called with empty object', () => {
+    configureOtel({});
+    const log = getLogger('Test', 'c');
+    log.info('hello');
+    expect(mockEmit).not.toHaveBeenCalled();
+  });
 });
 
 describe('configureOtel graceful degradation', () => {

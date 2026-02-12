@@ -7,13 +7,30 @@ const { mockSpan, mockStartSpan, mockGetTracer } = vi.hoisted(() => {
   return { mockSpan, mockStartSpan, mockGetTracer };
 });
 
+const mockContext = vi.hoisted(() => ({ active: vi.fn() }));
+
 vi.mock('@opentelemetry/api', () => ({
   trace: {
     getTracer: mockGetTracer,
   },
+  context: mockContext,
 }));
 
-const mockConfigureOtel = vi.hoisted(() => vi.fn().mockResolvedValue());
+const mockLogs = vi.hoisted(() => ({ getLogger: vi.fn() }));
+const mockSeverityNumber = vi.hoisted(() => ({
+  TRACE: 1,
+  DEBUG: 5,
+  INFO: 9,
+  WARN: 13,
+  ERROR: 17,
+}));
+
+vi.mock('@opentelemetry/api-logs', () => ({
+  logs: mockLogs,
+  SeverityNumber: mockSeverityNumber,
+}));
+
+const mockConfigureOtel = vi.hoisted(() => vi.fn());
 const mockInitialize = vi.hoisted(() => vi.fn());
 
 vi.mock('@lazyapps/logger', () => {
@@ -25,8 +42,11 @@ vi.mock('@lazyapps/logger', () => {
   return { getLogger, configureOtel: mockConfigureOtel };
 });
 
+const mockShutdown = vi.hoisted(() => vi.fn().mockResolvedValue());
+
 vi.mock('@lazyapps/observability', () => ({
   initialize: mockInitialize,
+  shutdown: mockShutdown,
 }));
 
 const { mockStartCommandProcessor, mockStartReadModels, mockStartSvelteKit } =
@@ -221,7 +241,12 @@ describe('bootstrap-managed observability init', () => {
     const observability = { serviceName: 'test-service' };
     start({ correlation: { serviceId: 'TEST' }, observability });
     await vi.waitFor(() => {
-      expect(mockConfigureOtel).toHaveBeenCalledOnce();
+      expect(mockConfigureOtel).toHaveBeenCalledWith({
+        logs: mockLogs,
+        SeverityNumber: mockSeverityNumber,
+        trace: expect.objectContaining({ getTracer: mockGetTracer }),
+        context: mockContext,
+      });
     });
   });
 
