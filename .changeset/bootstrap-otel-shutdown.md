@@ -1,5 +1,5 @@
 ---
-'@lazyapps/bootstrap': patch
+'@lazyapps/bootstrap': minor
 ---
 
-Fix process not exiting on SIGINT/SIGTERM when OTEL SDK is active. Signal handler now gracefully shuts down the OTEL SDK and includes a 5s force-exit timeout.
+Add signal handling for graceful OTEL SDK shutdown on SIGINT/SIGTERM. Uses dynamic import so observability is optional. Includes 5s force-exit timeout.

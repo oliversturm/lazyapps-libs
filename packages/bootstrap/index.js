@@ -1,6 +1,6 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
-import { getLogger, configureOtel } from '@lazyapps/logger';
+import { getLogger } from '@lazyapps/logger';
 import { trace, context } from '@opentelemetry/api';
 
 const tracer = trace.getTracer('@lazyapps/bootstrap');
@@ -8,7 +8,6 @@ const tracer = trace.getTracer('@lazyapps/bootstrap');
 const log = getLogger('BS', 'INIT');
 
 let signalHandlersInstalled = false;
-let shutdownOtel = () => Promise.resolve();
 
 const handleSignals = (server) => {
   const handler = (signal) => {
@@ -18,7 +17,8 @@ const handleSignals = (server) => {
       log.warn('Forced exit after timeout');
       process.exit(1);
     }, 5000).unref();
-    shutdownOtel()
+    import('@lazyapps/observability')
+      .then(({ shutdown }) => shutdown())
       .catch(() => {})
       .then(() => {
         server.close(() => {
@@ -36,71 +36,46 @@ const handleSignals = (server) => {
   }
 };
 
-const initObservability = (observability) =>
-  observability
-    ? import('@lazyapps/observability')
-        .then(({ initialize, shutdown, getLoggerProvider }) => {
-          initialize(observability);
-          shutdownOtel = shutdown;
-          return getLoggerProvider();
-        })
-        .then((loggerProvider) =>
-          import('@opentelemetry/api-logs').then(({ logs, SeverityNumber }) => {
-            configureOtel({
-              logs,
-              SeverityNumber,
-              trace,
-              context,
-              loggerProvider,
-            });
-          }),
-        )
-    : Promise.resolve();
-
 export function start({
   correlation: correlationConfig,
-  observability,
   commands,
   readModels,
   changeNotifier,
   svelte,
 }) {
-  initObservability(observability).then(() => {
-    const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
-      attributes: {
-        'bootstrap.observability': !!observability,
-        'bootstrap.commands': !!commands,
-        'bootstrap.readModels': !!readModels,
-        'bootstrap.changeNotifier': !!changeNotifier,
-        'bootstrap.svelte': !!svelte,
-      },
-    });
-
-    if (commands) {
-      log.debug('Starting command processor');
-      startCommandProcessor(correlationConfig, commands).then((server) => {
-        handleSignals(server);
-      });
-    }
-    if (readModels) {
-      log.debug('Starting read models');
-      startReadModels(correlationConfig, readModels).then((server) => {
-        handleSignals(server);
-      });
-    }
-    if (changeNotifier) {
-      log.debug('Starting change notifier');
-      changeNotifier.listener(correlationConfig).then((server) => {
-        handleSignals(server);
-      });
-    }
-    if (svelte) {
-      log.debug('Starting SvelteKit frontend');
-      import('./svelte.js').then(({ startSvelteKit }) => {
-        startSvelteKit(correlationConfig, svelte);
-      });
-    }
-
-    startSpan.end();
+  const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
+    attributes: {
+      'bootstrap.commands': !!commands,
+      'bootstrap.readModels': !!readModels,
+      'bootstrap.changeNotifier': !!changeNotifier,
+      'bootstrap.svelte': !!svelte,
+    },
   });
+
+  if (commands) {
+    log.debug('Starting command processor');
+    startCommandProcessor(correlationConfig, commands).then((server) => {
+      handleSignals(server);
+    });
+  }
+  if (readModels) {
+    log.debug('Starting read models');
+    startReadModels(correlationConfig, readModels).then((server) => {
+      handleSignals(server);
+    });
+  }
+  if (changeNotifier) {
+    log.debug('Starting change notifier');
+    changeNotifier.listener(correlationConfig).then((server) => {
+      handleSignals(server);
+    });
+  }
+  if (svelte) {
+    log.debug('Starting SvelteKit frontend');
+    import('./svelte.js').then(({ startSvelteKit }) => {
+      startSvelteKit(correlationConfig, svelte);
+    });
+  }
+
+  startSpan.end();
 }
