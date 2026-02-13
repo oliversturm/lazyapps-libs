@@ -18,6 +18,8 @@ vi.mock('@opentelemetry/instrumentation-socket.io', () => ({
 
 const { createConfig, __testing__ } = await import('../config.js');
 const { defaults } = __testing__;
+const { HttpInstrumentation } =
+  await import('@opentelemetry/instrumentation-http');
 
 describe('createConfig', () => {
   test('returns defaults when called with no arguments', () => {
@@ -156,5 +158,37 @@ describe('createInstrumentations', () => {
     const first = createInstrumentations();
     const second = createInstrumentations();
     expect(first[0]).not.toBe(second[0]);
+  });
+
+  test('passes httpInstrumentation options to HttpInstrumentation', () => {
+    const opts = { ignoreIncomingRequestHook: () => true };
+    createInstrumentations({ httpInstrumentation: opts });
+    expect(HttpInstrumentation).toHaveBeenCalledWith(opts);
+  });
+
+  test('passes empty object to HttpInstrumentation when no httpInstrumentation config', () => {
+    createInstrumentations();
+    expect(HttpInstrumentation).toHaveBeenCalledWith({});
+  });
+});
+
+describe('createConfig with httpInstrumentation', () => {
+  test('passes httpInstrumentation config through to instrumentations', () => {
+    HttpInstrumentation.mockClear();
+    const hook = () => true;
+    createConfig({ httpInstrumentation: { ignoreIncomingRequestHook: hook } });
+    expect(HttpInstrumentation).toHaveBeenCalledWith({
+      ignoreIncomingRequestHook: hook,
+    });
+  });
+
+  test('does not pass httpInstrumentation when custom instrumentations provided', () => {
+    HttpInstrumentation.mockClear();
+    const custom = [{ name: 'custom' }];
+    createConfig({
+      httpInstrumentation: { ignoreIncomingRequestHook: () => true },
+      instrumentations: custom,
+    });
+    expect(HttpInstrumentation).not.toHaveBeenCalled();
   });
 });

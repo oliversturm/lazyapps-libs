@@ -23,8 +23,8 @@ const defaults = {
   diagnosticLogLevel: 'WARN',
 };
 
-const createInstrumentations = () => [
-  new HttpInstrumentation(),
+const createInstrumentations = (config = {}) => [
+  new HttpInstrumentation(config.httpInstrumentation || {}),
   new ExpressInstrumentation(),
   new MongoDBInstrumentation(),
   new AmqplibInstrumentation(),
@@ -42,7 +42,8 @@ export const createConfig = (userConfig = {}) => ({
     ...defaults.sampler,
     ...(userConfig.sampler || {}),
   },
-  instrumentations: userConfig.instrumentations || createInstrumentations(),
+  instrumentations:
+    userConfig.instrumentations || createInstrumentations(userConfig),
 });
 
 export const __testing__ = { defaults, createInstrumentations };
