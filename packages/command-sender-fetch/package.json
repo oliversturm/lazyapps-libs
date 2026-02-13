@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/command-sender-fetch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "HTTP-based command sender for LazyApps",
   "main": "index.js",
   "files": [

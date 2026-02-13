@@ -1,5 +1,14 @@
 # @lazyapps/express
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [88341c9]
+- Updated dependencies [ce159fd]
+- Updated dependencies [b89353d]
+  - @lazyapps/logger@0.2.0
+
 ## 0.1.3
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/eventstore-mongodb",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "MongoDB-backed persistent event store with replay capability for the LazyApps CRQS/ES framework.",
   "main": "index.js",
   "files": [

@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/eventbus-mqemitter-redis",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MQEmitter-based event bus with Redis backing for LazyApps",
   "main": "index.js",
   "files": [

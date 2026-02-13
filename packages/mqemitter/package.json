@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/mqemitter",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "In-process message queue with role-specific sub-modules for LazyApps",
   "main": "index.js",
   "files": [

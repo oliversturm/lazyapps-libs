@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/readmodels",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Event projection and query resolution engine for LazyApps",
   "main": "index.js",
   "files": [

@@ -1,5 +1,17 @@
 # @lazyapps/command-processor
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [88341c9]
+- Updated dependencies [ce159fd]
+- Updated dependencies [b89353d]
+  - @lazyapps/logger@0.2.0
+  - @lazyapps/aggregatestore-inmemory@0.1.2
+  - @lazyapps/eventbus-mqemitter-redis@0.1.2
+  - @lazyapps/eventstore-mongodb@0.1.3
+
 ## 0.1.1
 
 ### Patch Changes

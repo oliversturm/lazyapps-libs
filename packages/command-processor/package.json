@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/command-processor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Transport-agnostic command validation and aggregate execution engine for LazyApps",
   "main": "index.js",
   "files": [

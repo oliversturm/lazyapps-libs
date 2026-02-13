@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/change-notification-sender-fetch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "HTTP-based change notification sender for LazyApps",
   "main": "index.js",
   "files": [

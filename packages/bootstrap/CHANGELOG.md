@@ -1,5 +1,20 @@
 # @lazyapps/bootstrap
 
+## 0.2.0
+
+### Minor Changes
+
+- b89353d: Add signal handling for graceful OTEL SDK shutdown on SIGINT/SIGTERM. Uses dynamic import so observability is optional. Includes 5s force-exit timeout.
+
+### Patch Changes
+
+- Updated dependencies [88341c9]
+- Updated dependencies [ce159fd]
+- Updated dependencies [b89353d]
+  - @lazyapps/logger@0.2.0
+  - @lazyapps/command-processor@0.1.2
+  - @lazyapps/readmodels@0.1.2
+
 ## 0.1.4
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/logger",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Centralized logging with correlation IDs for the LazyApps framework",
   "main": "index.js",
   "files": [

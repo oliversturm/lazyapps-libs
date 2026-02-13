@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/readmodelstorage-mongodb",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MongoDB-backed read model storage for LazyApps",
   "main": "index.js",
   "files": [

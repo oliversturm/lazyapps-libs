@@ -1,6 +1,6 @@
 {
   "name": "@lazyapps/aggregatestore-inmemory",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "In-memory aggregate state cache for the LazyApps command processing pipeline",
   "main": "index.js",
   "files": [
