@@ -1,10 +1,9 @@
-import Queue from 'promise-queue';
-
 import { getLogger } from '@lazyapps/logger';
+import { createContextQueue } from './contextQueue.js';
 
 const createChangeNotificationHandler =
   (changeNotificationSender) => (correlationId) => {
-    const queue = new Queue(1, Infinity);
+    const queue = createContextQueue(1, Infinity);
 
     const log = getLogger('RM/Chng', correlationId);
 

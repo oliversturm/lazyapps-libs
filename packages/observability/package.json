@@ -1,0 +1,58 @@
+{
+  "name": "@lazyapps/observability",
+  "version": "0.1.0",
+  "description": "OpenTelemetry SDK initialization and configuration for the LazyApps framework",
+  "main": "index.js",
+  "files": [
+    "*.js"
+  ],
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "opentelemetry",
+    "observability",
+    "tracing",
+    "metrics"
+  ],
+  "author": "Oliver Sturm",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/observability"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/observability#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
+  "devDependencies": {
+    "@lazyapps/logger": "workspace:*",
+    "eslint": "^8.46.0",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "^0.211.0",
+    "@opentelemetry/sdk-node": "^0.211.0",
+    "@opentelemetry/sdk-metrics": "^2.5.0",
+    "@opentelemetry/sdk-logs": "^0.211.0",
+    "@opentelemetry/resources": "^2.5.0",
+    "@opentelemetry/semantic-conventions": "^1.39.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.211.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.211.0",
+    "@opentelemetry/exporter-logs-otlp-grpc": "^0.211.0",
+    "@opentelemetry/instrumentation-http": "^0.211.0",
+    "@opentelemetry/instrumentation-express": "^0.59.0",
+    "@opentelemetry/instrumentation-mongodb": "^0.64.0",
+    "@opentelemetry/instrumentation-amqplib": "^0.58.0",
+    "@opentelemetry/instrumentation-socket.io": "^0.57.0"
+  },
+  "type": "module"
+}

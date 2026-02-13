@@ -1,5 +1,19 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
+const { mockSpan, mockStartSpan } = vi.hoisted(() => {
+  const mockSpan = { end: vi.fn() };
+  const mockStartSpan = vi.fn(() => mockSpan);
+  return { mockSpan, mockStartSpan };
+});
+
+vi.mock('@opentelemetry/api', () => ({
+  trace: {
+    getTracer: vi.fn(() => ({
+      startSpan: mockStartSpan,
+    })),
+  },
+}));
+
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
@@ -87,4 +101,34 @@ describe('commandProcessorEventBusMqEmitter', () => {
       },
     );
   });
+});
+
+describe('mqemitter tracing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('publishEvent creates a span for event emission', () =>
+    commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then((bus) => {
+      bus.publishEvent('corr-1')({ timestamp: 123, type: 'TEST' });
+      expect(mockStartSpan).toHaveBeenCalledWith('lazyapps.mqemitter.emit', {
+        attributes: { topic: 'events' },
+      });
+    }));
+
+  test('publishEvent ends the span after emit', () =>
+    commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then((bus) => {
+      bus.publishEvent('corr-1')({ timestamp: 123, type: 'TEST' });
+      expect(mockSpan.end).toHaveBeenCalledOnce();
+    }));
+
+  test('span is ended after mq.emit is called', () =>
+    commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then((bus) => {
+      const callOrder = [];
+      mockEmitter.emit.mockImplementation(() => callOrder.push('emit'));
+      mockSpan.end.mockImplementation(() => callOrder.push('end'));
+
+      bus.publishEvent('corr-1')({ timestamp: 123, type: 'TEST' });
+      expect(callOrder).toEqual(['emit', 'end']);
+    }));
 });

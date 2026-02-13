@@ -1,17 +1,31 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
 import { getLogger } from '@lazyapps/logger';
+import { trace, context } from '@opentelemetry/api';
+
+const tracer = trace.getTracer('@lazyapps/bootstrap');
 
 const log = getLogger('BS', 'INIT');
 
 let signalHandlersInstalled = false;
+
 const handleSignals = (server) => {
   const handler = (signal) => {
     log.info(`Signal ${signal} received`);
-    server.close(() => {
-      log.info('Server closed, exiting process');
-      process.exit(0);
-    });
+    // Force exit after 5s in case graceful shutdown hangs
+    setTimeout(() => {
+      log.warn('Forced exit after timeout');
+      process.exit(1);
+    }, 5000).unref();
+    import('@lazyapps/observability')
+      .then(({ shutdown }) => shutdown())
+      .catch(() => {})
+      .then(() => {
+        server.close(() => {
+          log.info('Server closed, exiting process');
+          process.exit(0);
+        });
+      });
   };
 
   if (!signalHandlersInstalled) {
@@ -29,6 +43,15 @@ export function start({
   changeNotifier,
   svelte,
 }) {
+  const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
+    attributes: {
+      'bootstrap.commands': !!commands,
+      'bootstrap.readModels': !!readModels,
+      'bootstrap.changeNotifier': !!changeNotifier,
+      'bootstrap.svelte': !!svelte,
+    },
+  });
+
   if (commands) {
     log.debug('Starting command processor');
     startCommandProcessor(correlationConfig, commands).then((server) => {
@@ -53,4 +76,6 @@ export function start({
       startSvelteKit(correlationConfig, svelte);
     });
   }
+
+  startSpan.end();
 }

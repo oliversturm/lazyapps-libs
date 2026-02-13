@@ -39,6 +39,7 @@
     "@lazyapps/eventbus-mqemitter-redis": "workspace:^",
     "@lazyapps/eventstore-mongodb": "workspace:^",
     "@lazyapps/logger": "workspace:^",
+    "@opentelemetry/api": "^1.9.0",
     "nanoid": "^5.0.7"
   },
   "type": "module"

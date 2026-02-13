@@ -1,5 +1,21 @@
-import Queue from 'promise-queue';
 import { getLogger } from '@lazyapps/logger';
+import { metrics } from '@opentelemetry/api';
+import { createContextQueue } from './contextQueue.js';
+import { withSpan } from './tracing.js';
+
+const meter = metrics.getMeter('@lazyapps/readmodels');
+
+const projectionCounter = meter.createCounter('lazyapps.projections.total', {
+  description: 'Total projections executed',
+});
+
+const projectionDuration = meter.createHistogram(
+  'lazyapps.projections.duration_ms',
+  {
+    description: 'Projection execution time in milliseconds',
+    unit: 'ms',
+  },
+);
 
 const collectProjections = (readModels, event) =>
   Promise.resolve(
@@ -67,26 +83,46 @@ const handleProjections =
 const projectEvent =
   (context, eventQueue, getProjectionContext) => (correlationId) => {
     const log = getLogger(`RM/ProjEv`, correlationId);
-    return (event, inReplay) =>
-      eventQueue.add(() =>
-        collectProjections(context.readModels, event)
-          .then(logProjections(log, inReplay))
-          .then(updateInternalReadModelTimestamps(event, context.readModels))
-          .then(
-            handleProjections(
-              correlationId,
-              log,
-              context,
-              getProjectionContext,
-              inReplay,
-              event,
-            ),
-          ),
+    return (event, inReplay) => {
+      const startTime = Date.now();
+      return eventQueue.add(() =>
+        withSpan(
+          'lazyapps.readmodel.projectEvent',
+          {
+            'event.type': event.type,
+            'readmodel.names': Object.keys(context.readModels).join(','),
+          },
+          () =>
+            collectProjections(context.readModels, event)
+              .then(logProjections(log, inReplay))
+              .then(
+                updateInternalReadModelTimestamps(event, context.readModels),
+              )
+              .then(
+                handleProjections(
+                  correlationId,
+                  log,
+                  context,
+                  getProjectionContext,
+                  inReplay,
+                  event,
+                ),
+              )
+              .then((result) => {
+                const duration = Date.now() - startTime;
+                projectionCounter.add(1, { 'event.type': event.type });
+                projectionDuration.record(duration, {
+                  'event.type': event.type,
+                });
+                return result;
+              }),
+        ),
       );
+    };
   };
 
 export const createProjectionHandler = (context) => {
-  const eventQueue = new Queue(1, Infinity);
+  const eventQueue = createContextQueue(1, Infinity);
   const getProjectionContext = (correlationId) => (rmName) => (inReplay) => ({
     storage: context.storage.perRequest(correlationId),
     commands: context.commands(correlationId),

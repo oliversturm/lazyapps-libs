@@ -1,5 +1,19 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
+const { mockSpan, mockStartSpan, mockGetTracer } = vi.hoisted(() => {
+  const mockSpan = { end: vi.fn() };
+  const mockStartSpan = vi.fn(() => mockSpan);
+  const mockGetTracer = vi.fn(() => ({ startSpan: mockStartSpan }));
+  return { mockSpan, mockStartSpan, mockGetTracer };
+});
+
+vi.mock('@opentelemetry/api', () => ({
+  trace: {
+    getTracer: mockGetTracer,
+  },
+  context: { active: vi.fn() },
+}));
+
 vi.mock('@lazyapps/logger', () => {
   const getLogger = vi.fn().mockReturnValue({
     debug: vi.fn(),
@@ -94,5 +108,63 @@ describe('start', () => {
     expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
     expect(mockStartReadModels).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledOnce();
+  });
+});
+
+describe('observability integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('creates bootstrap.start span on start', () => {
+    start({ correlation: { serviceId: 'TEST' } });
+    expect(mockStartSpan).toHaveBeenCalledWith(
+      'lazyapps.bootstrap.start',
+      expect.any(Object),
+    );
+  });
+
+  test('ends the start span', () => {
+    start({ correlation: { serviceId: 'TEST' } });
+    expect(mockSpan.end).toHaveBeenCalledOnce();
+  });
+
+  test('span attributes reflect configured components', () => {
+    const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
+    start({
+      correlation: { serviceId: 'TEST' },
+      commands: { receiver: vi.fn() },
+      readModels: { listener: vi.fn() },
+      changeNotifier: { listener },
+    });
+    const spanArgs = mockStartSpan.mock.calls[0][1];
+    expect(spanArgs.attributes).toEqual({
+      'bootstrap.commands': true,
+      'bootstrap.readModels': true,
+      'bootstrap.changeNotifier': true,
+      'bootstrap.svelte': false,
+    });
+  });
+
+  test('span attributes are all false when nothing configured', () => {
+    start({ correlation: { serviceId: 'TEST' } });
+    const spanArgs = mockStartSpan.mock.calls[0][1];
+    expect(spanArgs.attributes).toEqual({
+      'bootstrap.commands': false,
+      'bootstrap.readModels': false,
+      'bootstrap.changeNotifier': false,
+      'bootstrap.svelte': false,
+    });
+  });
+
+  test('span is created and ended even when only svelte is configured', () => {
+    start({
+      correlation: { serviceId: 'TEST' },
+      svelte: { port: 5173 },
+    });
+    expect(mockStartSpan).toHaveBeenCalledOnce();
+    expect(mockSpan.end).toHaveBeenCalledOnce();
+    const spanArgs = mockStartSpan.mock.calls[0][1];
+    expect(spanArgs.attributes['bootstrap.svelte']).toBe(true);
   });
 });
