@@ -43,12 +43,12 @@ export const initialize = (userConfig) => {
   const resource = createResource(config);
   const exporters = createExporters(config);
 
-  const sdk = new NodeSDK({
-    resource,
-    traceExporter: exporters.trace,
-    metricReader: exporters.metrics,
-    instrumentations: config.instrumentations,
-  });
+  const sdkConfig = { instrumentations: config.instrumentations };
+  if (resource) sdkConfig.resource = resource;
+  if (exporters.trace) sdkConfig.traceExporter = exporters.trace;
+  if (exporters.metrics) sdkConfig.metricReader = exporters.metrics;
+
+  const sdk = new NodeSDK(sdkConfig);
 
   sdk.start();
   sdkInstance = sdk;
@@ -56,10 +56,11 @@ export const initialize = (userConfig) => {
   // NodeSDK does not register a global LoggerProvider, so logs.getLogger()
   // returns a NOOP logger by default. We create and register one explicitly.
   if (exporters.logs) {
-    const loggerProvider = new LoggerProvider({
-      resource,
+    const loggerConfig = {
       processors: [new BatchLogRecordProcessor(exporters.logs)],
-    });
+    };
+    if (resource) loggerConfig.resource = resource;
+    const loggerProvider = new LoggerProvider(loggerConfig);
     logs.setGlobalLoggerProvider(loggerProvider);
     loggerProviderInstance = loggerProvider;
   }

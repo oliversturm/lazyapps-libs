@@ -16,7 +16,7 @@ vi.mock('@opentelemetry/semantic-conventions', () => ({
 const { createResource } = await import('../resource.js');
 
 describe('createResource', () => {
-  test('creates resource with required service name', () => {
+  test('creates resource with service name', () => {
     const result = createResource({ serviceName: 'test-service' });
     expect(mockResourceFromAttributes).toHaveBeenCalledWith({
       'service.name': 'test-service',
@@ -46,14 +46,27 @@ describe('createResource', () => {
     });
   });
 
+  test('includes optional serviceNamespace', () => {
+    createResource({
+      serviceName: 'test-service',
+      serviceNamespace: 'my-namespace',
+    });
+    expect(mockResourceFromAttributes).toHaveBeenCalledWith({
+      'service.name': 'test-service',
+      'service.namespace': 'my-namespace',
+    });
+  });
+
   test('includes all optional fields when provided', () => {
     createResource({
       serviceName: 'test-service',
+      serviceNamespace: 'my-namespace',
       serviceVersion: '2.0.0',
       environment: 'production',
     });
     expect(mockResourceFromAttributes).toHaveBeenCalledWith({
       'service.name': 'test-service',
+      'service.namespace': 'my-namespace',
       'service.version': '2.0.0',
       'deployment.environment.name': 'production',
     });
@@ -71,6 +84,12 @@ describe('createResource', () => {
     expect(callArgs).not.toHaveProperty('deployment.environment.name');
   });
 
+  test('omits serviceNamespace when not provided', () => {
+    createResource({ serviceName: 'test-service' });
+    const callArgs = mockResourceFromAttributes.mock.calls.at(-1)[0];
+    expect(callArgs).not.toHaveProperty('service.namespace');
+  });
+
   test('omits version when empty string', () => {
     createResource({ serviceName: 'test-service', serviceVersion: '' });
     const callArgs = mockResourceFromAttributes.mock.calls.at(-1)[0];
@@ -81,6 +100,12 @@ describe('createResource', () => {
     createResource({ serviceName: 'test-service', environment: '' });
     const callArgs = mockResourceFromAttributes.mock.calls.at(-1)[0];
     expect(callArgs).not.toHaveProperty('deployment.environment.name');
+  });
+
+  test('omits serviceNamespace when empty string', () => {
+    createResource({ serviceName: 'test-service', serviceNamespace: '' });
+    const callArgs = mockResourceFromAttributes.mock.calls.at(-1)[0];
+    expect(callArgs).not.toHaveProperty('service.namespace');
   });
 
   test('uses deployment.environment.name attribute key for environment', () => {
@@ -100,5 +125,21 @@ describe('createResource', () => {
     const result = createResource({ serviceName: 'test-service' });
     expect(result).toHaveProperty('attributes');
     expect(result.attributes['service.name']).toBe('test-service');
+  });
+
+  test('returns undefined when no attributes are set', () => {
+    const result = createResource({});
+    expect(result).toBeUndefined();
+    expect(mockResourceFromAttributes).not.toHaveBeenCalledWith({});
+  });
+
+  test('returns undefined when all fields are falsy', () => {
+    const result = createResource({
+      serviceName: undefined,
+      serviceNamespace: undefined,
+      serviceVersion: undefined,
+      environment: undefined,
+    });
+    expect(result).toBeUndefined();
   });
 });

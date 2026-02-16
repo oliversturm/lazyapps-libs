@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 const mockTraceExporter = vi.fn();
 const mockMetricExporter = vi.fn();
@@ -21,6 +21,39 @@ vi.mock('@opentelemetry/sdk-metrics', () => ({
 const { createExporters, __testing__ } = await import('../exporters.js');
 
 describe('createExporters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('returns all undefined when no endpoint configured', () => {
+    const config = {
+      traces: true,
+      metrics: true,
+      logs: true,
+      otlp: { endpoint: undefined },
+    };
+    const exporters = createExporters(config);
+    expect(exporters.trace).toBeUndefined();
+    expect(exporters.metrics).toBeUndefined();
+    expect(exporters.logs).toBeUndefined();
+    expect(mockTraceExporter).not.toHaveBeenCalled();
+    expect(mockMetricExporter).not.toHaveBeenCalled();
+    expect(mockLogExporter).not.toHaveBeenCalled();
+  });
+
+  test('returns all undefined when endpoint is empty string', () => {
+    const config = {
+      traces: true,
+      metrics: true,
+      logs: true,
+      otlp: { endpoint: '' },
+    };
+    const exporters = createExporters(config);
+    expect(exporters.trace).toBeUndefined();
+    expect(exporters.metrics).toBeUndefined();
+    expect(exporters.logs).toBeUndefined();
+  });
+
   test('creates all exporters when all signals enabled', () => {
     const config = {
       traces: true,
