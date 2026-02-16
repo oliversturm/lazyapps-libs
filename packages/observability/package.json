@@ -33,11 +33,11 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "devDependencies": {
-    "@lazyapps/logger": "workspace:*",
     "eslint": "^8.46.0",
     "vitest": "^4.0.18"
   },
   "dependencies": {
+    "@lazyapps/logger": "workspace:*",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/api-logs": "^0.211.0",
     "@opentelemetry/sdk-node": "^0.211.0",

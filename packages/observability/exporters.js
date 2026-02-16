@@ -9,6 +9,10 @@ const createOtlpConfig = (config) => ({
 });
 
 export const createExporters = (config) => {
+  if (!config.otlp.endpoint) {
+    return { trace: undefined, metrics: undefined, logs: undefined };
+  }
+
   const otlpConfig = createOtlpConfig(config);
 
   return {

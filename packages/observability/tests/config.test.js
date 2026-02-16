@@ -24,12 +24,13 @@ const { HttpInstrumentation } =
 describe('createConfig', () => {
   test('returns defaults when called with no arguments', () => {
     const config = createConfig();
-    expect(config.serviceName).toBe(defaults.serviceName);
+    expect(config.serviceName).toBe(undefined);
+    expect(config.serviceNamespace).toBe(undefined);
     expect(config.traces).toBe(true);
     expect(config.metrics).toBe(true);
     expect(config.logs).toBe(true);
-    expect(config.otlp.endpoint).toBe('http://localhost:4317');
-    expect(config.otlp.protocol).toBe('grpc');
+    expect(config.otlp.endpoint).toBe(undefined);
+    expect(config.otlp.protocol).toBe(undefined);
     expect(config.sampler.type).toBe('always_on');
     expect(config.sampler.ratio).toBe(1.0);
   });
@@ -37,11 +38,13 @@ describe('createConfig', () => {
   test('merges user config over defaults', () => {
     const config = createConfig({
       serviceName: 'my-service',
+      serviceNamespace: 'my-namespace',
       serviceVersion: '1.2.3',
       environment: 'production',
       traces: false,
     });
     expect(config.serviceName).toBe('my-service');
+    expect(config.serviceNamespace).toBe('my-namespace');
     expect(config.serviceVersion).toBe('1.2.3');
     expect(config.environment).toBe('production');
     expect(config.traces).toBe(false);
@@ -54,7 +57,7 @@ describe('createConfig', () => {
       otlp: { endpoint: 'http://otel:4317' },
     });
     expect(config.otlp.endpoint).toBe('http://otel:4317');
-    expect(config.otlp.protocol).toBe('grpc');
+    expect(config.otlp.protocol).toBe(undefined);
     expect(config.otlp.insecure).toBe(true);
   });
 
@@ -79,7 +82,7 @@ describe('createConfig', () => {
 
   test('preserves default serviceName when not overridden', () => {
     const config = createConfig({ traces: false });
-    expect(config.serviceName).toBe('unknown-service');
+    expect(config.serviceName).toBe(undefined);
   });
 
   test('allows disabling all signals', () => {
@@ -98,7 +101,7 @@ describe('createConfig', () => {
       otlp: { protocol: 'http/protobuf' },
     });
     expect(config.otlp.protocol).toBe('http/protobuf');
-    expect(config.otlp.endpoint).toBe('http://localhost:4317');
+    expect(config.otlp.endpoint).toBe(undefined);
     expect(config.otlp.insecure).toBe(true);
   });
 
@@ -141,8 +144,19 @@ describe('createConfig', () => {
 
   test('handles empty user config object', () => {
     const config = createConfig({});
-    expect(config.serviceName).toBe('unknown-service');
-    expect(config.otlp.endpoint).toBe('http://localhost:4317');
+    expect(config.serviceName).toBe(undefined);
+    expect(config.otlp.endpoint).toBe(undefined);
+  });
+
+  test('includes serviceNamespace in defaults', () => {
+    const config = createConfig();
+    expect(config).toHaveProperty('serviceNamespace');
+    expect(config.serviceNamespace).toBe(undefined);
+  });
+
+  test('merges serviceNamespace from user config', () => {
+    const config = createConfig({ serviceNamespace: 'my-ns' });
+    expect(config.serviceNamespace).toBe('my-ns');
   });
 });
 

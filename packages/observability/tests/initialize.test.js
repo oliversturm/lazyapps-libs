@@ -66,36 +66,69 @@ describe('initialize', () => {
   });
 
   test('creates and starts NodeSDK', () => {
-    initialize({ serviceName: 'test-service' });
+    initialize({
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    });
     expect(mockNodeSDK).toHaveBeenCalled();
     expect(mockStart).toHaveBeenCalled();
   });
 
-  test('passes resource to NodeSDK', () => {
-    initialize({ serviceName: 'test-service' });
+  test('passes resource to NodeSDK when serviceName provided', () => {
+    initialize({
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    });
     const sdkConfig = mockNodeSDK.mock.calls[0][0];
     expect(sdkConfig.resource.attributes['service.name']).toBe('test-service');
   });
 
+  test('does not pass resource to NodeSDK when no attributes set', () => {
+    initialize({ otlp: { endpoint: 'http://localhost:4317' } });
+    const sdkConfig = mockNodeSDK.mock.calls[0][0];
+    expect(sdkConfig.resource).toBeUndefined();
+  });
+
   test('passes instrumentations to NodeSDK', () => {
-    initialize({ serviceName: 'test-service' });
+    initialize({
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    });
     const sdkConfig = mockNodeSDK.mock.calls[0][0];
     expect(sdkConfig.instrumentations).toHaveLength(5);
   });
 
-  test('passes trace and metric exporters to NodeSDK', () => {
-    initialize({ serviceName: 'test-service' });
+  test('passes trace and metric exporters to NodeSDK when endpoint set', () => {
+    initialize({
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    });
     const sdkConfig = mockNodeSDK.mock.calls[0][0];
     expect(sdkConfig.traceExporter).toBeDefined();
     expect(sdkConfig.metricReader).toBeDefined();
-    expect(sdkConfig.logRecordExporter).toBeUndefined();
   });
 
-  test('registers global LoggerProvider when logs enabled', () => {
+  test('does not pass exporters to NodeSDK when no endpoint set', () => {
     initialize({ serviceName: 'test-service' });
+    const sdkConfig = mockNodeSDK.mock.calls[0][0];
+    expect(sdkConfig.traceExporter).toBeUndefined();
+    expect(sdkConfig.metricReader).toBeUndefined();
+  });
+
+  test('registers global LoggerProvider when logs enabled and endpoint set', () => {
+    initialize({
+      serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
+    });
     expect(mockLoggerProvider).toHaveBeenCalled();
     expect(mockBatchLogRecordProcessor).toHaveBeenCalled();
     expect(mockSetGlobalLoggerProvider).toHaveBeenCalled();
+  });
+
+  test('does not register LoggerProvider when no endpoint set', () => {
+    initialize({ serviceName: 'test-service' });
+    expect(mockLoggerProvider).not.toHaveBeenCalled();
+    expect(mockSetGlobalLoggerProvider).not.toHaveBeenCalled();
   });
 
   test('returns the SDK instance', () => {
@@ -104,17 +137,20 @@ describe('initialize', () => {
     expect(sdk.start).toBeDefined();
   });
 
-  test('uses default config when no service name provided', () => {
+  test('starts SDK without exporters when no endpoint configured', () => {
     initialize();
     const sdkConfig = mockNodeSDK.mock.calls[0][0];
-    expect(sdkConfig.resource.attributes['service.name']).toBe(
-      'unknown-service',
-    );
+    expect(sdkConfig.instrumentations).toHaveLength(5);
+    expect(sdkConfig.resource).toBeUndefined();
+    expect(sdkConfig.traceExporter).toBeUndefined();
+    expect(sdkConfig.metricReader).toBeUndefined();
+    expect(mockStart).toHaveBeenCalled();
   });
 
-  test('passes undefined exporters when signals disabled', () => {
+  test('does not pass exporters when signals disabled', () => {
     initialize({
       serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
       traces: false,
       metrics: false,
       logs: false,
@@ -127,6 +163,7 @@ describe('initialize', () => {
   test('does not register LoggerProvider when logs disabled', () => {
     initialize({
       serviceName: 'test-service',
+      otlp: { endpoint: 'http://localhost:4317' },
       logs: false,
     });
     expect(mockLoggerProvider).not.toHaveBeenCalled();

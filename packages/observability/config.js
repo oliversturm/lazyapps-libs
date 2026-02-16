@@ -5,12 +5,13 @@ import { AmqplibInstrumentation } from '@opentelemetry/instrumentation-amqplib';
 import { SocketIoInstrumentation } from '@opentelemetry/instrumentation-socket.io';
 
 const defaults = {
-  serviceName: 'unknown-service',
+  serviceName: undefined,
+  serviceNamespace: undefined,
   serviceVersion: undefined,
   environment: undefined,
   otlp: {
-    endpoint: 'http://localhost:4317',
-    protocol: 'grpc',
+    endpoint: undefined,
+    protocol: undefined,
     insecure: true,
   },
   traces: true,
