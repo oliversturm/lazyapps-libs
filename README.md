@@ -33,19 +33,22 @@ LazyApps includes built-in OpenTelemetry support for traces, metrics, and struct
 Observability is enabled via Node's `--import` flag so that instrumentation hooks are registered before any application modules load:
 
 ```bash
-node --import ./observability-init.js index.js
+node --import @lazyapps/observability/register.js index.js
 ```
 
-The init file configures the SDK:
+Configuration is driven by standard OTEL environment variables — no init file needed:
 
-```javascript
-import { initialize } from '@lazyapps/observability';
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `OTEL_SERVICE_NAME` | `my-service` | Identifies the service in traces and logs |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP collector endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Transport protocol (`grpc` or `http/protobuf`) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer tok` | Auth headers for the collector |
+| `OTEL_RESOURCE_ATTRIBUTES` | `service.namespace=myapp,deployment.environment.name=production` | Additional resource attributes |
 
-initialize({
-  serviceName: 'my-service',
-  otlp: { endpoint: 'http://localhost:4317' },
-});
-```
+When no endpoint is set, the SDK starts with instrumentation active but no exporters — useful for local development without a collector.
+
+For cases that need programmatic configuration (e.g. request filtering), you can still call `initialize()` directly from a custom init file:
 
 ### What gets instrumented
 
@@ -56,11 +59,12 @@ initialize({
 
 ### Filtering noisy requests
 
-In development, Vite's HMR traffic can flood traces. Pass `httpInstrumentation` to filter these out:
+In development, Vite's HMR traffic can flood traces. Use a custom init file that passes `httpInstrumentation` to filter these out:
 
 ```javascript
+import { initialize } from '@lazyapps/observability';
+
 initialize({
-  serviceName: 'my-service',
   httpInstrumentation: {
     ignoreIncomingRequestHook: (request) => {
       const url = request.url || '';
