@@ -55,14 +55,18 @@ describe('command-receiver integration', { timeout: 60000 }, () => {
     vi.clearAllMocks();
   });
 
-  test('factory returns publishEvent and publishReplayState', () => {
+  test('factory returns publishEvent, publishReplayState, publishReplayEvent, and publishSystemMessage', () => {
     const exchange = uniqueExchange();
     const factory = rabbitMq({ url: amqpUrl, exchange });
     return factory().then((result) => {
       expect(result).toHaveProperty('publishEvent');
       expect(result).toHaveProperty('publishReplayState');
+      expect(result).toHaveProperty('publishReplayEvent');
+      expect(result).toHaveProperty('publishSystemMessage');
       expect(typeof result.publishEvent).toBe('function');
       expect(typeof result.publishReplayState).toBe('function');
+      expect(typeof result.publishReplayEvent).toBe('function');
+      expect(typeof result.publishSystemMessage).toBe('function');
     });
   });
 

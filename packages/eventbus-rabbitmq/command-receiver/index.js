@@ -26,20 +26,46 @@ export const rabbitMq = (config) => () => {
         );
         return event;
       },
-      publishReplayState: (correlationId) => (state) => {
+      publishReplayState: (correlationId) => (state, readModel) => {
         const log = getLogger('CmdProc/EB/Rabbit', correlationId);
-        log.debug(`Publishing replay state ${state}`);
+        log.debug(
+          `Publishing replay state ${state} for ${readModel || 'global'}`,
+        );
         channel.publish(
           exchange,
           '__system',
           Buffer.from(
             JSON.stringify({
               correlationId,
-              event: { type: 'SET_REPLAY_STATE', state },
+              event: {
+                type: 'SET_REPLAY_STATE',
+                state,
+                ...(readModel && { readModel }),
+              },
             }),
           ),
         );
         return state;
+      },
+      publishReplayEvent: (correlationId) => (targetReadModel, event) => {
+        const log = getLogger('CmdProc/EB/Rabbit', correlationId);
+        log.debug(`Publishing replay event for ${targetReadModel}`);
+        channel.publish(
+          exchange,
+          '__replay',
+          Buffer.from(
+            JSON.stringify({ correlationId, targetReadModel, event }),
+          ),
+        );
+      },
+      publishSystemMessage: (correlationId) => (message) => {
+        const log = getLogger('CmdProc/EB/Rabbit', correlationId);
+        log.debug(`Publishing system message: ${JSON.stringify(message)}`);
+        channel.publish(
+          exchange,
+          '__system',
+          Buffer.from(JSON.stringify({ correlationId, event: message })),
+        );
       },
     };
   });

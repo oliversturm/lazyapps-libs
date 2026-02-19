@@ -97,5 +97,31 @@ export const mongodb =
         },
         close: () => dbContext.client.close(),
         replay: replay(dbContext),
+
+        countEvents: (fromTimestamp, toTimestamp) =>
+          dbContext.collection.countDocuments({
+            timestamp: {
+              $gte: fromTimestamp,
+              ...(toTimestamp && { $lte: toTimestamp }),
+            },
+          }),
+
+        getLatestEventTimestamp: () =>
+          dbContext.collection
+            .find({})
+            .sort({ timestamp: -1 })
+            .limit(1)
+            .toArray()
+            .then((docs) => docs[0]?.timestamp || null),
+
+        streamEvents: (fromTimestamp, toTimestamp) =>
+          dbContext.collection
+            .find({
+              timestamp: {
+                $gte: fromTimestamp,
+                ...(toTimestamp && { $lte: toTimestamp }),
+              },
+            })
+            .sort({ timestamp: 1 }),
       }));
   };

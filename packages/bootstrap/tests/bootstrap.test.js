@@ -23,12 +23,17 @@ vi.mock('@lazyapps/logger', () => {
   return { getLogger };
 });
 
-const { mockStartCommandProcessor, mockStartReadModels, mockStartSvelteKit } =
-  vi.hoisted(() => ({
-    mockStartCommandProcessor: vi.fn().mockResolvedValue({ close: vi.fn() }),
-    mockStartReadModels: vi.fn().mockResolvedValue({ close: vi.fn() }),
-    mockStartSvelteKit: vi.fn(),
-  }));
+const {
+  mockStartCommandProcessor,
+  mockStartReadModels,
+  mockStartSvelteKit,
+  mockStartAdmin,
+} = vi.hoisted(() => ({
+  mockStartCommandProcessor: vi.fn().mockResolvedValue({ close: vi.fn() }),
+  mockStartReadModels: vi.fn().mockResolvedValue({ close: vi.fn() }),
+  mockStartSvelteKit: vi.fn(),
+  mockStartAdmin: vi.fn().mockResolvedValue({ close: vi.fn() }),
+}));
 
 vi.mock('@lazyapps/command-processor', () => ({
   startCommandProcessor: mockStartCommandProcessor,
@@ -40,6 +45,10 @@ vi.mock('@lazyapps/readmodels', () => ({
 
 vi.mock('../svelte.js', () => ({
   startSvelteKit: mockStartSvelteKit,
+}));
+
+vi.mock('../admin.js', () => ({
+  startAdmin: mockStartAdmin,
 }));
 
 const { start } = await import('../index.js');
@@ -83,6 +92,15 @@ describe('start', () => {
     });
   });
 
+  test('starts admin when admin config provided', async () => {
+    const admin = { port: 3005, readModels: {} };
+    const correlation = { serviceId: 'TEST' };
+    start({ correlation, admin });
+    await vi.waitFor(() => {
+      expect(mockStartAdmin).toHaveBeenCalledWith(correlation, admin);
+    });
+  });
+
   test('does not start command processor when not configured', () => {
     start({ correlation: { serviceId: 'TEST' } });
     expect(mockStartCommandProcessor).not.toHaveBeenCalled();
@@ -93,6 +111,17 @@ describe('start', () => {
     expect(mockStartReadModels).not.toHaveBeenCalled();
   });
 
+  test('does not start admin when not configured', async () => {
+    start({ correlation: { serviceId: 'TEST' } });
+    // Give dynamic import time to resolve if it was going to
+    await vi.waitFor(
+      () => {
+        expect(mockStartAdmin).not.toHaveBeenCalled();
+      },
+      { timeout: 50 },
+    );
+  });
+
   test('starts all subsystems when fully configured', async () => {
     const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
     start({
@@ -101,9 +130,11 @@ describe('start', () => {
       readModels: { listener: vi.fn() },
       changeNotifier: { listener },
       svelte: { port: 5173 },
+      admin: { port: 3005, readModels: {} },
     });
     await vi.waitFor(() => {
       expect(mockStartSvelteKit).toHaveBeenCalledOnce();
+      expect(mockStartAdmin).toHaveBeenCalledOnce();
     });
     expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
     expect(mockStartReadModels).toHaveBeenCalledOnce();
@@ -143,6 +174,7 @@ describe('observability integration', () => {
       'bootstrap.readModels': true,
       'bootstrap.changeNotifier': true,
       'bootstrap.svelte': false,
+      'bootstrap.admin': false,
     });
   });
 
@@ -154,6 +186,7 @@ describe('observability integration', () => {
       'bootstrap.readModels': false,
       'bootstrap.changeNotifier': false,
       'bootstrap.svelte': false,
+      'bootstrap.admin': false,
     });
   });
 
@@ -166,5 +199,14 @@ describe('observability integration', () => {
     expect(mockSpan.end).toHaveBeenCalledOnce();
     const spanArgs = mockStartSpan.mock.calls[0][1];
     expect(spanArgs.attributes['bootstrap.svelte']).toBe(true);
+  });
+
+  test('span attributes include admin when admin is configured', () => {
+    start({
+      correlation: { serviceId: 'TEST' },
+      admin: { port: 3005, readModels: {} },
+    });
+    const spanArgs = mockStartSpan.mock.calls[0][1];
+    expect(spanArgs.attributes['bootstrap.admin']).toBe(true);
   });
 });

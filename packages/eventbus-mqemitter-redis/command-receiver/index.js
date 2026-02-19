@@ -52,17 +52,39 @@ export const mqEmitterRedis =
           mq.emit({ topic: 'events', payload: { correlationId, event } });
           return event;
         },
-        publishReplayState: (correlationId) => (state) => {
+        publishReplayState: (correlationId) => (state, readModel) => {
           const log = getLogger('CP/EB/Redis', correlationId);
-          log.debug(`Publishing replay state ${state}`);
+          log.debug(
+            `Publishing replay state ${state} for ${readModel || 'global'}`,
+          );
           mq.emit({
             topic: '__system',
             payload: {
               correlationId,
-              event: { type: 'SET_REPLAY_STATE', state },
+              event: {
+                type: 'SET_REPLAY_STATE',
+                state,
+                ...(readModel && { readModel }),
+              },
             },
           });
           return state;
+        },
+        publishReplayEvent: (correlationId) => (targetReadModel, event) => {
+          const log = getLogger('CP/EB/Redis', correlationId);
+          log.debug(`Publishing replay event for ${targetReadModel}`);
+          mq.emit({
+            topic: '__replay',
+            payload: { correlationId, targetReadModel, event },
+          });
+        },
+        publishSystemMessage: (correlationId) => (message) => {
+          const log = getLogger('CP/EB/Redis', correlationId);
+          log.debug(`Publishing system message: ${JSON.stringify(message)}`);
+          mq.emit({
+            topic: '__system',
+            payload: { correlationId, event: message },
+          });
         },
       }));
   };

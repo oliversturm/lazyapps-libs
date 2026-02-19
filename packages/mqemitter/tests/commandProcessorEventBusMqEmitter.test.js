@@ -39,13 +39,17 @@ describe('commandProcessorEventBusMqEmitter', () => {
     vi.clearAllMocks();
   });
 
-  test('factory returns publishEvent and publishReplayState', () => {
+  test('factory returns publishEvent, publishReplayState, publishReplayEvent, and publishSystemMessage', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         expect(bus).toHaveProperty('publishEvent');
         expect(bus).toHaveProperty('publishReplayState');
+        expect(bus).toHaveProperty('publishReplayEvent');
+        expect(bus).toHaveProperty('publishSystemMessage');
         expect(typeof bus.publishEvent).toBe('function');
         expect(typeof bus.publishReplayState).toBe('function');
+        expect(typeof bus.publishReplayEvent).toBe('function');
+        expect(typeof bus.publishSystemMessage).toBe('function');
       },
     );
   });
@@ -76,7 +80,7 @@ describe('commandProcessorEventBusMqEmitter', () => {
     );
   });
 
-  test('publishReplayState emits to __system topic', () => {
+  test('publishReplayState emits to __system topic with correct format', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         const result = bus.publishReplayState('corr-1')(true);
@@ -84,9 +88,32 @@ describe('commandProcessorEventBusMqEmitter', () => {
         expect(mockEmitter.emit).toHaveBeenCalledWith({
           topic: '__system',
           payload: {
-            type: 'SET_REPLAY_STATE',
-            state: true,
             correlationId: 'corr-1',
+            event: {
+              type: 'SET_REPLAY_STATE',
+              state: true,
+            },
+          },
+        });
+        expect(result).toBe(true);
+      },
+    );
+  });
+
+  test('publishReplayState with readModel includes readModel in event', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const result = bus.publishReplayState('corr-1')(true, 'items');
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__system',
+          payload: {
+            correlationId: 'corr-1',
+            event: {
+              type: 'SET_REPLAY_STATE',
+              state: true,
+              readModel: 'items',
+            },
           },
         });
         expect(result).toBe(true);
@@ -98,6 +125,41 @@ describe('commandProcessorEventBusMqEmitter', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         expect(bus.publishReplayState('corr-1')(false)).toBe(false);
+      },
+    );
+  });
+
+  test('publishReplayEvent emits on __replay topic with correct payload', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const event = { type: 'ITEM_CREATED', timestamp: 12345 };
+        bus.publishReplayEvent('corr-1')('items', event);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__replay',
+          payload: {
+            correlationId: 'corr-1',
+            targetReadModel: 'items',
+            event,
+          },
+        });
+      },
+    );
+  });
+
+  test('publishSystemMessage emits on __system topic with correct payload', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const message = { type: 'REPLAY_EVENTS_DONE', readModel: 'items' };
+        bus.publishSystemMessage('corr-1')(message);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__system',
+          payload: {
+            correlationId: 'corr-1',
+            event: message,
+          },
+        });
       },
     );
   });

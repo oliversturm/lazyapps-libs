@@ -205,6 +205,141 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
         }));
   });
 
+  describe('countEvents', () => {
+    let store;
+
+    beforeEach(async () => {
+      const client = await MongoClient.connect(connectionString);
+      await client.db('events').collection('events').deleteMany({});
+      await client.close();
+      store = await mongodb({ url: connectionString })();
+    }, 30000);
+
+    afterEach(async () => {
+      if (store) await store.close();
+    });
+
+    test('returns correct count for a timestamp range', () =>
+      store
+        .addEvent('corr-c1')({ type: 'A', timestamp: 100 })
+        .then(() => store.addEvent('corr-c1')({ type: 'B', timestamp: 200 }))
+        .then(() => store.addEvent('corr-c1')({ type: 'C', timestamp: 300 }))
+        .then(() => store.countEvents(100, 200))
+        .then((count) => {
+          expect(count).toBe(2);
+        }));
+
+    test('with no toTimestamp counts from fromTimestamp to end', () =>
+      store
+        .addEvent('corr-c2')({ type: 'A', timestamp: 100 })
+        .then(() => store.addEvent('corr-c2')({ type: 'B', timestamp: 200 }))
+        .then(() => store.addEvent('corr-c2')({ type: 'C', timestamp: 300 }))
+        .then(() => store.countEvents(150))
+        .then((count) => {
+          expect(count).toBe(2);
+        }));
+
+    test('returns 0 when no events in range', () =>
+      store
+        .addEvent('corr-c3')({ type: 'A', timestamp: 100 })
+        .then(() => store.countEvents(200, 300))
+        .then((count) => {
+          expect(count).toBe(0);
+        }));
+  });
+
+  describe('getLatestEventTimestamp', () => {
+    let store;
+
+    beforeEach(async () => {
+      const client = await MongoClient.connect(connectionString);
+      await client.db('events').collection('events').deleteMany({});
+      await client.close();
+      store = await mongodb({ url: connectionString })();
+    }, 30000);
+
+    afterEach(async () => {
+      if (store) await store.close();
+    });
+
+    test('returns the most recent timestamp', () =>
+      store
+        .addEvent('corr-l1')({ type: 'A', timestamp: 100 })
+        .then(() => store.addEvent('corr-l1')({ type: 'B', timestamp: 300 }))
+        .then(() => store.addEvent('corr-l1')({ type: 'C', timestamp: 200 }))
+        .then(() => store.getLatestEventTimestamp())
+        .then((ts) => {
+          expect(ts).toBe(300);
+        }));
+
+    test('returns null for empty collection', () =>
+      store.getLatestEventTimestamp().then((ts) => {
+        expect(ts).toBeNull();
+      }));
+  });
+
+  describe('streamEvents', () => {
+    let store;
+
+    beforeEach(async () => {
+      const client = await MongoClient.connect(connectionString);
+      await client.db('events').collection('events').deleteMany({});
+      await client.close();
+      store = await mongodb({ url: connectionString })();
+    }, 30000);
+
+    afterEach(async () => {
+      if (store) await store.close();
+    });
+
+    test('returns events in ascending timestamp order', () =>
+      store
+        .addEvent('corr-s1')({ type: 'A', timestamp: 300 })
+        .then(() => store.addEvent('corr-s1')({ type: 'B', timestamp: 100 }))
+        .then(() => store.addEvent('corr-s1')({ type: 'C', timestamp: 200 }))
+        .then(() => store.streamEvents(0).toArray())
+        .then((events) => {
+          expect(events).toHaveLength(3);
+          expect(events[0].timestamp).toBe(100);
+          expect(events[1].timestamp).toBe(200);
+          expect(events[2].timestamp).toBe(300);
+        }));
+
+    test('cursor can be iterated with .next()', () =>
+      store
+        .addEvent('corr-s2')({ type: 'A', timestamp: 100 })
+        .then(() => store.addEvent('corr-s2')({ type: 'B', timestamp: 200 }))
+        .then(() => {
+          const cursor = store.streamEvents(0);
+          return cursor
+            .next()
+            .then((first) => {
+              expect(first.type).toBe('A');
+              return cursor.next();
+            })
+            .then((second) => {
+              expect(second.type).toBe('B');
+              return cursor.next();
+            })
+            .then((done) => {
+              expect(done).toBeNull();
+            });
+        }));
+
+    test('with range returns only events in range', () =>
+      store
+        .addEvent('corr-s3')({ type: 'A', timestamp: 100 })
+        .then(() => store.addEvent('corr-s3')({ type: 'B', timestamp: 200 }))
+        .then(() => store.addEvent('corr-s3')({ type: 'C', timestamp: 300 }))
+        .then(() => store.addEvent('corr-s3')({ type: 'D', timestamp: 400 }))
+        .then(() => store.streamEvents(200, 300).toArray())
+        .then((events) => {
+          expect(events).toHaveLength(2);
+          expect(events[0].type).toBe('B');
+          expect(events[1].type).toBe('C');
+        }));
+  });
+
   describe('close', () => {
     test('works without error', () =>
       mongodb({ url: connectionString })().then((store) =>

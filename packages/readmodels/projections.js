@@ -17,10 +17,11 @@ const projectionDuration = meter.createHistogram(
   },
 );
 
-const collectProjections = (readModels, event) =>
+const collectProjections = (readModels, event, isSkipped) =>
   Promise.resolve(
     Object.keys(readModels)
       .map((rmName) => {
+        if (isSkipped && isSkipped(rmName)) return null;
         const rm = readModels[rmName];
         const projection = rm.projections && rm.projections[event.type];
         if (projection) {
@@ -81,7 +82,8 @@ const handleProjections =
     );
 
 const projectEvent =
-  (context, eventQueue, getProjectionContext) => (correlationId) => {
+  (context, eventQueue, getProjectionContext, isReadModelReplaying) =>
+  (correlationId) => {
     const log = getLogger(`RM/ProjEv`, correlationId);
     return (event, inReplay) => {
       const startTime = Date.now();
@@ -93,7 +95,7 @@ const projectEvent =
             'readmodel.names': Object.keys(context.readModels).join(','),
           },
           () =>
-            collectProjections(context.readModels, event)
+            collectProjections(context.readModels, event, isReadModelReplaying)
               .then(logProjections(log, inReplay))
               .then(
                 updateInternalReadModelTimestamps(event, context.readModels),
@@ -123,10 +125,23 @@ const projectEvent =
 
 export const createProjectionHandler = (context) => {
   const eventQueue = createContextQueue(1, Infinity);
+  const readModelReplayState = {};
+
+  const isReadModelReplaying = (rmName) =>
+    readModelReplayState[rmName] === true;
+
   const getProjectionContext = (correlationId) => (rmName) => (inReplay) => ({
     storage: context.storage.perRequest(correlationId),
-    commands: context.commands(correlationId),
-    changeNotification: context.changeNotification(correlationId),
+    commands: inReplay
+      ? { execute: () => () => Promise.resolve() }
+      : context.commands(correlationId),
+    changeNotification: inReplay
+      ? {
+          sendChangeNotification: () => Promise.resolve(),
+          createChangeInfo:
+            context.changeNotification(correlationId).createChangeInfo,
+        }
+      : context.changeNotification(correlationId),
     log: getLogger(`RM/${rmName}`, correlationId),
     sideEffects: context.sideEffects.getSideEffectsHandler(
       correlationId,
@@ -134,8 +149,52 @@ export const createProjectionHandler = (context) => {
     ),
   });
 
+  const projectEventForReadModel = (correlationId, targetRmName) => {
+    const log = getLogger('RM/Replay', correlationId);
+    return (event) => {
+      const rm = context.readModels[targetRmName];
+      if (!rm) return Promise.resolve();
+      const projection = rm.projections && rm.projections[event.type];
+      if (!projection) return Promise.resolve();
+      return eventQueue.add(() =>
+        projection(
+          getProjectionContext(correlationId)(targetRmName)(true),
+          event,
+        )
+          .then(() =>
+            updateTimestamp(
+              correlationId,
+              context.storage,
+              targetRmName,
+              event.timestamp,
+            ),
+          )
+          .catch((err) => {
+            log.error(
+              `Replay projection error for ${targetRmName}/${event.type}: ${err}`,
+            );
+            throw err;
+          }),
+      );
+    };
+  };
+
   return {
-    projectEvent: projectEvent(context, eventQueue, getProjectionContext),
+    projectEvent: projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+      isReadModelReplaying,
+    ),
+    projectEventForReadModel,
+    setReadModelReplayState: (rmName, state) => {
+      readModelReplayState[rmName] = state;
+    },
+    clearReadModelReplayState: (rmName) => {
+      delete readModelReplayState[rmName];
+    },
+    isReadModelReplaying,
+    getReadModelReplayStates: () => ({ ...readModelReplayState }),
   };
 };
 
@@ -146,4 +205,5 @@ export const testing = {
   updateTimestamp,
   handleProjections,
   projectEvent,
+  createProjectionHandler,
 };

@@ -122,5 +122,40 @@ export const mongodb =
                 }),
             ),
           ),
+
+        getCollectionNames: () =>
+          dbContext.db
+            .listCollections()
+            .toArray()
+            .then((cols) =>
+              cols
+                .map((c) => c.name)
+                .filter(
+                  (n) =>
+                    n !== 'readmodel.state' &&
+                    !n.startsWith('admin.') &&
+                    !n.startsWith('backup_'),
+                ),
+            ),
+
+        dropCollection: (correlationId, collectionName) => {
+          const log = getLogger('RM/Mongo', correlationId);
+          log.debug(`Dropping collection ${collectionName}`);
+          return dbContext.db
+            .collection(collectionName)
+            .drop()
+            .catch((err) => {
+              if (err.codeName !== 'NamespaceNotFound') throw err;
+            });
+        },
+
+        copyCollection: (correlationId, fromName, toName) => {
+          const log = getLogger('RM/Mongo', correlationId);
+          log.debug(`Copying collection ${fromName} to ${toName}`);
+          return dbContext.db
+            .collection(fromName)
+            .aggregate([{ $match: {} }, { $out: toName }])
+            .toArray();
+        },
       }));
   };

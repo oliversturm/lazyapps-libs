@@ -7,7 +7,20 @@ export const rabbitMq = (config) => (context) => {
   const handleSysMessage = (msg) => {
     switch (msg.type) {
       case 'SET_REPLAY_STATE':
-        inReplay = msg.state;
+        if (msg.readModel) {
+          context.projectionHandler.setReadModelReplayState(
+            msg.readModel,
+            msg.state,
+          );
+        } else {
+          inReplay = msg.state;
+        }
+        break;
+      case 'REPLAY_EVENTS_DONE':
+        context.replayHandler.handleReplayComplete(msg.readModel);
+        break;
+      case 'REPLAY_CANCELLED':
+        context.replayHandler.handleReplayCancelled(msg.readModel);
         break;
     }
   };
@@ -29,6 +42,7 @@ export const rabbitMq = (config) => (context) => {
         channel
           .bindQueue(q.queue, exchange, pattern)
           .then(() => channel.bindQueue(q.queue, exchange, '__system'))
+          .then(() => channel.bindQueue(q.queue, exchange, '__replay'))
           .then(() => {
             initLog.info(
               `Event bus connected to Rabbit MQ exchange "${exchange}" with pattern "${pattern}"`,
@@ -46,6 +60,20 @@ export const rabbitMq = (config) => (context) => {
                   );
 
                   handleSysMessage(event);
+                } else if (msg.fields.routingKey.startsWith('__replay')) {
+                  const { correlationId, targetReadModel, event } = JSON.parse(
+                    msg.content.toString(),
+                  );
+                  const log = getLogger('RM/EB/Rabbit/Replay', correlationId);
+                  if (context.readModels[targetReadModel]) {
+                    log.debug(
+                      `Replay event for ${targetReadModel}: ${event.type}`,
+                    );
+                    context.projectionHandler.projectEventForReadModel(
+                      correlationId,
+                      targetReadModel,
+                    )(event);
+                  }
                 } else {
                   // must assume that this message
                   // was caught due to the pattern

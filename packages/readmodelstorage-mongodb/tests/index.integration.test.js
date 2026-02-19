@@ -222,6 +222,120 @@ describe('readmodelstorage-mongodb', { timeout: 60000 }, () => {
       });
   });
 
+  describe('getCollectionNames', () => {
+    test('returns data collection names', () => {
+      const req = storage.perRequest('corr-gc1');
+      return req
+        .insertOne('items', { name: 'test' })
+        .then(() => req.insertOne('orders', { name: 'order1' }))
+        .then(() => storage.getCollectionNames())
+        .then((names) => {
+          expect(names).toContain('items');
+          expect(names).toContain('orders');
+        });
+    });
+
+    test('excludes readmodel.state', () => {
+      const req = storage.perRequest('corr-gc2');
+      return req
+        .insertOne('items', { name: 'test' })
+        .then(() =>
+          storage.updateLastProjectedEventTimestamps(
+            'corr-gc2',
+            ['rm1'],
+            new Date(),
+          ),
+        )
+        .then(() => storage.getCollectionNames())
+        .then((names) => {
+          expect(names).not.toContain('readmodel.state');
+        });
+    });
+
+    test('excludes collections starting with admin.', () => {
+      const db = cleanupClient.db('testdb');
+      return db
+        .collection('admin.settings')
+        .insertOne({ key: 'val' })
+        .then(() => storage.perRequest('corr-gc3').insertOne('items', { a: 1 }))
+        .then(() => storage.getCollectionNames())
+        .then((names) => {
+          expect(names).not.toContain('admin.settings');
+          expect(names).toContain('items');
+        });
+    });
+
+    test('excludes collections starting with backup_', () => {
+      const db = cleanupClient.db('testdb');
+      return db
+        .collection('backup_items')
+        .insertOne({ key: 'val' })
+        .then(() => storage.perRequest('corr-gc4').insertOne('items', { a: 1 }))
+        .then(() => storage.getCollectionNames())
+        .then((names) => {
+          expect(names).not.toContain('backup_items');
+          expect(names).toContain('items');
+        });
+    });
+  });
+
+  describe('dropCollection', () => {
+    test('drops an existing collection', () => {
+      const req = storage.perRequest('corr-dc1');
+      return req
+        .insertOne('todrop', { name: 'test' })
+        .then(() => storage.dropCollection('corr-dc1', 'todrop'))
+        .then(() => {
+          const db = cleanupClient.db('testdb');
+          return db.listCollections({ name: 'todrop' }).toArray();
+        })
+        .then((cols) => {
+          expect(cols).toHaveLength(0);
+        });
+    });
+
+    test('ignores NamespaceNotFound for non-existent collection', () =>
+      storage.dropCollection('corr-dc2', 'nonexistent').then((result) => {
+        expect(result).toBeUndefined();
+      }));
+  });
+
+  describe('copyCollection', () => {
+    test('creates an exact copy of a collection', () => {
+      const req = storage.perRequest('corr-cc1');
+      return req
+        .insertOne('source', { name: 'a', value: 1 })
+        .then(() => req.insertOne('source', { name: 'b', value: 2 }))
+        .then(() => storage.copyCollection('corr-cc1', 'source', 'dest'))
+        .then(() => {
+          const db = cleanupClient.db('testdb');
+          return db.listCollections({ name: 'dest' }).toArray();
+        })
+        .then((cols) => {
+          expect(cols).toHaveLength(1);
+        });
+    });
+
+    test('copy has the same documents as the original', () => {
+      const req = storage.perRequest('corr-cc2');
+      return req
+        .insertOne('source2', { name: 'x', value: 10 })
+        .then(() => req.insertOne('source2', { name: 'y', value: 20 }))
+        .then(() => storage.copyCollection('corr-cc2', 'source2', 'dest2'))
+        .then(() => {
+          const db = cleanupClient.db('testdb');
+          return db.collection('dest2').find({}).toArray();
+        })
+        .then((docs) => {
+          expect(docs).toHaveLength(2);
+          const names = docs.map((d) => d.name).sort();
+          expect(names).toEqual(['x', 'y']);
+          const values = docs.map((d) => d.value).sort();
+          expect(values).toEqual([10, 20]);
+        });
+    });
+  });
+
   test('close works without error', () =>
     mongodb({
       url: connectionString,

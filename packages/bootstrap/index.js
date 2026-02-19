@@ -42,6 +42,7 @@ export function start({
   readModels,
   changeNotifier,
   svelte,
+  admin,
 }) {
   const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
     attributes: {
@@ -49,6 +50,7 @@ export function start({
       'bootstrap.readModels': !!readModels,
       'bootstrap.changeNotifier': !!changeNotifier,
       'bootstrap.svelte': !!svelte,
+      'bootstrap.admin': !!admin,
     },
   });
 
@@ -74,6 +76,14 @@ export function start({
     log.debug('Starting SvelteKit frontend');
     import('./svelte.js').then(({ startSvelteKit }) => {
       startSvelteKit(correlationConfig, svelte);
+    });
+  }
+  if (admin) {
+    log.debug('Starting admin service');
+    import('./admin.js').then(({ startAdmin }) => {
+      startAdmin(correlationConfig, admin).then((server) => {
+        handleSignals(server);
+      });
     });
   }
 

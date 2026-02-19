@@ -9,7 +9,20 @@ export const readModelEventBusMqEmitter =
     const handleSysMessage = (msg) => {
       switch (msg.type) {
         case 'SET_REPLAY_STATE':
-          inReplay = msg.state;
+          if (msg.readModel) {
+            context.projectionHandler.setReadModelReplayState(
+              msg.readModel,
+              msg.state,
+            );
+          } else {
+            inReplay = msg.state;
+          }
+          break;
+        case 'REPLAY_EVENTS_DONE':
+          context.replayHandler.handleReplayComplete(msg.readModel);
+          break;
+        case 'REPLAY_CANCELLED':
+          context.replayHandler.handleReplayCancelled(msg.readModel);
           break;
       }
     };
@@ -35,6 +48,18 @@ export const readModelEventBusMqEmitter =
           log.debug(`Received '__system' event: ${JSON.stringify(event)}`);
 
           handleSysMessage(event);
+          cb();
+        });
+        mq.on('__replay', ({ payload }, cb) => {
+          const { correlationId, targetReadModel, event } = payload;
+          const log = getLogger('RM/EB/Replay', correlationId);
+          if (context.readModels[targetReadModel]) {
+            log.debug(`Replay event for ${targetReadModel}: ${event.type}`);
+            context.projectionHandler.projectEventForReadModel(
+              correlationId,
+              targetReadModel,
+            )(event);
+          }
           cb();
         });
       })

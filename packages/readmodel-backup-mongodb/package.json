@@ -1,0 +1,42 @@
+{
+  "name": "@lazyapps/readmodel-backup-mongodb",
+  "version": "0.1.0",
+  "description": "MongoDB-based backup and restore for LazyApps read models",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "read-models",
+    "backup",
+    "mongodb"
+  ],
+  "author": "Oliver Sturm",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/readmodel-backup-mongodb"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/readmodel-backup-mongodb#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.46.0",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@lazyapps/logger": "workspace:^"
+  },
+  "type": "module"
+}
