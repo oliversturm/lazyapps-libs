@@ -198,6 +198,16 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@opentelemetry/api@1.9.0)
 
+  packages/encryption:
+    dependencies:
+      '@lazyapps/logger':
+        specifier: workspace:*
+        version: link:../logger
+    devDependencies:
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@opentelemetry/api@1.9.0)
+
   packages/eventbus-mqemitter-redis:
     dependencies:
       '@lazyapps/logger':

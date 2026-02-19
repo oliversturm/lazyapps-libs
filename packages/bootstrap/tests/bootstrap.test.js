@@ -111,6 +111,131 @@ describe('start', () => {
   });
 });
 
+describe('encryption integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('wraps command eventStore and eventBus when encryption provided', async () => {
+    const wrappedEventStore = vi.fn();
+    const wrappedEventBus = vi.fn();
+    const enc = {
+      wrapEventStore: vi.fn().mockReturnValue(wrappedEventStore),
+      wrapEventBus: vi.fn().mockReturnValue(wrappedEventBus),
+      createProjectionDecryptor: vi.fn(),
+      wrapStorage: vi.fn(),
+    };
+    const commands = {
+      receiver: vi.fn(),
+      eventStore: vi.fn(),
+      eventBus: vi.fn(),
+    };
+
+    start({
+      correlation: { serviceId: 'TEST' },
+      encryption: Promise.resolve(enc),
+      commands,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
+    });
+
+    expect(enc.wrapEventStore).toHaveBeenCalledWith(commands.eventStore);
+    expect(enc.wrapEventBus).toHaveBeenCalledWith(commands.eventBus);
+    const calledWith = mockStartCommandProcessor.mock.calls[0][1];
+    expect(calledWith.eventStore).toBe(wrappedEventStore);
+    expect(calledWith.eventBus).toBe(wrappedEventBus);
+    expect(calledWith.receiver).toBe(commands.receiver);
+  });
+
+  test('wraps readModels storage and injects decryptor when encryption provided', async () => {
+    const mockDecryptor = vi.fn();
+    const wrappedStorage = vi.fn();
+    const enc = {
+      wrapEventStore: vi.fn(),
+      wrapEventBus: vi.fn(),
+      createProjectionDecryptor: vi.fn().mockReturnValue(mockDecryptor),
+      wrapStorage: vi.fn().mockReturnValue(wrappedStorage),
+    };
+    const readModels = {
+      listener: vi.fn(),
+      storage: vi.fn(),
+      role: 'customer-rm',
+    };
+
+    start({
+      correlation: { serviceId: 'TEST' },
+      encryption: Promise.resolve(enc),
+      readModels,
+    });
+
+    await vi.waitFor(() => {
+      expect(mockStartReadModels).toHaveBeenCalledOnce();
+    });
+
+    expect(enc.createProjectionDecryptor).toHaveBeenCalledWith('customer-rm');
+    expect(enc.wrapStorage).toHaveBeenCalledWith(readModels.storage);
+    const calledWith = mockStartReadModels.mock.calls[0][1];
+    expect(calledWith.encryptionDecryptor).toBe(mockDecryptor);
+    expect(calledWith.storage).toBe(wrappedStorage);
+  });
+
+  test('uses default role "service" when readModels.role is not set', async () => {
+    const enc = {
+      wrapEventStore: vi.fn(),
+      wrapEventBus: vi.fn(),
+      createProjectionDecryptor: vi.fn(),
+      wrapStorage: vi.fn(),
+    };
+
+    start({
+      correlation: { serviceId: 'TEST' },
+      encryption: Promise.resolve(enc),
+      readModels: { listener: vi.fn(), storage: vi.fn() },
+    });
+
+    await vi.waitFor(() => {
+      expect(mockStartReadModels).toHaveBeenCalledOnce();
+    });
+
+    expect(enc.createProjectionDecryptor).toHaveBeenCalledWith('service');
+  });
+
+  test('does not wrap when encryption is not provided', () => {
+    const commands = { receiver: vi.fn(), eventStore: vi.fn() };
+    start({
+      correlation: { serviceId: 'TEST' },
+      commands,
+    });
+    expect(mockStartCommandProcessor).toHaveBeenCalledWith(
+      { serviceId: 'TEST' },
+      commands,
+    );
+  });
+
+  test('accepts a non-promise encryption object', async () => {
+    const enc = {
+      wrapEventStore: vi.fn().mockReturnValue(vi.fn()),
+      wrapEventBus: vi.fn().mockReturnValue(vi.fn()),
+      createProjectionDecryptor: vi.fn(),
+      wrapStorage: vi.fn(),
+    };
+
+    start({
+      correlation: { serviceId: 'TEST' },
+      encryption: enc,
+      commands: { receiver: vi.fn(), eventStore: vi.fn(), eventBus: vi.fn() },
+    });
+
+    await vi.waitFor(() => {
+      expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
+    });
+
+    expect(enc.wrapEventStore).toHaveBeenCalledOnce();
+  });
+});
+
 describe('observability integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();

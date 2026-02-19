@@ -1,0 +1,15 @@
+{
+  "name": "@lazyapps/encryption",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "@lazyapps/logger": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
+  },
+  "scripts": {
+    "test": "vitest --run"
+  }
+}

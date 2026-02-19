@@ -60,5 +60,11 @@ export const inmemory = () => (aggregates) => {
     applyAggregateProjection,
     startReplay,
     endReplay,
+    forgetSubject: (subjectId) => {
+      for (const name of Object.keys(store)) {
+        delete store[name][subjectId];
+      }
+      return Promise.resolve();
+    },
   };
 };

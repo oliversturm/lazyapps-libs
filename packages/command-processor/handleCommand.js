@@ -75,6 +75,13 @@ export const handleCommand = (
             })
             .then(eventStore.addEvent(correlationId))
             .then(aggregateStore.applyAggregateProjection(correlationId))
+            .then((event) =>
+              event.type === 'SUBJECT_FORGOTTEN' && aggregateStore.forgetSubject
+                ? aggregateStore
+                    .forgetSubject(event.payload.subjectId)
+                    .then(() => event)
+                : event,
+            )
             .then(eventBus.publishEvent(correlationId)),
         )
         .then((result) => {

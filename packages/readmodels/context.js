@@ -5,10 +5,22 @@ import { createCommandHandler } from './commands.js';
 
 export const initializeContext = (
   correlationConfig,
-  { readModels, storage, eventBus, changeNotificationSender, commandSender },
+  {
+    readModels,
+    storage,
+    eventBus,
+    changeNotificationSender,
+    commandSender,
+    encryptionDecryptor,
+  },
 ) =>
   storage()
-    .then((storage) => ({ storage, readModels, correlationConfig }))
+    .then((storage) => ({
+      storage,
+      readModels,
+      correlationConfig,
+      encryptionDecryptor,
+    }))
     .then((context) =>
       context.storage
         .readLastProjectedEventTimestamps(readModels)

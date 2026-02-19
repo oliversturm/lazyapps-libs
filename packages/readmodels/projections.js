@@ -83,39 +83,48 @@ const handleProjections =
 const projectEvent =
   (context, eventQueue, getProjectionContext) => (correlationId) => {
     const log = getLogger(`RM/ProjEv`, correlationId);
+    const decrypt = context.encryptionDecryptor || ((e) => Promise.resolve(e));
+
     return (event, inReplay) => {
       const startTime = Date.now();
       return eventQueue.add(() =>
-        withSpan(
-          'lazyapps.readmodel.projectEvent',
-          {
-            'event.type': event.type,
-            'readmodel.names': Object.keys(context.readModels).join(','),
-          },
-          () =>
-            collectProjections(context.readModels, event)
-              .then(logProjections(log, inReplay))
-              .then(
-                updateInternalReadModelTimestamps(event, context.readModels),
-              )
-              .then(
-                handleProjections(
-                  correlationId,
-                  log,
-                  context,
-                  getProjectionContext,
-                  inReplay,
-                  event,
-                ),
-              )
-              .then((result) => {
-                const duration = Date.now() - startTime;
-                projectionCounter.add(1, { 'event.type': event.type });
-                projectionDuration.record(duration, {
-                  'event.type': event.type,
-                });
-                return result;
-              }),
+        decrypt(event).then((decryptedEvent) =>
+          withSpan(
+            'lazyapps.readmodel.projectEvent',
+            {
+              'event.type': decryptedEvent.type,
+              'readmodel.names': Object.keys(context.readModels).join(','),
+            },
+            () =>
+              collectProjections(context.readModels, decryptedEvent)
+                .then(logProjections(log, inReplay))
+                .then(
+                  updateInternalReadModelTimestamps(
+                    decryptedEvent,
+                    context.readModels,
+                  ),
+                )
+                .then(
+                  handleProjections(
+                    correlationId,
+                    log,
+                    context,
+                    getProjectionContext,
+                    inReplay,
+                    decryptedEvent,
+                  ),
+                )
+                .then((result) => {
+                  const duration = Date.now() - startTime;
+                  projectionCounter.add(1, {
+                    'event.type': decryptedEvent.type,
+                  });
+                  projectionDuration.record(duration, {
+                    'event.type': decryptedEvent.type,
+                  });
+                  return result;
+                }),
+          ),
         ),
       );
     };

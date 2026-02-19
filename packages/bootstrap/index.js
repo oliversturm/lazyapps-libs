@@ -36,22 +36,14 @@ const handleSignals = (server) => {
   }
 };
 
-export function start({
-  correlation: correlationConfig,
+const startSubsystems = (
+  correlationConfig,
   commands,
   readModels,
   changeNotifier,
   svelte,
-}) {
-  const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
-    attributes: {
-      'bootstrap.commands': !!commands,
-      'bootstrap.readModels': !!readModels,
-      'bootstrap.changeNotifier': !!changeNotifier,
-      'bootstrap.svelte': !!svelte,
-    },
-  });
-
+  startSpan,
+) => {
   if (commands) {
     log.debug('Starting command processor');
     startCommandProcessor(correlationConfig, commands).then((server) => {
@@ -78,4 +70,64 @@ export function start({
   }
 
   startSpan.end();
+};
+
+export function start({
+  correlation: correlationConfig,
+  encryption,
+  commands,
+  readModels,
+  changeNotifier,
+  svelte,
+}) {
+  const startSpan = tracer.startSpan('lazyapps.bootstrap.start', {
+    attributes: {
+      'bootstrap.commands': !!commands,
+      'bootstrap.readModels': !!readModels,
+      'bootstrap.changeNotifier': !!changeNotifier,
+      'bootstrap.svelte': !!svelte,
+    },
+  });
+
+  if (encryption) {
+    const encryptionReady = encryption.then
+      ? encryption
+      : Promise.resolve(encryption);
+
+    encryptionReady.then((enc) => {
+      const effectiveCommands = commands
+        ? {
+            ...commands,
+            eventStore: enc.wrapEventStore(commands.eventStore),
+            eventBus: enc.wrapEventBus(commands.eventBus),
+          }
+        : commands;
+      const effectiveReadModels = readModels
+        ? {
+            ...readModels,
+            encryptionDecryptor: enc.createProjectionDecryptor(
+              readModels.role || 'service',
+            ),
+            storage: enc.wrapStorage(readModels.storage),
+          }
+        : readModels;
+      startSubsystems(
+        correlationConfig,
+        effectiveCommands,
+        effectiveReadModels,
+        changeNotifier,
+        svelte,
+        startSpan,
+      );
+    });
+  } else {
+    startSubsystems(
+      correlationConfig,
+      commands,
+      readModels,
+      changeNotifier,
+      svelte,
+      startSpan,
+    );
+  }
 }

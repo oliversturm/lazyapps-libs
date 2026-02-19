@@ -9,6 +9,7 @@ const {
   updateInternalReadModelTimestamps,
   updateTimestamp,
   handleProjections,
+  projectEvent,
 } = testing;
 
 vi.mock('@lazyapps/logger', () => {
@@ -19,6 +20,19 @@ vi.mock('@lazyapps/logger', () => {
   });
   return { getLogger };
 });
+
+vi.mock('../tracing.js', () => ({
+  withSpan: (name, attrs, fn) => fn(),
+}));
+
+vi.mock('@opentelemetry/api', () => ({
+  metrics: {
+    getMeter: () => ({
+      createCounter: () => ({ add: vi.fn() }),
+      createHistogram: () => ({ record: vi.fn() }),
+    }),
+  },
+}));
 
 describe('collectProjections', () => {
   let log;
@@ -251,6 +265,82 @@ describe('handleProjections', () => {
       expect(f2).toHaveBeenCalledOnce();
 
       expect(log.error).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('projectEvent with encryptionDecryptor', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('calls decryptor before collecting projections', () => {
+    const decryptedEvent = {
+      type: 'TEST',
+      timestamp: 1,
+      payload: { name: 'decrypted' },
+    };
+    const encryptionDecryptor = vi.fn().mockResolvedValue(decryptedEvent);
+    const projectionFn = vi.fn().mockResolvedValue();
+    const context = {
+      encryptionDecryptor,
+      readModels: {
+        testRM: {
+          projections: { TEST: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const encryptedEvent = {
+      type: 'TEST',
+      timestamp: 1,
+      payload: { name: 'encrypted-blob' },
+    };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(encryptedEvent, false).then(() => {
+      expect(encryptionDecryptor).toHaveBeenCalledWith(encryptedEvent);
+      expect(projectionFn).toHaveBeenCalledWith(projCtx, decryptedEvent);
+    });
+  });
+
+  test('defaults to identity when no decryptor provided', () => {
+    const projectionFn = vi.fn().mockResolvedValue();
+    const context = {
+      readModels: {
+        testRM: {
+          projections: { TEST: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const event = { type: 'TEST', timestamp: 1, payload: { name: 'Alice' } };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(event, false).then(() => {
+      expect(projectionFn).toHaveBeenCalledWith(projCtx, event);
     });
   });
 });
