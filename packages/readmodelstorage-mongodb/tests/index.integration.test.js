@@ -294,10 +294,8 @@ describe('readmodelstorage-mongodb', { timeout: 60000 }, () => {
         });
     });
 
-    test('ignores NamespaceNotFound for non-existent collection', () =>
-      storage.dropCollection('corr-dc2', 'nonexistent').then((result) => {
-        expect(result).toBeUndefined();
-      }));
+    test('resolves without error for non-existent collection', () =>
+      storage.dropCollection('corr-dc2', 'nonexistent'));
   });
 
   describe('copyCollection', () => {
