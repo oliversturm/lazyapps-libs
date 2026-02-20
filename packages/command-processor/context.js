@@ -4,7 +4,6 @@ export const initializeContext = (
   correlationConfig,
   { aggregateStore, eventStore, eventBus, aggregates },
   handleCommand,
-  handleAdminCommand,
 ) =>
   Promise.all([aggregateStore(aggregates), eventStore()])
     .then(([aggregateStore, eventStore]) => ({
@@ -12,7 +11,6 @@ export const initializeContext = (
       aggregateStore,
       eventStore,
       handleCommand,
-      handleAdminCommand,
       correlationConfig,
     }))
     .then((context) =>

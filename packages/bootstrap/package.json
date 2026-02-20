@@ -31,7 +31,10 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "devDependencies": {
+    "@lazyapps/aggregatestore-inmemory": "workspace:^",
     "@lazyapps/eventstore-mongodb": "workspace:^",
+    "@lazyapps/express": "workspace:^",
+    "@lazyapps/mqemitter": "workspace:^",
     "@lazyapps/readmodel-backup-mongodb": "workspace:^",
     "@lazyapps/readmodelstorage-mongodb": "workspace:^",
     "@testcontainers/mongodb": "^11.11.0",
@@ -39,7 +42,9 @@
     "cors": "^2.8.5",
     "eslint": "^8.46.0",
     "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.0",
     "mongodb": "^5.7.0",
+    "mqemitter": "^5.0.0",
     "vitest": "^4.0.18"
   },
   "dependencies": {

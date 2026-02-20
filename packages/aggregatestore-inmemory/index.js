@@ -55,10 +55,18 @@ export const inmemory = () => (aggregates) => {
     initLogger.debug('Ending replay state for aggregate store');
     inReplay = false;
   };
+
+  const clear = () => {
+    initLogger.debug('Clearing aggregate store');
+    Object.keys(store).forEach((key) => delete store[key]);
+    lastProjectedEventTimestamp = 0;
+  };
+
   return {
     getAggregateState,
     applyAggregateProjection,
     startReplay,
     endReplay,
+    clear,
   };
 };

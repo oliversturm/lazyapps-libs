@@ -270,4 +270,89 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       })
       .then(() => eventsCol.deleteMany({}));
   });
+
+  test('POST /admin/replay/:name/prepare with fromScratch clears collections', () => {
+    const db = cleanupClient.db('admin-test');
+    // Clear any leftover replay state from prior tests (cancelReplay
+    // doesn't work here because the event bus is mocked and won't
+    // deliver REPLAY_CANCELLED to clear the projection handler state)
+    server.__testing__.context.projectionHandler.clearReadModelReplayState(
+      'customers',
+    );
+    return db
+      .collection('customers_overview')
+      .insertOne(
+        // Insert a document into the customers_overview collection
+        { name: 'existing-customer' },
+      )
+      .then(() =>
+        fetchJSON('/admin/replay/customers/prepare', {
+          method: 'POST',
+          body: JSON.stringify({ fromScratch: true }),
+        }),
+      )
+      .then(({ status, body }) => {
+        expect(status).toBe(200);
+        expect(body.status).toBe('prepared');
+        expect(body.readModel).toBe('customers');
+        expect(body.fromTimestamp).toBe(0);
+        expect(body.preReplayBackupId).toBeDefined();
+        // Verify the collection was cleared
+        return db.collection('customers_overview').countDocuments();
+      })
+      .then((count) => {
+        expect(count).toBe(0);
+      });
+  });
+
+  test('POST /admin/replay/:name/prepare with backupId restores backup', () => {
+    const db = cleanupClient.db('admin-test');
+    // Clear any leftover replay state from prior tests
+    server.__testing__.context.projectionHandler.clearReadModelReplayState(
+      'customers',
+    );
+    return db
+      .collection('customers_overview')
+      .insertOne(
+        // Insert a document so the backup has something
+        { name: 'backup-customer' },
+      )
+      .then(() =>
+        // Create a backup
+        fetchJSON('/admin/backup/customers', {
+          method: 'POST',
+          body: '{}',
+        }),
+      )
+      .then(({ status, body }) => {
+        expect(status).toBe(200);
+        const backupId = body.backupId;
+        // Modify the collection so we can verify restore
+        return db
+          .collection('customers_overview')
+          .insertOne({ name: 'post-backup-customer' })
+          .then(() =>
+            fetchJSON('/admin/replay/customers/prepare', {
+              method: 'POST',
+              body: JSON.stringify({ backupId }),
+            }),
+          )
+          .then(({ status, body }) => {
+            expect(status).toBe(200);
+            expect(body.status).toBe('prepared');
+            expect(body.readModel).toBe('customers');
+            expect(body.fromTimestamp).toBeGreaterThanOrEqual(0);
+            expect(body.preReplayBackupId).toBeDefined();
+            // Verify the backup was restored (only the original document)
+            return db.collection('customers_overview').countDocuments();
+          })
+          .then((count) => {
+            expect(count).toBe(1);
+            return db.collection('customers_overview').findOne({});
+          })
+          .then((doc) => {
+            expect(doc.name).toBe('backup-customer');
+          });
+      });
+  });
 });

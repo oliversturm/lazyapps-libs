@@ -41,6 +41,29 @@ export const replayStatusHandler = (context) => (req, res) => {
   res.json(context.replayHandler.getReplayStatus(readModel));
 };
 
+export const setCommandReplayStateHandler = (context) => (req, res) => {
+  const correlationId = nanoid();
+  const log = getLogger('Admin/CommandReplayState', correlationId);
+  const { state } = req.body;
+
+  if (typeof state !== 'boolean') {
+    res.status(400).json({ error: 'state (boolean) is required' });
+    return;
+  }
+
+  log.info(`Setting command replay state to ${state}`);
+
+  return Promise.resolve()
+    .then(() => context.eventBus.publishReplayState(correlationId)(state))
+    .then(() => {
+      res.json({ status: 'ok', commandReplayState: state });
+    })
+    .catch((err) => {
+      log.error(`Failed to set command replay state: ${err}`);
+      res.status(500).json({ error: String(err) });
+    });
+};
+
 export const cancelReplayHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Replay', correlationId);
@@ -61,37 +84,5 @@ export const cancelReplayHandler = (context) => (req, res) => {
     .catch((err) => {
       log.error(`Failed to cancel replay: ${err}`);
       res.status(500).json({ error: String(err) });
-    });
-};
-
-export const legacyAdminHandler = (context) => (req, res) => {
-  const { correlationId } = req.body;
-  const log = getLogger('Admin/Legacy', correlationId);
-  const { command } = req.params;
-
-  const handler = context.handleAdminCommand;
-  if (!handler) {
-    log.error(`No admin command handler available`);
-    res.sendStatus(400);
-    return;
-  }
-
-  log.debug(
-    `Legacy admin command ${command} with params ${JSON.stringify(req.body.params)}`,
-  );
-
-  return handler(context, command, req.body.params, req.auth, correlationId)
-    .then(() => {
-      res.sendStatus(200);
-    })
-    .catch((err) => {
-      log.error(`Error: ${err}`);
-      if (err.name === 'ValidationError') {
-        res.sendStatus(400);
-      } else if (err.name === 'AuthorizationError') {
-        res.sendStatus(403);
-      } else {
-        res.sendStatus(500);
-      }
     });
 };

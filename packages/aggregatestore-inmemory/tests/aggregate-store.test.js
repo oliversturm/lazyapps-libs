@@ -106,4 +106,23 @@ describe('applyAggregateProjection', () => {
     store.startReplay();
     store.applyAggregateProjection('correlation')(event2);
   });
+
+  test('clear resets all aggregate state', () => {
+    const store = inmemory()(aggregates);
+    const event = {
+      aggregateName: 'thing',
+      aggregateId: 'id-1',
+      type: 'CREATED',
+      timestamp: 55,
+    };
+    store.applyAggregateProjection('correlation')(event);
+    expect(store.getAggregateState('thing', 'id-1')).toEqual({
+      flag: 'created',
+    });
+
+    store.clear();
+
+    // After clear, aggregate state should return initial value
+    expect(store.getAggregateState('thing', 'id-1')).toBeUndefined();
+  });
 });

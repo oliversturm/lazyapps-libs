@@ -89,6 +89,7 @@ export const startAdmin = (
                 log.info(
                   `Admin server listening on ${addr.address}:${addr.port}`,
                 );
+                server.__testing__ = { context };
                 resolve(server);
               });
             }),

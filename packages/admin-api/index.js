@@ -2,7 +2,7 @@ import {
   startReplayHandler,
   replayStatusHandler,
   cancelReplayHandler,
-  legacyAdminHandler,
+  setCommandReplayStateHandler,
 } from './replay-handlers.js';
 
 import {
@@ -19,9 +19,10 @@ export const installReplayAdminApi = (context) => (app) => {
   app.post('/api/admin/startReplay', startReplayHandler(context));
   app.get('/api/admin/replayStatus/:readModel', replayStatusHandler(context));
   app.post('/api/admin/cancelReplay', cancelReplayHandler(context));
-
-  // Legacy backward compat for command-replay CLI tool
-  app.post('/api/admin/:command', legacyAdminHandler(context));
+  app.post(
+    '/api/admin/commandReplayState',
+    setCommandReplayStateHandler(context),
+  );
 };
 
 export const installReadModelAdminApi = (context) => (app) => {

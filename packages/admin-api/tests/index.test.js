@@ -38,7 +38,7 @@ describe('installReplayAdminApi', () => {
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/api/admin/:command',
+      '/api/admin/commandReplayState',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledTimes(3);

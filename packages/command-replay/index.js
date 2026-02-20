@@ -12,13 +12,13 @@ const log = getLogger('CommandReplay');
 let baseUrl;
 let commandApiUrl;
 let tokenApiUrl;
-let adminApiUrl;
+let adminBaseUrl;
 
-const setBaseUrl = (url) => {
+const setBaseUrl = (url, adminUrl) => {
   baseUrl = url;
   commandApiUrl = `${baseUrl}/api/command`;
   tokenApiUrl = `${baseUrl}/api/tokens`;
-  adminApiUrl = `${baseUrl}/api/admin`;
+  adminBaseUrl = adminUrl || url;
 };
 
 const delay = (ms) => () => new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,18 +144,16 @@ const readUserNameAndPassword = () =>
     },
   ]);
 
-const setReplayState = async (state, token) => {
+const setReplayState = (state, token) => {
   log.info(`Setting replay state to: ${state}`);
 
-  return fetch(`${adminApiUrl}/setReplayState`, {
+  return fetch(`${adminBaseUrl}/api/admin/commandReplayState`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(token && { Authorization: `Bearer ${token}` }),
     },
-    body: JSON.stringify({
-      params: { state },
-    }),
+    body: JSON.stringify({ state }),
   }).then((response) => {
     if (!response.ok) {
       throw new Error(`Failed to set replay state: ${response.statusText}`);
@@ -167,6 +165,10 @@ const program = new Command();
 program
   .requiredOption('-f, --file <path>', 'Command file to replay')
   .option('-u, --url <url>', 'Base URL for the API', 'http://localhost')
+  .option(
+    '-a, --admin-url <url>',
+    'Base URL for the admin API (defaults to --url value)',
+  )
   .option('-d, --delay <ms>', 'Delay between commands in milliseconds', '200')
   .option(
     '-c, --continue-on-error',
@@ -188,7 +190,7 @@ program
 const options = program.opts();
 
 // Set base URL immediately
-setBaseUrl(options.url);
+setBaseUrl(options.url, options.adminUrl);
 
 // Convert delay to number
 options.delayBetweenCommands = parseInt(options.delay, 10);
@@ -199,6 +201,7 @@ const showSummaryAndConfirm = async () => {
   console.log('----------------------------');
   console.log(`Command File: ${options.file}`);
   console.log(`Base URL: ${options.url}`);
+  console.log(`Admin URL: ${options.adminUrl || options.url}`);
   console.log(`Delay between commands: ${options.delayBetweenCommands}ms`);
   console.log(`Continue on error: ${options.continueOnError}`);
   console.log(`Skip authentication: ${options.noAuth}`);

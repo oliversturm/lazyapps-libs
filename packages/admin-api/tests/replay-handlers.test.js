@@ -16,7 +16,7 @@ const {
   startReplayHandler,
   replayStatusHandler,
   cancelReplayHandler,
-  legacyAdminHandler,
+  setCommandReplayStateHandler,
 } = await import('../replay-handlers.js');
 
 const mockReq = (body = {}, params = {}) => ({
@@ -288,91 +288,99 @@ describe('cancelReplayHandler', () => {
   });
 });
 
-describe('legacyAdminHandler', () => {
+describe('setCommandReplayStateHandler', () => {
   let context;
 
   beforeEach(() => {
     vi.clearAllMocks();
     context = {
-      handleAdminCommand: vi.fn().mockResolvedValue(),
+      eventBus: {
+        publishReplayState: vi
+          .fn()
+          .mockReturnValue(vi.fn().mockReturnValue(true)),
+      },
     };
   });
 
-  test('returns 400 if no admin handler', () => {
-    context.handleAdminCommand = null;
-    const handler = legacyAdminHandler(context);
-    const req = mockReq({}, { command: 'setReplayState' });
+  test('returns 400 if state is missing', () => {
+    const handler = setCommandReplayStateHandler(context);
+    const req = mockReq({});
     const res = mockRes();
 
     handler(req, res);
 
-    expect(res.sendStatus).toHaveBeenCalledWith(400);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'state (boolean) is required',
+    });
   });
 
-  test('delegates to handleAdminCommand', () => {
-    const handler = legacyAdminHandler(context);
-    const req = mockReq(
-      { params: { state: true }, correlationId: 'corr-1' },
-      { command: 'setReplayState' },
-    );
-    req.auth = { admin: true };
+  test('returns 400 if state is not a boolean', () => {
+    const handler = setCommandReplayStateHandler(context);
+    const req = mockReq({ state: 'true' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'state (boolean) is required',
+    });
+  });
+
+  test('sets command replay state to true', () => {
+    const handler = setCommandReplayStateHandler(context);
+    const req = mockReq({ state: true });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.handleAdminCommand).toHaveBeenCalledWith(
-        context,
-        'setReplayState',
-        { state: true },
-        { admin: true },
-        'corr-1',
+      expect(context.eventBus.publishReplayState).toHaveBeenCalledWith(
+        'test-corr-id',
       );
-      expect(res.sendStatus).toHaveBeenCalledWith(200);
+      expect(
+        context.eventBus.publishReplayState('test-corr-id'),
+      ).toHaveBeenCalledWith(true);
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'ok',
+        commandReplayState: true,
+      });
     });
   });
 
-  test('returns 500 on general handler error', () => {
-    context.handleAdminCommand.mockRejectedValue(new Error('failed'));
-    const handler = legacyAdminHandler(context);
-    const req = mockReq(
-      { params: {}, correlationId: 'corr-1' },
-      { command: 'bad' },
-    );
+  test('sets command replay state to false', () => {
+    const handler = setCommandReplayStateHandler(context);
+    const req = mockReq({ state: false });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(res.sendStatus).toHaveBeenCalledWith(500);
+      expect(context.eventBus.publishReplayState).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
+      expect(
+        context.eventBus.publishReplayState('test-corr-id'),
+      ).toHaveBeenCalledWith(false);
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'ok',
+        commandReplayState: false,
+      });
     });
   });
 
-  test('returns 400 on ValidationError', () => {
-    const err = new Error('validation');
-    err.name = 'ValidationError';
-    context.handleAdminCommand.mockRejectedValue(err);
-    const handler = legacyAdminHandler(context);
-    const req = mockReq(
-      { params: {}, correlationId: 'corr-1' },
-      { command: 'test' },
+  test('returns 500 on error', () => {
+    context.eventBus.publishReplayState.mockReturnValue(
+      vi.fn().mockImplementation(() => {
+        throw new Error('bus error');
+      }),
     );
+    const handler = setCommandReplayStateHandler(context);
+    const req = mockReq({ state: true });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(res.sendStatus).toHaveBeenCalledWith(400);
-    });
-  });
-
-  test('returns 403 on AuthorizationError', () => {
-    const err = new Error('auth');
-    err.name = 'AuthorizationError';
-    context.handleAdminCommand.mockRejectedValue(err);
-    const handler = legacyAdminHandler(context);
-    const req = mockReq(
-      { params: {}, correlationId: 'corr-1' },
-      { command: 'test' },
-    );
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.sendStatus).toHaveBeenCalledWith(403);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'Error: bus error',
+      });
     });
   });
 });
