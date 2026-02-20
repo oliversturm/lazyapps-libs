@@ -82,6 +82,9 @@ importers:
       '@lazyapps/admin-api':
         specifier: workspace:^
         version: link:../admin-api
+      '@lazyapps/admin-ui':
+        specifier: '>=0.1.0'
+        version: link:../admin-ui
       '@lazyapps/command-processor':
         specifier: workspace:^
         version: link:../command-processor
