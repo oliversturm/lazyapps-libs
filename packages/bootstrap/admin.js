@@ -51,20 +51,33 @@ export const startAdmin = (
       installReplayAdminApi(context)(app);
       installReadModelAdminApi(context)(app);
 
-      return new Promise((resolve, reject) => {
-        const server = app.listen(port, '0.0.0.0');
+      return import('@lazyapps/admin-ui/build/handler.js')
+        .then(({ handler }) => {
+          app.use(handler);
+          log.info('Admin UI mounted');
+        })
+        .catch(() => {
+          log.info('Admin UI not available, serving API only');
+        })
+        .then(
+          () =>
+            new Promise((resolve, reject) => {
+              const server = app.listen(port, '0.0.0.0');
 
-        server.on('error', (err) => {
-          log.error(`Admin server error: ${err}`);
-          reject(err);
-        });
+              server.on('error', (err) => {
+                log.error(`Admin server error: ${err}`);
+                reject(err);
+              });
 
-        server.on('listening', () => {
-          const addr = server.address();
-          log.info(`Admin server listening on ${addr.address}:${addr.port}`);
-          resolve(server);
-        });
-      });
+              server.on('listening', () => {
+                const addr = server.address();
+                log.info(
+                  `Admin server listening on ${addr.address}:${addr.port}`,
+                );
+                resolve(server);
+              });
+            }),
+        );
     })
     .catch((err) => {
       log.error(`Failed to start admin service: ${err}`);

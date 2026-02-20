@@ -25,13 +25,21 @@
   "engines": {
     "node": ">=18.20.3 || >=20.18.0"
   },
+  "files": [
+    "src",
+    "static",
+    "build",
+    "svelte.config.js",
+    "vite.config.js"
+  ],
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prepublishOnly": "vite build"
   },
   "devDependencies": {
-    "@sveltejs/adapter-auto": "^3.0.0",
+    "@sveltejs/adapter-node": "^5.0.0",
     "@sveltejs/kit": "^2.0.0",
     "svelte": "^5.0.0",
     "vite": "^6.0.0"
