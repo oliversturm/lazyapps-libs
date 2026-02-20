@@ -161,6 +161,27 @@ describe('startAdmin', () => {
       expect(context.backup).toBe(backupInstance);
     }));
 
+  test('context includes projectionHandler with replay state tracking', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      expect(context.projectionHandler).toBeDefined();
+      expect(context.projectionHandler.getReadModelReplayStates()).toEqual({});
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        false,
+      );
+      context.projectionHandler.setReadModelReplayState('items', true);
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        true,
+      );
+      expect(context.projectionHandler.getReadModelReplayStates()).toEqual({
+        items: true,
+      });
+      context.projectionHandler.clearReadModelReplayState('items');
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        false,
+      );
+    }));
+
   test('starts express server on configured port', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
       expect(mockListen).toHaveBeenCalledWith(3005, '0.0.0.0');

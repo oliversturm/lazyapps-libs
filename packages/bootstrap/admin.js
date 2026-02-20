@@ -10,6 +10,20 @@ import {
 
 const log = getLogger('BS/Admin', 'INIT');
 
+const createAdminProjectionHandler = () => {
+  const replayStates = {};
+  return {
+    getReadModelReplayStates: () => replayStates,
+    isReadModelReplaying: (name) => !!replayStates[name],
+    setReadModelReplayState: (name, state) => {
+      replayStates[name] = state;
+    },
+    clearReadModelReplayState: (name) => {
+      delete replayStates[name];
+    },
+  };
+};
+
 export const startAdmin = (
   correlationConfig,
   { port = 3005, eventStore, readModelStorage, eventBus, backup, readModels },
@@ -23,6 +37,7 @@ export const startAdmin = (
         eventStore: eventStoreInstance,
         storage: storageInstance,
         readModels,
+        projectionHandler: createAdminProjectionHandler(),
       };
 
       return eventBus()

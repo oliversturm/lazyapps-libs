@@ -32,7 +32,10 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "devDependencies": {
+    "@lazyapps/readmodelstorage-mongodb": "workspace:^",
+    "@testcontainers/mongodb": "^11.11.0",
     "eslint": "^8.46.0",
+    "mongodb": "^5.7.0",
     "vitest": "^4.0.18"
   },
   "dependencies": {

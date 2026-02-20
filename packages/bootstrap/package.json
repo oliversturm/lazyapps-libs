@@ -31,7 +31,15 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "devDependencies": {
+    "@lazyapps/eventstore-mongodb": "workspace:^",
+    "@lazyapps/readmodel-backup-mongodb": "workspace:^",
+    "@lazyapps/readmodelstorage-mongodb": "workspace:^",
+    "@testcontainers/mongodb": "^11.11.0",
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
     "eslint": "^8.46.0",
+    "express": "^4.18.2",
+    "mongodb": "^5.7.0",
     "vitest": "^4.0.18"
   },
   "dependencies": {
@@ -42,12 +50,12 @@
     "@opentelemetry/api": "^1.9.0"
   },
   "peerDependencies": {
-    "vite": ">=5.0.0",
-    "@sveltejs/kit": ">=2.0.0",
     "@lazyapps/admin-ui": ">=0.1.0",
-    "express": ">=4.18.0",
+    "@sveltejs/kit": ">=2.0.0",
     "body-parser": ">=1.20.0",
-    "cors": ">=2.8.0"
+    "cors": ">=2.8.0",
+    "express": ">=4.18.0",
+    "vite": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "vite": {
