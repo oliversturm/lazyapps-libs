@@ -1,10 +1,40 @@
 {
   "name": "@lazyapps/encryption",
-  "version": "1.0.0",
-  "type": "module",
+  "version": "0.1.0",
+  "description": "Field-level PII encryption with crypto-shredding for LazyApps event-sourcing",
   "main": "index.js",
+  "files": [
+    "*.js",
+    "keystores/"
+  ],
+  "scripts": {
+    "test": "vitest"
+  },
+  "keywords": [
+    "event-sourcing",
+    "cqrs",
+    "lazyapps",
+    "encryption",
+    "pii",
+    "crypto-shredding",
+    "gdpr"
+  ],
+  "author": "Oliver Sturm",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oliversturm/lazyapps-libs.git",
+    "directory": "packages/encryption"
+  },
+  "bugs": {
+    "url": "https://github.com/oliversturm/lazyapps-libs/issues"
+  },
+  "homepage": "https://github.com/oliversturm/lazyapps-libs/tree/main/packages/encryption#readme",
+  "engines": {
+    "node": ">=18.20.3 || >=20.18.0"
+  },
   "dependencies": {
-    "@lazyapps/logger": "workspace:*"
+    "@lazyapps/logger": "workspace:^"
   },
   "peerDependencies": {
     "mongodb": "^6.0.0"
@@ -15,9 +45,8 @@
     }
   },
   "devDependencies": {
+    "eslint": "^8.46.0",
     "vitest": "^4.0.18"
   },
-  "scripts": {
-    "test": "vitest --run"
-  }
+  "type": "module"
 }
