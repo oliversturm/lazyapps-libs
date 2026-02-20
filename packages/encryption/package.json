@@ -6,6 +6,14 @@
   "dependencies": {
     "@lazyapps/logger": "workspace:*"
   },
+  "peerDependencies": {
+    "mongodb": "^6.0.0"
+  },
+  "peerDependenciesMeta": {
+    "mongodb": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "vitest": "^4.0.18"
   },
