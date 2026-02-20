@@ -74,6 +74,12 @@ Encrypted fields in events are replaced with an envelope object:
 }
 ```
 
+**Type coercion note**: All values are converted to strings before encryption
+(`String(value)`). After decryption, fields always contain strings regardless of
+their original type. For example, the number `42` becomes the string `"42"`, and
+the boolean `true` becomes `"true"`. Applications must handle type coercion when
+consuming decrypted values.
+
 ## Key Store Tiers
 
 The `keyStore` parameter controls where KEKs live and how DEKs are

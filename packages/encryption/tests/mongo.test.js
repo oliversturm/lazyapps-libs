@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach } from 'vitest';
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes, createHmac, createDecipheriv } from 'node:crypto';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -168,7 +168,6 @@ describe('mongoKeyStore', () => {
 
       return ks.wrapDEK('personal', dek).then((wrapped) => {
         // Manually unwrap using the expected KEK to verify derivation
-        const { createDecipheriv } = require('node:crypto');
         const decipher = createDecipheriv(
           'aes-256-gcm',
           expectedKEK,

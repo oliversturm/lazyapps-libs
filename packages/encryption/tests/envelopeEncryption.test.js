@@ -127,6 +127,54 @@ describe('createEnvelopeManager', () => {
     });
   });
 
+  describe('getDEK error paths', () => {
+    test('propagates error when wrapDEK fails', () => {
+      mockKeyStore.getDEK.mockResolvedValue(null);
+      mockKeyStore.wrapDEK.mockRejectedValue(new Error('wrap failed'));
+
+      return envelope
+        .getDEK('subject-1', 'personal')
+        .then(() => {
+          throw new Error('should have rejected');
+        })
+        .catch((err) => {
+          expect(err.message).toBe('wrap failed');
+        });
+    });
+
+    test('propagates error when storeDEK fails', () => {
+      mockKeyStore.getDEK.mockResolvedValue(null);
+      mockKeyStore.wrapDEK.mockResolvedValue({ iv: 'a', data: 'b', tag: 'c' });
+      mockKeyStore.storeDEK.mockRejectedValue(new Error('store failed'));
+
+      return envelope
+        .getDEK('subject-1', 'personal')
+        .then(() => {
+          throw new Error('should have rejected');
+        })
+        .catch((err) => {
+          expect(err.message).toBe('store failed');
+        });
+    });
+
+    test('propagates error when unwrapDEK fails for existing DEK', () => {
+      mockKeyStore.getDEK.mockResolvedValue({
+        wrappedKey: { iv: 'x', data: 'y', tag: 'z' },
+        version: 1,
+      });
+      mockKeyStore.unwrapDEK.mockRejectedValue(new Error('unwrap failed'));
+
+      return envelope
+        .getDEK('subject-1', 'personal')
+        .then(() => {
+          throw new Error('should have rejected');
+        })
+        .catch((err) => {
+          expect(err.message).toBe('unwrap failed');
+        });
+    });
+  });
+
   describe('rotateKEK', () => {
     test('delegates to keyStore if supported', () => {
       mockKeyStore.rotateKEK = vi.fn().mockResolvedValue();

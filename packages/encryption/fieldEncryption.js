@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { getNestedValue, setNestedValue } from './pathUtils.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -31,20 +32,6 @@ export const decryptValue = (key, envelope) => {
     decipher.update(Buffer.from(envelope.data, 'base64'), null, 'utf8') +
     decipher.final('utf8')
   );
-};
-
-const getNestedValue = (obj, path) =>
-  path.split('.').reduce((current, key) => current && current[key], obj);
-
-const setNestedValue = (obj, path, value) => {
-  const keys = path.split('.');
-  const last = keys.pop();
-  const target = keys.reduce((current, key) => {
-    if (!current[key]) current[key] = {};
-    return current[key];
-  }, obj);
-  target[last] = value;
-  return obj;
 };
 
 export const createFieldEncryptor = (envelope, schema) => ({

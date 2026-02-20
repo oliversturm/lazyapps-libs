@@ -357,4 +357,75 @@ describe('createQueryDecryptor', () => {
       .then((result) => {
         expect(result).toBeNull();
       }));
+
+  test('returns fallback when __encrypted references unknown context', () => {
+    const doc = {
+      customerId: 'cust-1',
+      name: {
+        __encrypted: true,
+        alg: 'aes-256-gcm',
+        iv: 'dummyiv',
+        data: 'dummydata',
+        tag: 'dummytag',
+        ctx: 'nonexistent-context',
+        kid: 'cust-1',
+        kv: 1,
+      },
+    };
+    return decryptor
+      .decrypt(doc, {
+        roles: ['admin'],
+        identity: 'user-99',
+        subjectField: 'customerId',
+      })
+      .then((result) => {
+        // Unknown context means no contextConfig match, so not authorized
+        expect(result.name).toBe('[restricted]');
+      });
+  });
+
+  test('isSelf is false when identity is undefined', () =>
+    makeEncryptedDoc({
+      customerId: 'cust-1',
+      name: {
+        __shouldEncrypt: true,
+        plaintext: 'Alice',
+        ctx: 'personal',
+        kid: 'cust-1',
+      },
+    }).then((doc) =>
+      decryptor
+        .decrypt(doc, {
+          roles: ['customer'],
+          identity: undefined,
+          subjectField: 'customerId',
+        })
+        .then((result) => {
+          // Without identity, self role is not granted
+          // customer is not in personal.roles, so restricted
+          expect(result.name).toBe('[restricted]');
+        }),
+    ));
+
+  test('not self-access when subjectField does not match identity', () =>
+    makeEncryptedDoc({
+      customerId: 'cust-1',
+      name: {
+        __shouldEncrypt: true,
+        plaintext: 'Alice',
+        ctx: 'personal',
+        kid: 'cust-1',
+      },
+    }).then((doc) =>
+      decryptor
+        .decrypt(doc, {
+          roles: ['customer'],
+          identity: 'different-user',
+          subjectField: 'customerId',
+        })
+        .then((result) => {
+          // customer is not in personal roles, and identity != customerId
+          expect(result.name).toBe('[restricted]');
+        }),
+    ));
 });

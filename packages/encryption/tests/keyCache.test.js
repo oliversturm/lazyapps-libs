@@ -133,5 +133,87 @@ describe('createKeyCache', () => {
           expect(mockKeyStore.getDEK).toHaveBeenCalledOnce();
         });
     });
+
+    test('does not delete entries for subjects that share a prefix', () => {
+      mockKeyStore.getDEK.mockImplementation((subjectId) =>
+        Promise.resolve({
+          wrappedKey: `w-${subjectId}`,
+          version: 1,
+        }),
+      );
+
+      return cached
+        .getDEK('cust', 'ctx')
+        .then(() => cached.getDEK('cust-1', 'ctx'))
+        .then(() => cached.deleteKeysForSubject('cust'))
+        .then(() => {
+          mockKeyStore.getDEK.mockClear();
+          // cust-1 should still be cached (not evicted by deleting "cust")
+          return cached.getDEK('cust-1', 'ctx');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).not.toHaveBeenCalled();
+        });
+    });
+  });
+
+  describe('edge cases', () => {
+    test('handles subjectId containing colon character', () => {
+      mockKeyStore.getDEK.mockImplementation((subjectId) =>
+        Promise.resolve({
+          wrappedKey: `w-${subjectId}`,
+          version: 1,
+        }),
+      );
+
+      return cached
+        .getDEK('urn:uuid:123', 'ctx')
+        .then(() => cached.getDEK('urn:uuid:456', 'ctx'))
+        .then(() => {
+          mockKeyStore.getDEK.mockClear();
+          // Should still be cached
+          return cached.getDEK('urn:uuid:123', 'ctx');
+        })
+        .then((result) => {
+          expect(result.wrappedKey).toBe('w-urn:uuid:123');
+          expect(mockKeyStore.getDEK).not.toHaveBeenCalled();
+        });
+    });
+
+    test('LRU access reordering keeps recently accessed entries', () => {
+      mockKeyStore.getDEK.mockImplementation((subjectId) =>
+        Promise.resolve({
+          wrappedKey: `w-${subjectId}`,
+          version: 1,
+        }),
+      );
+
+      // Fill cache (maxSize=3): s1, s2, s3
+      return cached
+        .getDEK('s1', 'ctx')
+        .then(() => cached.getDEK('s2', 'ctx'))
+        .then(() => cached.getDEK('s3', 'ctx'))
+        .then(() => {
+          // Access s1 to move it to most-recently-used
+          return cached.getDEK('s1', 'ctx');
+        })
+        .then(() => {
+          // Add s4 — should evict s2 (oldest untouched), not s1
+          return cached.getDEK('s4', 'ctx');
+        })
+        .then(() => {
+          mockKeyStore.getDEK.mockClear();
+          // s1 should still be cached (it was accessed recently)
+          return cached.getDEK('s1', 'ctx');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).not.toHaveBeenCalled();
+          // s2 should have been evicted
+          return cached.getDEK('s2', 'ctx');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).toHaveBeenCalledOnce();
+        });
+    });
   });
 });

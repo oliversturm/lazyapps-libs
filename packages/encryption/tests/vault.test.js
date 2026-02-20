@@ -389,6 +389,70 @@ describe('vaultKeyStore', () => {
     });
   });
 
+  describe('authenticateAppRole error handling', () => {
+    test('rejects with useful error on malformed auth response', () => {
+      const mock = createFetchMock([
+        {
+          path: 'auth/approle/login',
+          respond: () =>
+            okResponse({ data: { something_else: 'no token here' } }),
+        },
+      ]);
+      globalThis.fetch = mock.fn;
+
+      return vaultKeyStore({
+        vaultUrl: VAULT_URL,
+        authMethod: appRole({ roleId: 'role-1', secretId: 'secret-1' }),
+      })
+        .initialize()
+        .then(
+          () => {
+            throw new Error('should have rejected');
+          },
+          (err) => {
+            expect(err).toBeDefined();
+          },
+        );
+    });
+  });
+
+  describe('vaultRequest error handling', () => {
+    test('handles non-JSON error response body gracefully', () => {
+      const mock = createFetchMock([]);
+      // Override with a custom handler that returns non-JSON error
+      globalThis.fetch = vi.fn((url) => {
+        if (url.includes('approle')) {
+          return Promise.resolve(
+            okResponse({ auth: { client_token: 'test' } }),
+          );
+        }
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          json: () => Promise.reject(new Error('not valid JSON')),
+        });
+      });
+
+      return vaultKeyStore({
+        vaultUrl: VAULT_URL,
+        authMethod: appRole({ roleId: 'r', secretId: 's' }),
+      })
+        .initialize()
+        .then((ks) =>
+          ks.wrapDEK('personal', randomBytes(32)).then(
+            () => {
+              throw new Error('should have rejected');
+            },
+            (err) => {
+              // Should propagate some error, not crash obscurely
+              expect(err).toBeDefined();
+            },
+          ),
+        );
+    });
+  });
+
   describe('DEK storage with MongoDB backend', () => {
     test('initializes with MongoDB when dekBackend is provided', () => {
       const mockCollection = {
