@@ -64,8 +64,8 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
         }),
         eventBus: () =>
           Promise.resolve({
-            publishReplayEvent: vi.fn(),
-            publishSystemMessage: vi.fn(),
+            publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
+            publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
           }),
         backup: mongoBackup(),
         readModels,
@@ -211,4 +211,63 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
         expect(status).toBe(409);
         expect(body.error).toMatch(/already in progress/i);
       }));
+
+  test('POST /api/admin/cancelReplay returns 400 for missing readModel', () =>
+    fetchJSON('/api/admin/cancelReplay', {
+      method: 'POST',
+      body: '{}',
+    }).then(({ status, body }) => {
+      expect(status).toBe(400);
+      expect(body.error).toMatch(/readModel is required/);
+    }));
+
+  test('POST /api/admin/cancelReplay returns cancelling status', () =>
+    fetchJSON('/api/admin/cancelReplay', {
+      method: 'POST',
+      body: JSON.stringify({ readModel: 'customers' }),
+    }).then(({ status, body }) => {
+      expect(status).toBe(200);
+      expect(body.status).toBe('cancelling');
+      expect(body.readModel).toBe('customers');
+    }));
+
+  test('POST /api/admin/cancelReplay cancels an in-progress replay', () => {
+    const eventsDb = cleanupClient.db('events');
+    const eventsCol = eventsDb.collection('events');
+    const events = Array.from({ length: 200 }, (_, i) => ({
+      type: 'TEST_EVENT',
+      aggregateId: `agg-${i}`,
+      timestamp: i + 1,
+      payload: {},
+    }));
+    return eventsCol
+      .insertMany(events)
+      .then(() =>
+        fetchJSON('/api/admin/startReplay', {
+          method: 'POST',
+          body: JSON.stringify({
+            readModel: 'orders',
+            fromTimestamp: 0,
+          }),
+        }),
+      )
+      .then(({ status }) => {
+        expect(status).toBe(200);
+        return fetchJSON('/api/admin/cancelReplay', {
+          method: 'POST',
+          body: JSON.stringify({ readModel: 'orders' }),
+        });
+      })
+      .then(({ status, body }) => {
+        expect(status).toBe(200);
+        expect(body.status).toBe('cancelling');
+        expect(body.readModel).toBe('orders');
+        return new Promise((resolve) => setTimeout(resolve, 1000));
+      })
+      .then(() => fetchJSON('/api/admin/replayStatus/orders'))
+      .then(({ body }) => {
+        expect(['cancelled', 'completed']).toContain(body.status);
+      })
+      .then(() => eventsCol.deleteMany({}));
+  });
 });
