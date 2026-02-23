@@ -1,4 +1,5 @@
 <script>
+  import '../app.css';
   import { setContext } from 'svelte';
   import { createAdminClient } from '$lib/api.js';
 

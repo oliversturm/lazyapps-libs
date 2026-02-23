@@ -97,6 +97,42 @@ jobs:
         if: steps.check.outputs.has_changesets == 'true'
         run: npx changeset version --snapshot ${{ steps.tag.outputs.tag }}
 
+      - name: Pin internal dependency ranges
+        if: steps.check.outputs.has_changesets == 'true'
+        run: |
+          # After changeset version --snapshot, internal @lazyapps/* deps get
+          # ranges like ^X.Y.Z-branch-*. The ^ allows npm to resolve a
+          # different branch's snapshot. Strip it so each package pins its
+          # exact snapshot version, preventing cross-branch pollution.
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const pkgDirs = fs.readdirSync("packages").filter(d =>
+              fs.statSync(path.join("packages", d)).isDirectory()
+            );
+            let totalFixed = 0;
+            for (const dir of pkgDirs) {
+              const f = path.join("packages", dir, "package.json");
+              if (!fs.existsSync(f)) continue;
+              const pkg = JSON.parse(fs.readFileSync(f, "utf8"));
+              let changed = false;
+              for (const depType of ["dependencies", "devDependencies", "peerDependencies"]) {
+                if (!pkg[depType]) continue;
+                for (const [name, ver] of Object.entries(pkg[depType])) {
+                  if (name.startsWith("@lazyapps/") && ver.startsWith("^") && ver.includes("-")) {
+                    pkg[depType][name] = ver.slice(1);
+                    changed = true;
+                    totalFixed++;
+                  }
+                }
+              }
+              if (changed) {
+                fs.writeFileSync(f, JSON.stringify(pkg, null, 2) + "\n");
+              }
+            }
+            console.log("Pinned " + totalFixed + " internal dependency ranges");
+          '
+
       - name: Publish to npm with branch tag
         if: steps.check.outputs.has_changesets == 'true'
         run: |
