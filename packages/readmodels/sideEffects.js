@@ -21,7 +21,7 @@ const createSideEffectsHandler = () => {
               );
               resolve();
             })
-              .then(promiseGenerator())
+              .then(promiseGenerator(correlationId))
               .then(
                 () =>
                   new Promise((resolve) => {
