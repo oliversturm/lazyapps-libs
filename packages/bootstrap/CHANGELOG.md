@@ -1,5 +1,11 @@
 # @lazyapps/bootstrap
 
+## 0.2.1
+
+### Patch Changes
+
+- eb79cd1: Republish with updated @lazyapps/readmodels dependency (^0.1.3) to pick up correlationId in side-effect schedule()
+
 ## 0.2.0
 
 ### Minor Changes
