@@ -25,6 +25,16 @@ describe('createSideEffectsHandler', () => {
     });
   });
 
+  test('schedule passes correlationId to promiseGenerator', () => {
+    return createSideEffectsHandler().then((result) => {
+      const handler = result.getSideEffectsHandler('corr-1', false);
+      const generator = vi.fn(() => Promise.resolve());
+      return handler.schedule(generator, { name: 'test-effect' }).then(() => {
+        expect(generator).toHaveBeenCalledWith('corr-1');
+      });
+    });
+  });
+
   test('schedule runs liveOnly side-effect when not in replay', () => {
     return createSideEffectsHandler().then((result) => {
       const handler = result.getSideEffectsHandler('corr-1', false);
