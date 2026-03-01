@@ -20,6 +20,7 @@ const {
   deleteBackupHandler,
   prepareReplayHandler,
   replayReadModelStatusHandler,
+  resetReplayStateHandler,
   __testing__,
 } = await import('../readmodel-handlers.js');
 
@@ -651,5 +652,69 @@ describe('replayReadModelStatusHandler', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ lastProjectedEventTimestamp: 0 }),
     );
+  });
+});
+
+describe('resetReplayStateHandler', () => {
+  test('returns 404 for unknown read model', () => {
+    const context = {
+      readModels: {},
+      projectionHandler: {
+        clearReadModelReplayState: vi.fn(),
+      },
+    };
+    const handler = resetReplayStateHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Read model unknown not found',
+    });
+  });
+
+  test('resets replay state and returns 200', () => {
+    const context = {
+      readModels: { items: {} },
+      projectionHandler: {
+        clearReadModelReplayState: vi.fn(),
+      },
+    };
+    const handler = resetReplayStateHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(
+      context.projectionHandler.clearReadModelReplayState,
+    ).toHaveBeenCalledWith('items');
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'reset',
+      readModel: 'items',
+    });
+  });
+
+  test('calls clearReadModelReplayState with correct name', () => {
+    const context = {
+      readModels: { orders: {} },
+      projectionHandler: {
+        clearReadModelReplayState: vi.fn(),
+      },
+    };
+    const handler = resetReplayStateHandler(context);
+    const req = mockReq({}, { readModelName: 'orders' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(
+      context.projectionHandler.clearReadModelReplayState,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      context.projectionHandler.clearReadModelReplayState,
+    ).toHaveBeenCalledWith('orders');
   });
 });

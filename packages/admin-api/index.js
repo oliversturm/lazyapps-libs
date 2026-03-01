@@ -13,6 +13,7 @@ import {
   deleteBackupHandler,
   prepareReplayHandler,
   replayReadModelStatusHandler,
+  resetReplayStateHandler,
 } from './readmodel-handlers.js';
 
 export const installReplayAdminApi = (context) => (app) => {
@@ -40,5 +41,9 @@ export const installReadModelAdminApi = (context) => (app) => {
   app.get(
     '/admin/replay/:readModelName/status',
     replayReadModelStatusHandler(context),
+  );
+  app.delete(
+    '/admin/replay/:readModelName/state',
+    resetReplayStateHandler(context),
   );
 };

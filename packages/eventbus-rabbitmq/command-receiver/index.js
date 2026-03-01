@@ -67,6 +67,21 @@ export const rabbitMq = (config) => () => {
           Buffer.from(JSON.stringify({ correlationId, event: message })),
         );
       },
+      subscribeSystemMessages: (handler) =>
+        channel
+          .assertQueue('', { exclusive: true })
+          .then((q) =>
+            channel.bindQueue(q.queue, exchange, '__system').then(() =>
+              channel.consume(
+                q.queue,
+                (msg) => {
+                  const { event } = JSON.parse(msg.content.toString());
+                  handler(event);
+                },
+                { noAck: true },
+              ),
+            ),
+          ),
     };
   });
 };

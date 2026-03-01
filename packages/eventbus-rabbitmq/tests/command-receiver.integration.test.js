@@ -136,6 +136,37 @@ describe('command-receiver integration', { timeout: 60000 }, () => {
       });
   });
 
+  test('factory returns subscribeSystemMessages', () => {
+    const exchange = uniqueExchange();
+    const factory = rabbitMq({ url: amqpUrl, exchange });
+    return factory().then((result) => {
+      expect(result).toHaveProperty('subscribeSystemMessages');
+      expect(typeof result.subscribeSystemMessages).toBe('function');
+    });
+  });
+
+  test('subscribeSystemMessages receives published system messages', () => {
+    const exchange = uniqueExchange();
+    const factory = rabbitMq({ url: amqpUrl, exchange });
+    return factory().then((result) => {
+      const message = { type: 'REPLAY_EVENTS_DONE', readModel: 'testModel' };
+      const received = [];
+      return result
+        .subscribeSystemMessages((msg) => {
+          received.push(msg);
+        })
+        .then(() => delay(200))
+        .then(() => {
+          result.publishSystemMessage('corr-sub-1')(message);
+          return delay(500);
+        })
+        .then(() => {
+          expect(received).toHaveLength(1);
+          expect(received[0]).toEqual(message);
+        });
+    });
+  });
+
   test('published replay state is receivable on __system topic', () => {
     const exchange = uniqueExchange();
     const received = [];

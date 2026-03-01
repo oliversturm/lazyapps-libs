@@ -86,5 +86,11 @@ export const mqEmitterRedis =
             payload: { correlationId, event: message },
           });
         },
+        subscribeSystemMessages: (handler) => {
+          mq.on('__system', ({ payload }, cb) => {
+            handler(payload.event);
+            cb();
+          });
+        },
       }));
   };

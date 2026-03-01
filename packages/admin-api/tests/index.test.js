@@ -82,8 +82,12 @@ describe('installReadModelAdminApi', () => {
       '/admin/replay/:readModelName/status',
       expect.any(Function),
     );
+    expect(app.delete).toHaveBeenCalledWith(
+      '/admin/replay/:readModelName/state',
+      expect.any(Function),
+    );
     expect(app.post).toHaveBeenCalledTimes(2);
     expect(app.get).toHaveBeenCalledTimes(4);
-    expect(app.delete).toHaveBeenCalledTimes(1);
+    expect(app.delete).toHaveBeenCalledTimes(2);
   });
 });

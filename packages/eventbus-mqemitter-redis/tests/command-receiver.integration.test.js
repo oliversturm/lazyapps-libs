@@ -20,14 +20,14 @@ vi.mock('@lazyapps/logger', () => ({
 let container;
 let redisHost;
 let redisPort;
-let suppressErrors = false;
-
+// mqemitter-redis holds open connections that cannot be closed from
+// test code. Redis may reset idle connections at any time, so we
+// suppress these errors throughout the entire test run.
 const errorHandler = (err) => {
   if (
-    suppressErrors &&
-    (err.code === 'ECONNRESET' ||
-      err.code === 'EPIPE' ||
-      err.code === 'ECONNREFUSED')
+    err.code === 'ECONNRESET' ||
+    err.code === 'EPIPE' ||
+    err.code === 'ECONNREFUSED'
   )
     return;
   throw err;
@@ -41,7 +41,6 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  suppressErrors = true;
   if (container) await container.stop();
   await new Promise((resolve) => setTimeout(resolve, 2000));
   process.removeListener('uncaughtException', errorHandler);
@@ -84,5 +83,33 @@ describe('command-receiver mqEmitterRedis', { timeout: 60000 }, () => {
       const returned = result.publishReplayState('corr-2')(state);
       expect(returned).toBe(true);
     });
+  });
+
+  test('factory returns subscribeSystemMessages', () => {
+    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
+    return factory().then((result) => {
+      expect(result).toHaveProperty('subscribeSystemMessages');
+      expect(typeof result.subscribeSystemMessages).toBe('function');
+    });
+  });
+
+  test('subscribeSystemMessages receives published system messages', () => {
+    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
+    return factory().then(
+      (result) =>
+        new Promise((resolve) => {
+          const message = {
+            type: 'REPLAY_EVENTS_DONE',
+            readModel: 'testModel',
+          };
+          result.subscribeSystemMessages((received) => {
+            expect(received).toEqual(message);
+            resolve();
+          });
+          setTimeout(() => {
+            result.publishSystemMessage('corr-sub-1')(message);
+          }, 100);
+        }),
+    );
   });
 });

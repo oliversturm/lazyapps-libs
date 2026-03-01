@@ -1,4 +1,8 @@
-import { createServer, createLogger as createViteLogger } from 'vite';
+import {
+  createServer,
+  createLogger as createViteLogger,
+  searchForWorkspaceRoot,
+} from 'vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { getLogger } from '@lazyapps/logger';
 
@@ -39,6 +43,9 @@ export const startSvelteKit = (
       host,
       port,
       ...(allowedHosts !== undefined && { allowedHosts }),
+      fs: {
+        allow: [searchForWorkspaceRoot(process.cwd())],
+      },
     },
 
     define: {

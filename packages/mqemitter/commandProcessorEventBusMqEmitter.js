@@ -56,6 +56,12 @@ export const commandProcessorEventBusMqEmitter =
             payload: { correlationId, event: message },
           });
         },
+        subscribeSystemMessages: (handler) => {
+          mq.on('__system', ({ payload }, cb) => {
+            handler(payload.event);
+            cb();
+          });
+        },
       }))
       .then((res) => {
         initLog.debug('Event bus ready');

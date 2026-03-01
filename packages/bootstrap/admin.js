@@ -41,10 +41,24 @@ export const startAdmin = (
       };
 
       return eventBus()
-        .then((eventBusInstance) => ({
-          ...context,
-          eventBus: eventBusInstance,
-        }))
+        .then((eventBusInstance) => {
+          const ctx = { ...context, eventBus: eventBusInstance };
+          if (eventBusInstance.subscribeSystemMessages) {
+            return Promise.resolve(
+              eventBusInstance.subscribeSystemMessages((msg) => {
+                if (
+                  msg.type === 'REPLAY_EVENTS_DONE' ||
+                  msg.type === 'REPLAY_CANCELLED'
+                ) {
+                  context.projectionHandler.clearReadModelReplayState(
+                    msg.readModel,
+                  );
+                }
+              }),
+            ).then(() => ctx);
+          }
+          return ctx;
+        })
         .then((ctx) => ({
           ...ctx,
           replayHandler: createReplayHandler(ctx.eventStore, ctx.eventBus),

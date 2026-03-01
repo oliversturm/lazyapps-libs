@@ -258,4 +258,17 @@ export const replayReadModelStatusHandler = (context) => (req, res) => {
   });
 };
 
+export const resetReplayStateHandler = (context) => (req, res) => {
+  const { readModelName } = req.params;
+
+  const rm = context.readModels[readModelName];
+  if (!rm) {
+    res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  context.projectionHandler.clearReadModelReplayState(readModelName);
+  res.json({ status: 'reset', readModel: readModelName });
+};
+
 export const __testing__ = { detectSharedCollections };
