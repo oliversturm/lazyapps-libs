@@ -80,6 +80,21 @@ export const startAdmin = (
       installReplayAdminApi(context)(app);
       installReadModelAdminApi(context)(app);
 
+      if (!process.env.ADMIN_READ_MODEL_SERVICES) {
+        process.env.ADMIN_READ_MODEL_SERVICES = JSON.stringify({
+          default: `http://localhost:${port}`,
+        });
+        log.info(
+          `ADMIN_READ_MODEL_SERVICES not set, defaulting to http://localhost:${port}`,
+        );
+      }
+      if (!process.env.ADMIN_COMMAND_PROCESSOR_URL) {
+        process.env.ADMIN_COMMAND_PROCESSOR_URL = `http://localhost:${port}`;
+        log.info(
+          `ADMIN_COMMAND_PROCESSOR_URL not set, defaulting to http://localhost:${port}`,
+        );
+      }
+
       return import('@lazyapps/admin-ui/build/handler.js')
         .then(({ handler }) => {
           app.use(handler);

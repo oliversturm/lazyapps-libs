@@ -107,9 +107,13 @@ describe('createReplayHandler', () => {
       eventBus.publishReplayEvent.mockReturnValue(vi.fn());
 
       return handler.startReplay('corr-1', 'items', 0, null).then(() => {
-        // After completion the status is replaced
         const status = handler.getReplayStatus('items');
         expect(status.status).toBe('completed');
+        expect(status.readModel).toBe('items');
+        expect(status.eventsPublished).toBe(3);
+        expect(status.eventsTotal).toBe(3);
+        expect(status.startedAt).toEqual(expect.any(Number));
+        expect(status.cancel).toBeUndefined();
       });
     });
 

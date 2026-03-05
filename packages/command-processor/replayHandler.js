@@ -20,6 +20,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
 
     replays[readModel] = {
       status: 'in_progress',
+      readModel,
       eventsPublished: 0,
       eventsTotal: 0,
       startedAt: Date.now(),
@@ -60,14 +61,22 @@ export const createReplayHandler = (eventStore, eventBus) => {
             type: 'REPLAY_CANCELLED',
             readModel,
           });
-          replays[readModel] = { status: 'cancelled', readModel };
+          replays[readModel] = {
+            ...replays[readModel],
+            status: 'cancelled',
+            cancel: undefined,
+          };
         } else {
           log.info(`Replay complete for ${readModel}`);
           eventBus.publishSystemMessage(correlationId)({
             type: 'REPLAY_EVENTS_DONE',
             readModel,
           });
-          replays[readModel] = { status: 'completed', readModel };
+          replays[readModel] = {
+            ...replays[readModel],
+            status: 'completed',
+            cancel: undefined,
+          };
         }
       })
       .catch((err) => {
@@ -78,9 +87,10 @@ export const createReplayHandler = (eventStore, eventBus) => {
           readModel,
         });
         replays[readModel] = {
+          ...replays[readModel],
           status: 'error',
-          readModel,
           error: String(err),
+          cancel: undefined,
         };
       });
   };

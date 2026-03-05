@@ -68,20 +68,18 @@ export const rabbitMq = (config) => () => {
         );
       },
       subscribeSystemMessages: (handler) =>
-        channel
-          .assertQueue('', { exclusive: true })
-          .then((q) =>
-            channel.bindQueue(q.queue, exchange, '__system').then(() =>
-              channel.consume(
-                q.queue,
-                (msg) => {
-                  const { event } = JSON.parse(msg.content.toString());
-                  handler(event);
-                },
-                { noAck: true },
-              ),
+        channel.assertQueue('', { exclusive: true }).then((q) =>
+          channel.bindQueue(q.queue, exchange, '__system').then(() =>
+            channel.consume(
+              q.queue,
+              (msg) => {
+                const { event } = JSON.parse(msg.content.toString());
+                handler(event);
+              },
+              { noAck: true },
             ),
           ),
+        ),
     };
   });
 };
