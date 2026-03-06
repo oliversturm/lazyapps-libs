@@ -47,17 +47,23 @@ export const rabbitMq = (config) => () => {
         );
         return state;
       },
-      publishReplayEvent: (correlationId) => (targetReadModel, event) => {
-        const log = getLogger('CmdProc/EB/Rabbit', correlationId);
-        log.debug(`Publishing replay event for ${targetReadModel}`);
-        channel.publish(
-          exchange,
-          '__replay',
-          Buffer.from(
-            JSON.stringify({ correlationId, targetReadModel, event }),
-          ),
-        );
-      },
+      publishReplayEvent:
+        (correlationId) => (targetReadModel, event, targetServiceId) => {
+          const log = getLogger('CmdProc/EB/Rabbit', correlationId);
+          log.debug(`Publishing replay event for ${targetReadModel}`);
+          channel.publish(
+            exchange,
+            '__replay',
+            Buffer.from(
+              JSON.stringify({
+                correlationId,
+                targetReadModel,
+                event,
+                ...(targetServiceId && { targetServiceId }),
+              }),
+            ),
+          );
+        },
       publishSystemMessage: (correlationId) => (message) => {
         const log = getLogger('CmdProc/EB/Rabbit', correlationId);
         log.debug(`Publishing system message: ${JSON.stringify(message)}`);

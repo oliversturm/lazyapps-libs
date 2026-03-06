@@ -88,6 +88,7 @@ describe('startReplayHandler', () => {
       'items',
       100,
       null,
+      undefined,
     );
     expect(res.json).toHaveBeenCalledWith({
       status: 'started',
@@ -110,6 +111,7 @@ describe('startReplayHandler', () => {
       'items',
       0,
       null,
+      undefined,
     );
   });
 
@@ -125,6 +127,7 @@ describe('startReplayHandler', () => {
       'items',
       0,
       null,
+      undefined,
     );
   });
 
@@ -144,6 +147,26 @@ describe('startReplayHandler', () => {
       'items',
       100,
       500,
+      undefined,
+    );
+  });
+
+  test('passes targetServiceId to startReplay when provided', () => {
+    const handler = startReplayHandler(context);
+    const req = mockReq({
+      readModel: 'items',
+      targetServiceId: 'orders-service',
+    });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
+      'test-corr-id',
+      'items',
+      0,
+      null,
+      'orders-service',
     );
   });
 

@@ -228,6 +228,7 @@ export const prepareReplayHandler = (context) => (req, res) => {
                 fromTimestamp,
                 preReplayBackupId,
                 warnings,
+                serviceId: context.correlationConfig.serviceId,
               });
             }),
         );

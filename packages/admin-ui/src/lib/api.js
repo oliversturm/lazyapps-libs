@@ -16,10 +16,15 @@ export const createAdminClient = (
 ) => ({
   // Command processor endpoints
 
-  startReplay: (readModel, fromTimestamp, toTimestamp) =>
+  startReplay: (readModel, fromTimestamp, toTimestamp, targetServiceId) =>
     jsonFetch(`${commandProcessorUrl}/api/admin/startReplay`, {
       method: 'POST',
-      body: JSON.stringify({ readModel, fromTimestamp, toTimestamp }),
+      body: JSON.stringify({
+        readModel,
+        fromTimestamp,
+        toTimestamp,
+        ...(targetServiceId && { targetServiceId }),
+      }),
     }),
 
   getReplayStatus: (readModel) =>

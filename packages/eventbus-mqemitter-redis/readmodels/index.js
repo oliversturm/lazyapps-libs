@@ -63,8 +63,17 @@ export const mqEmitterRedis =
           cb();
         });
         mq.on('__replay', ({ payload }, cb) => {
-          const { correlationId, targetReadModel, event } = payload;
+          const { correlationId, targetReadModel, event, targetServiceId } =
+            payload;
           const log = getLogger('RM/EB/Redis/Replay', correlationId);
+          if (
+            targetServiceId &&
+            context.correlationConfig &&
+            targetServiceId !== context.correlationConfig.serviceId
+          ) {
+            cb();
+            return;
+          }
           if (context.readModels[targetReadModel]) {
             log.debug(`Replay event for ${targetReadModel}: ${event.type}`);
             context.projectionHandler.projectEventForReadModel(

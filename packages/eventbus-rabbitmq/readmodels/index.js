@@ -61,10 +61,20 @@ export const rabbitMq = (config) => (context) => {
 
                   handleSysMessage(event);
                 } else if (msg.fields.routingKey.startsWith('__replay')) {
-                  const { correlationId, targetReadModel, event } = JSON.parse(
-                    msg.content.toString(),
-                  );
+                  const {
+                    correlationId,
+                    targetReadModel,
+                    event,
+                    targetServiceId,
+                  } = JSON.parse(msg.content.toString());
                   const log = getLogger('RM/EB/Rabbit/Replay', correlationId);
+                  if (
+                    targetServiceId &&
+                    context.correlationConfig &&
+                    targetServiceId !== context.correlationConfig.serviceId
+                  ) {
+                    return;
+                  }
                   if (context.readModels[targetReadModel]) {
                     log.debug(
                       `Replay event for ${targetReadModel}: ${event.type}`,

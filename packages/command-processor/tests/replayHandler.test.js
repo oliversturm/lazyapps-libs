@@ -61,8 +61,8 @@ describe('createReplayHandler', () => {
         expect(eventStore.streamEvents).toHaveBeenCalledWith(0, null);
         expect(eventBus.publishReplayEvent).toHaveBeenCalledWith('corr-1');
         expect(publishFn).toHaveBeenCalledTimes(2);
-        expect(publishFn).toHaveBeenCalledWith('items', events[0]);
-        expect(publishFn).toHaveBeenCalledWith('items', events[1]);
+        expect(publishFn).toHaveBeenCalledWith('items', events[0], undefined);
+        expect(publishFn).toHaveBeenCalledWith('items', events[1], undefined);
       });
     });
 
@@ -200,6 +200,26 @@ describe('createReplayHandler', () => {
           readModel: 'items',
         });
       });
+    });
+
+    test('passes targetServiceId to publishReplayEvent when provided', () => {
+      const events = [{ type: 'ITEM_CREATED', timestamp: 100 }];
+      const cursor = makeCursor(events);
+      eventStore.countEvents.mockResolvedValue(1);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishReplayEvent.mockReturnValue(publishFn);
+
+      return handler
+        .startReplay('corr-1', 'items', 0, null, 'orders-service')
+        .then(() => {
+          expect(publishFn).toHaveBeenCalledWith(
+            'items',
+            events[0],
+            'orders-service',
+          );
+        });
     });
 
     test('passes fromTimestamp and toTimestamp to eventStore', () => {

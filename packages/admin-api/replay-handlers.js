@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 export const startReplayHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Replay', correlationId);
-  const { readModel, fromTimestamp, toTimestamp } = req.body;
+  const { readModel, fromTimestamp, toTimestamp, targetServiceId } = req.body;
 
   if (!readModel) {
     res.status(400).json({ error: 'readModel is required' });
@@ -28,6 +28,7 @@ export const startReplayHandler = (context) => (req, res) => {
       readModel,
       fromTimestamp || 0,
       toTimestamp || null,
+      targetServiceId,
     )
     .catch((err) => {
       log.error(`Replay failed for ${readModel}: ${err}`);

@@ -323,6 +323,127 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
+  test('__replay handler ignores events with non-matching targetServiceId', () => {
+    const mockProjectForRM = vi.fn();
+    const context = {
+      projectionHandler: {
+        projectEvent: vi.fn(() => vi.fn()),
+        setReadModelReplayState: vi.fn(),
+        projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
+      },
+      replayHandler: {
+        handleReplayComplete: vi.fn(),
+        handleReplayCancelled: vi.fn(),
+      },
+      correlationConfig: { serviceId: 'customers-service' },
+      readModels: { overview: { projections: {} } },
+    };
+
+    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const event = { type: 'ORDER_CREATED', timestamp: 100 };
+        const cb = vi.fn();
+        mockHandlers['__replay'](
+          {
+            payload: {
+              correlationId: 'corr-1',
+              targetReadModel: 'overview',
+              event,
+              targetServiceId: 'orders-service',
+            },
+          },
+          cb,
+        );
+
+        expect(
+          context.projectionHandler.projectEventForReadModel,
+        ).not.toHaveBeenCalled();
+        expect(cb).toHaveBeenCalled();
+      },
+    );
+  });
+
+  test('__replay handler processes events with matching targetServiceId', () => {
+    const mockProjectForRM = vi.fn();
+    const context = {
+      projectionHandler: {
+        projectEvent: vi.fn(() => vi.fn()),
+        setReadModelReplayState: vi.fn(),
+        projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
+      },
+      replayHandler: {
+        handleReplayComplete: vi.fn(),
+        handleReplayCancelled: vi.fn(),
+      },
+      correlationConfig: { serviceId: 'orders-service' },
+      readModels: { overview: { projections: {} } },
+    };
+
+    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const event = { type: 'ORDER_CREATED', timestamp: 100 };
+        const cb = vi.fn();
+        mockHandlers['__replay'](
+          {
+            payload: {
+              correlationId: 'corr-1',
+              targetReadModel: 'overview',
+              event,
+              targetServiceId: 'orders-service',
+            },
+          },
+          cb,
+        );
+
+        expect(
+          context.projectionHandler.projectEventForReadModel,
+        ).toHaveBeenCalledWith('corr-1', 'overview');
+        expect(mockProjectForRM).toHaveBeenCalledWith(event);
+        expect(cb).toHaveBeenCalled();
+      },
+    );
+  });
+
+  test('__replay handler processes events without targetServiceId (backward compat)', () => {
+    const mockProjectForRM = vi.fn();
+    const context = {
+      projectionHandler: {
+        projectEvent: vi.fn(() => vi.fn()),
+        setReadModelReplayState: vi.fn(),
+        projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
+      },
+      replayHandler: {
+        handleReplayComplete: vi.fn(),
+        handleReplayCancelled: vi.fn(),
+      },
+      correlationConfig: { serviceId: 'orders-service' },
+      readModels: { overview: { projections: {} } },
+    };
+
+    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const event = { type: 'ORDER_CREATED', timestamp: 100 };
+        const cb = vi.fn();
+        mockHandlers['__replay'](
+          {
+            payload: {
+              correlationId: 'corr-1',
+              targetReadModel: 'overview',
+              event,
+            },
+          },
+          cb,
+        );
+
+        expect(
+          context.projectionHandler.projectEventForReadModel,
+        ).toHaveBeenCalledWith('corr-1', 'overview');
+        expect(mockProjectForRM).toHaveBeenCalledWith(event);
+        expect(cb).toHaveBeenCalled();
+      },
+    );
+  });
+
   test('inReplay starts as false', () => {
     const mockProjectFn = vi.fn();
     const context = {

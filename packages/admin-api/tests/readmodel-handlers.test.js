@@ -388,6 +388,7 @@ describe('prepareReplayHandler', () => {
           updateOne: vi.fn().mockResolvedValue(),
         }),
       },
+      correlationConfig: { serviceId: 'test-service' },
     };
   });
 
@@ -444,6 +445,7 @@ describe('prepareReplayHandler', () => {
         fromTimestamp: 500,
         preReplayBackupId: 'backup_pre_items',
         warnings: [],
+        serviceId: 'test-service',
       });
     });
   });

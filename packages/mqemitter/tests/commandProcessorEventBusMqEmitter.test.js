@@ -147,6 +147,43 @@ describe('commandProcessorEventBusMqEmitter', () => {
     );
   });
 
+  test('publishReplayEvent includes targetServiceId when provided', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const event = { type: 'ITEM_CREATED', timestamp: 12345 };
+        bus.publishReplayEvent('corr-1')('items', event, 'orders-service');
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__replay',
+          payload: {
+            correlationId: 'corr-1',
+            targetReadModel: 'items',
+            event,
+            targetServiceId: 'orders-service',
+          },
+        });
+      },
+    );
+  });
+
+  test('publishReplayEvent omits targetServiceId when not provided', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const event = { type: 'ITEM_CREATED', timestamp: 12345 };
+        bus.publishReplayEvent('corr-1')('items', event);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__replay',
+          payload: {
+            correlationId: 'corr-1',
+            targetReadModel: 'items',
+            event,
+          },
+        });
+      },
+    );
+  });
+
   test('publishSystemMessage emits on __system topic with correct payload', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {

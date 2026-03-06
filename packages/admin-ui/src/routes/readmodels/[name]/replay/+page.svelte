@@ -23,6 +23,7 @@
 
   // Replay state
   let prepareResult = $state(null);
+  let targetServiceId = $state(null);
   let replayProgress = $state(null);
   let pollTimer = $state(null);
 
@@ -81,6 +82,7 @@
       .then((result) => {
         prepareResult = result;
         fromTimestamp = result.fromTimestamp || 0;
+        targetServiceId = result.serviceId || null;
         warnings = result.warnings || [];
         step = 'prepared';
       })
@@ -94,7 +96,7 @@
     error = null;
 
     api
-      .startReplay(data.name, fromTimestamp, toTimestamp)
+      .startReplay(data.name, fromTimestamp, toTimestamp, targetServiceId)
       .then(() => {
         step = 'replaying';
         startPolling();
@@ -159,6 +161,7 @@
     error = null;
     warnings = [];
     prepareResult = null;
+    targetServiceId = null;
     replayProgress = null;
     selectedBackupId = null;
     replayMode = 'current';

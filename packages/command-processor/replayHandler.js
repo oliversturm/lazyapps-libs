@@ -8,6 +8,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
     readModel,
     fromTimestamp,
     toTimestamp,
+    targetServiceId,
   ) => {
     if (replays[readModel] && replays[readModel].status === 'in_progress') {
       return Promise.reject(
@@ -42,7 +43,11 @@ export const createReplayHandler = (eventStore, eventBus) => {
         const processNext = () =>
           cursor.next().then((event) => {
             if (!event || cancelled) return Promise.resolve();
-            eventBus.publishReplayEvent(correlationId)(readModel, event);
+            eventBus.publishReplayEvent(correlationId)(
+              readModel,
+              event,
+              targetServiceId,
+            );
             replays[readModel].eventsPublished++;
             if (replays[readModel].eventsPublished % 1000 === 0) {
               log.info(
