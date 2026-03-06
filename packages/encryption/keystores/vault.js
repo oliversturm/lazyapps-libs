@@ -31,8 +31,10 @@ const authenticateAppRole = (vaultUrl, roleId, secretId) =>
 
 const initDekInMemory = () => {
   const deks = new Map();
+  const forgotten = new Set();
   return Promise.resolve({
     getDEK: (subjectId, contextName) => {
+      if (forgotten.has(subjectId)) return Promise.resolve({ forgotten: true });
       const key = `${subjectId}:${contextName}`;
       return Promise.resolve(deks.get(key) || null);
     },
@@ -53,6 +55,7 @@ const initDekInMemory = () => {
       for (const key of deks.keys()) {
         if (key.startsWith(`${subjectId}:`)) deks.delete(key);
       }
+      forgotten.add(subjectId);
       return Promise.resolve();
     },
     close: () => Promise.resolve(),
@@ -64,16 +67,22 @@ const initDekMongo = ({ url, database, collection }) =>
     MongoClient.connect(url).then((client) => {
       const db = client.db(database);
       const coll = db.collection(collection);
+      const forgottenColl = db.collection(`${collection}-forgotten`);
       return {
         getDEK: (subjectId, contextName) =>
-          coll
-            .findOne(
-              { subjectId, context: contextName },
-              { sort: { version: -1 } },
-            )
-            .then((doc) =>
-              doc ? { wrappedKey: doc.wrappedKey, version: doc.version } : null,
-            ),
+          forgottenColl.findOne({ subjectId }).then((forgotten) => {
+            if (forgotten) return { forgotten: true };
+            return coll
+              .findOne(
+                { subjectId, context: contextName },
+                { sort: { version: -1 } },
+              )
+              .then((doc) =>
+                doc
+                  ? { wrappedKey: doc.wrappedKey, version: doc.version }
+                  : null,
+              );
+          }),
         storeDEK: (subjectId, contextName, dekInfo) =>
           coll.insertOne({
             subjectId,
@@ -94,7 +103,14 @@ const initDekMongo = ({ url, database, collection }) =>
               })),
             ),
         deleteKeysForSubject: (subjectId) =>
-          coll.deleteMany({ subjectId }).then(() => {}),
+          forgottenColl
+            .updateOne(
+              { subjectId },
+              { $set: { subjectId, deletedAt: Date.now() } },
+              { upsert: true },
+            )
+            .then(() => coll.deleteMany({ subjectId }))
+            .then(() => {}),
         close: () => client.close(),
       };
     }),

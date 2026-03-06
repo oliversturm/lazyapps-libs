@@ -1,5 +1,26 @@
 import { getLogger } from '@lazyapps/logger';
 
+const decryptResult = (queryDecryptor, result, auth, serviceRole) => {
+  if (!queryDecryptor) return Promise.resolve(result);
+  const roles =
+    auth && auth.roles ? auth.roles : serviceRole ? [serviceRole] : [];
+  const decryptOpts = {
+    roles,
+    identity: auth && auth.sub,
+    subjectField: 'id',
+  };
+  if (Array.isArray(result)) {
+    return result.reduce(
+      (promise, doc) =>
+        promise.then((acc) =>
+          queryDecryptor.decrypt(doc, decryptOpts).then((d) => [...acc, d]),
+        ),
+      Promise.resolve([]),
+    );
+  }
+  return queryDecryptor.decrypt(result, decryptOpts);
+};
+
 export const createApiHandler =
   (context) =>
   (readModelName, readModel, resolverName, resolver) =>
@@ -18,6 +39,14 @@ export const createApiHandler =
           req.body,
           req.auth,
           req.body.correlationId,
+        ),
+      )
+      .then((result) =>
+        decryptResult(
+          context.encryptionQueryDecryptor,
+          result,
+          req.auth,
+          context.encryptionRole,
         ),
       )
       .then((result) => {

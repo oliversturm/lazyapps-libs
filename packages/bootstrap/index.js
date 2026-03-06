@@ -109,6 +109,7 @@ export function start({
               readModels.role || 'service',
             ),
             storage: enc.wrapStorage(readModels.storage),
+            encryptionQueryDecryptor: enc.createQueryDecryptor(),
           }
         : readModels;
       startSubsystems(

@@ -29,6 +29,7 @@ export const createStorageEncryptor = (
                 ctx: fieldConfig.context,
                 kid: subjectId,
                 kv: dek.version,
+                wk: dek.wrappedKey,
               },
             }));
         }),

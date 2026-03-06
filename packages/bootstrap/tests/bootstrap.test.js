@@ -151,12 +151,14 @@ describe('encryption integration', () => {
 
   test('wraps readModels storage and injects decryptor when encryption provided', async () => {
     const mockDecryptor = vi.fn();
+    const mockQueryDecryptor = { decrypt: vi.fn() };
     const wrappedStorage = vi.fn();
     const enc = {
       wrapEventStore: vi.fn(),
       wrapEventBus: vi.fn(),
       createProjectionDecryptor: vi.fn().mockReturnValue(mockDecryptor),
       wrapStorage: vi.fn().mockReturnValue(wrappedStorage),
+      createQueryDecryptor: vi.fn().mockReturnValue(mockQueryDecryptor),
     };
     const readModels = {
       listener: vi.fn(),
@@ -176,9 +178,11 @@ describe('encryption integration', () => {
 
     expect(enc.createProjectionDecryptor).toHaveBeenCalledWith('customer-rm');
     expect(enc.wrapStorage).toHaveBeenCalledWith(readModels.storage);
+    expect(enc.createQueryDecryptor).toHaveBeenCalledOnce();
     const calledWith = mockStartReadModels.mock.calls[0][1];
     expect(calledWith.encryptionDecryptor).toBe(mockDecryptor);
     expect(calledWith.storage).toBe(wrappedStorage);
+    expect(calledWith.encryptionQueryDecryptor).toBe(mockQueryDecryptor);
   });
 
   test('uses default role "service" when readModels.role is not set', async () => {
@@ -187,6 +191,7 @@ describe('encryption integration', () => {
       wrapEventBus: vi.fn(),
       createProjectionDecryptor: vi.fn(),
       wrapStorage: vi.fn(),
+      createQueryDecryptor: vi.fn().mockReturnValue(null),
     };
 
     start({

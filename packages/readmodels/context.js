@@ -12,6 +12,8 @@ export const initializeContext = (
     changeNotificationSender,
     commandSender,
     encryptionDecryptor,
+    encryptionQueryDecryptor,
+    role,
   },
 ) =>
   storage()
@@ -20,6 +22,8 @@ export const initializeContext = (
       readModels,
       correlationConfig,
       encryptionDecryptor,
+      encryptionQueryDecryptor,
+      encryptionRole: role,
     }))
     .then((context) =>
       context.storage

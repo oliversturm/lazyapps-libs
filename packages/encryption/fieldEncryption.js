@@ -56,6 +56,7 @@ export const createFieldEncryptor = (envelope, schema) => ({
               ctx: fieldConfig.context,
               kid: subjectId,
               kv: dek.version,
+              wk: dek.wrappedKey,
             };
             return setNestedValue(evt, fieldPath, encryptedField);
           });
@@ -86,10 +87,12 @@ export const createFieldEncryptor = (envelope, schema) => ({
             }
           }
 
-          return envelope.getDEK(value.kid, value.ctx, value.kv).then((dek) => {
-            const plaintext = decryptValue(dek.key, value);
-            return setNestedValue(evt, fieldPath, plaintext);
-          });
+          return envelope
+            .getDEK(value.kid, value.ctx, value.kv, value.wk)
+            .then((dek) => {
+              const plaintext = decryptValue(dek.key, value);
+              return setNestedValue(evt, fieldPath, plaintext);
+            });
         }),
       Promise.resolve(decrypted),
     );

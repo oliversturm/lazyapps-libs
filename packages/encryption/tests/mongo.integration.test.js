@@ -87,8 +87,8 @@ describe('mongoKeyStore integration', { timeout: 60000 }, () => {
     // Verify gone
     const after1 = await ks.getDEK('sub-del', 'personal');
     const after2 = await ks.getDEK('sub-del', 'financial');
-    expect(after1).toBeNull();
-    expect(after2).toBeNull();
+    expect(after1).toEqual({ forgotten: true });
+    expect(after2).toEqual({ forgotten: true });
 
     await ks.close();
   });

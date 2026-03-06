@@ -38,7 +38,12 @@ export const createQueryDecryptor = (
             }
 
             return envelope
-              .getDEK(fieldValue.kid, fieldValue.ctx, fieldValue.kv)
+              .getDEK(
+                fieldValue.kid,
+                fieldValue.ctx,
+                fieldValue.kv,
+                fieldValue.wk,
+              )
               .then((dek) => ({
                 ...d,
                 [fieldName]: decryptValue(dek.key, fieldValue),

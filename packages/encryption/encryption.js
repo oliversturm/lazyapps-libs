@@ -41,9 +41,10 @@ export const createEncryption = ({
 
                 const shredIfForget = (evt) =>
                   evt.type === 'SUBJECT_FORGOTTEN'
-                    ? cachedKs
+                    ? (envelope.clearCachedDEKs(evt.payload.subjectId),
+                      cachedKs
                         .deleteKeysForSubject(evt.payload.subjectId)
-                        .then(() => evt)
+                        .then(() => evt))
                     : Promise.resolve(evt);
 
                 return fieldEncryptor
@@ -130,6 +131,7 @@ export const createEncryption = ({
 
         forgetSubject: (subjectId) => {
           log.info(`Forgetting subject: ${subjectId}`);
+          envelope.clearCachedDEKs(subjectId);
           return cachedKs.deleteKeysForSubject(subjectId);
         },
 

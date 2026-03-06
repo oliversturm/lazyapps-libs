@@ -12,6 +12,7 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
       ]),
     );
     const deks = new Map();
+    const forgotten = new Set();
 
     const wrapLocal = (kek, plainDEK) => {
       const iv = randomBytes(IV_LENGTH);
@@ -61,6 +62,8 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
             ),
 
       getDEK: (subjectId, contextName) => {
+        if (forgotten.has(subjectId))
+          return Promise.resolve({ forgotten: true });
         const key = `${subjectId}:${contextName}`;
         return Promise.resolve(deks.get(key) || null);
       },
@@ -84,6 +87,7 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
         for (const key of deks.keys()) {
           if (key.startsWith(`${subjectId}:`)) deks.delete(key);
         }
+        forgotten.add(subjectId);
         return Promise.resolve();
       },
 

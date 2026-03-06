@@ -216,7 +216,7 @@ describe('vaultKeyStore', () => {
           expect(results).toEqual([]);
         }));
 
-      test('deleteKeysForSubject removes all DEKs for subject', () =>
+      test('deleteKeysForSubject removes all DEKs and marks subject as forgotten', () =>
         ks
           .storeDEK('sub-1', 'personal', {
             wrappedKey: 'ct-1',
@@ -231,7 +231,7 @@ describe('vaultKeyStore', () => {
           .then(() => ks.deleteKeysForSubject('sub-1'))
           .then(() => ks.getDEK('sub-1', 'personal'))
           .then((result) => {
-            expect(result).toBeNull();
+            expect(result).toEqual({ forgotten: true });
           }));
 
       test('deleteKeysForSubject does not affect other subjects', () =>

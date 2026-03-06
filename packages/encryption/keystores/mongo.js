@@ -53,6 +53,8 @@ export const mongoKeyStore = ({
       ? rootSecret
       : Buffer.from(rootSecret, 'base64');
 
+    const forgottenCollection = `${dekCollection}-forgotten`;
+
     return MongoClient.connect(url).then((client) => {
       const db = client.db(database);
       log.info(`Key store connected to ${database}`);
@@ -65,21 +67,30 @@ export const mongoKeyStore = ({
             unwrapLocal(deriveKEK(secret, contextName), wrappedDEK),
           ),
 
-        getDEK: (subjectId, contextName, version) => {
-          const filter = { subjectId, context: contextName };
-          if (version) filter.version = version;
-          return db
-            .collection(dekCollection)
-            .findOne(filter, { sort: { version: -1 } })
-            .then((doc) =>
-              doc
-                ? {
-                    wrappedKey: { iv: doc.iv, data: doc.data, tag: doc.tag },
-                    version: doc.version,
-                  }
-                : null,
-            );
-        },
+        getDEK: (subjectId, contextName, version) =>
+          db
+            .collection(forgottenCollection)
+            .findOne({ subjectId })
+            .then((forgotten) => {
+              if (forgotten) return { forgotten: true };
+              const filter = { subjectId, context: contextName };
+              if (version) filter.version = version;
+              return db
+                .collection(dekCollection)
+                .findOne(filter, { sort: { version: -1 } })
+                .then((doc) =>
+                  doc
+                    ? {
+                        wrappedKey: {
+                          iv: doc.iv,
+                          data: doc.data,
+                          tag: doc.tag,
+                        },
+                        version: doc.version,
+                      }
+                    : null,
+                );
+            }),
 
         storeDEK: (subjectId, contextName, dekInfo) =>
           db.collection(dekCollection).insertOne({
@@ -109,8 +120,13 @@ export const mongoKeyStore = ({
           const ksLog = getLogger('Encryption/KS', 'ADMIN');
           ksLog.info(`Deleting all keys for subject: ${subjectId}`);
           return db
-            .collection(dekCollection)
-            .deleteMany({ subjectId })
+            .collection(forgottenCollection)
+            .updateOne(
+              { subjectId },
+              { $set: { subjectId, deletedAt: Date.now() } },
+              { upsert: true },
+            )
+            .then(() => db.collection(dekCollection).deleteMany({ subjectId }))
             .then((result) => {
               ksLog.info(
                 `Deleted ${result.deletedCount} keys for ${subjectId}`,

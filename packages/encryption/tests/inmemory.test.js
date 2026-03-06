@@ -125,7 +125,7 @@ describe('inMemoryKeyStore', () => {
   });
 
   describe('deleteKeysForSubject', () => {
-    test('removes all DEKs for a subject', () =>
+    test('removes all DEKs for a subject and marks as forgotten', () =>
       ks
         .storeDEK('sub-1', 'personal', {
           wrappedKey: { iv: '1' },
@@ -140,7 +140,7 @@ describe('inMemoryKeyStore', () => {
         .then(() => ks.deleteKeysForSubject('sub-1'))
         .then(() => ks.getDEK('sub-1', 'personal'))
         .then((result) => {
-          expect(result).toBeNull();
+          expect(result).toEqual({ forgotten: true });
         }));
 
     test('does not affect other subjects', () =>

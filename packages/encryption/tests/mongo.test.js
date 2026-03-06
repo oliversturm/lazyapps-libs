@@ -45,9 +45,29 @@ const createMockCollection = () => {
   };
 };
 
-const createMockClient = (collection) => ({
+const createForgottenCollection = () => {
+  const docs = [];
+  return {
+    __docs: docs,
+    findOne: vi.fn((filter) => {
+      const match = docs.find((d) => d.subjectId === filter.subjectId);
+      return Promise.resolve(match || null);
+    }),
+    updateOne: vi.fn((filter, update, options) => {
+      const existing = docs.find((d) => d.subjectId === filter.subjectId);
+      if (!existing) {
+        docs.push(update.$set);
+      }
+      return Promise.resolve({ upsertedCount: existing ? 0 : 1 });
+    }),
+  };
+};
+
+const createMockClient = (collection, forgottenCol) => ({
   db: vi.fn(() => ({
-    collection: vi.fn(() => collection),
+    collection: vi.fn((name) =>
+      name.endsWith('-forgotten') ? forgottenCol : collection,
+    ),
   })),
   close: vi.fn(() => Promise.resolve()),
 });
@@ -70,12 +90,14 @@ const { mongoKeyStore } = await import('../keystores/mongo.js');
 describe('mongoKeyStore', () => {
   const rootSecret = randomBytes(32);
   let mockCollection;
+  let mockForgottenCollection;
   let mockClient;
   let ks;
 
   beforeEach(() => {
     mockCollection = createMockCollection();
-    mockClient = createMockClient(mockCollection);
+    mockForgottenCollection = createForgottenCollection();
+    mockClient = createMockClient(mockCollection, mockForgottenCollection);
     __setMockClient(mockClient);
 
     return mongoKeyStore({
@@ -335,7 +357,7 @@ describe('mongoKeyStore', () => {
   });
 
   describe('deleteKeysForSubject', () => {
-    test('removes all DEKs for a subject', () =>
+    test('removes all DEKs for a subject and marks as forgotten', () =>
       ks
         .storeDEK('sub-1', 'personal', {
           wrappedKey: { iv: '1', data: '1', tag: '1' },
@@ -350,7 +372,7 @@ describe('mongoKeyStore', () => {
         .then(() => ks.deleteKeysForSubject('sub-1'))
         .then(() => ks.getDEK('sub-1', 'personal'))
         .then((result) => {
-          expect(result).toBeNull();
+          expect(result).toEqual({ forgotten: true });
         }));
 
     test('calls deleteMany with correct filter', () =>
