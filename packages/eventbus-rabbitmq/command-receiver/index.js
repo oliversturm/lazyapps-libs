@@ -64,6 +64,23 @@ export const rabbitMq = (config) => () => {
             ),
           );
         },
+      publishCatchupEvent:
+        (correlationId) => (targetReadModel, event, targetServiceId) => {
+          const log = getLogger('CmdProc/EB/Rabbit', correlationId);
+          log.debug(`Publishing catch-up event for ${targetReadModel}`);
+          channel.publish(
+            exchange,
+            '__catchup',
+            Buffer.from(
+              JSON.stringify({
+                correlationId,
+                targetReadModel,
+                event,
+                ...(targetServiceId && { targetServiceId }),
+              }),
+            ),
+          );
+        },
       publishSystemMessage: (correlationId) => (message) => {
         const log = getLogger('CmdProc/EB/Rabbit', correlationId);
         log.debug(`Publishing system message: ${JSON.stringify(message)}`);

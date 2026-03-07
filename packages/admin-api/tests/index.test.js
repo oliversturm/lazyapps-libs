@@ -12,8 +12,11 @@ vi.mock('nanoid', () => ({
   nanoid: vi.fn().mockReturnValue('test-corr-id'),
 }));
 
-const { installReplayAdminApi, installReadModelAdminApi } =
-  await import('../index.js');
+const {
+  installReplayAdminApi,
+  installCatchupAdminApi,
+  installReadModelAdminApi,
+} = await import('../index.js');
 
 describe('installReplayAdminApi', () => {
   test('registers command processor admin routes', () => {
@@ -86,8 +89,47 @@ describe('installReadModelAdminApi', () => {
       '/admin/replay/:readModelName/state',
       expect.any(Function),
     );
-    expect(app.post).toHaveBeenCalledTimes(2);
+    expect(app.post).toHaveBeenCalledWith(
+      '/admin/readmodels/:readModelName/activate',
+      expect.any(Function),
+    );
+    expect(app.post).toHaveBeenCalledWith(
+      '/admin/readmodels/:readModelName/stop',
+      expect.any(Function),
+    );
+    expect(app.post).toHaveBeenCalledWith(
+      '/admin/readmodels/activate-all',
+      expect.any(Function),
+    );
+    expect(app.post).toHaveBeenCalledTimes(5);
     expect(app.get).toHaveBeenCalledTimes(4);
     expect(app.delete).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('installCatchupAdminApi', () => {
+  test('registers catch-up admin routes', () => {
+    const context = {};
+    const app = {
+      post: vi.fn(),
+      get: vi.fn(),
+    };
+
+    installCatchupAdminApi(context)(app);
+
+    expect(app.post).toHaveBeenCalledWith(
+      '/admin/catchup/:readModelName/start',
+      expect.any(Function),
+    );
+    expect(app.post).toHaveBeenCalledWith(
+      '/admin/catchup/:readModelName/cancel',
+      expect.any(Function),
+    );
+    expect(app.get).toHaveBeenCalledWith(
+      '/admin/catchup/:readModelName/status',
+      expect.any(Function),
+    );
+    expect(app.post).toHaveBeenCalledTimes(2);
+    expect(app.get).toHaveBeenCalledTimes(1);
   });
 });

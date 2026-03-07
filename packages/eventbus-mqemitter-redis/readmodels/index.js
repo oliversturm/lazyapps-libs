@@ -28,6 +28,19 @@ export const mqEmitterRedis =
         case 'REPLAY_CANCELLED':
           context.replayHandler.handleReplayCancelled(msg.readModel);
           break;
+        case 'CATCHUP_EVENTS_DONE':
+          if (context.catchupHandler) {
+            context.catchupHandler.handleCatchupComplete(
+              msg.readModel,
+              msg.toTimestamp,
+            );
+          }
+          break;
+        case 'CATCHUP_CANCELLED':
+          if (context.catchupHandler) {
+            context.catchupHandler.handleCatchupCancelled(msg.readModel);
+          }
+          break;
       }
     };
 
@@ -77,6 +90,27 @@ export const mqEmitterRedis =
           if (context.readModels[targetReadModel]) {
             log.debug(`Replay event for ${targetReadModel}: ${event.type}`);
             context.projectionHandler.projectEventForReadModel(
+              correlationId,
+              targetReadModel,
+            )(event);
+          }
+          cb();
+        });
+        mq.on('__catchup', ({ payload }, cb) => {
+          const { correlationId, targetReadModel, event, targetServiceId } =
+            payload;
+          const log = getLogger('RM/EB/Redis/CatchUp', correlationId);
+          if (
+            targetServiceId &&
+            context.correlationConfig &&
+            targetServiceId !== context.correlationConfig.serviceId
+          ) {
+            cb();
+            return;
+          }
+          if (context.readModels[targetReadModel]) {
+            log.debug(`Catch-up event for ${targetReadModel}: ${event.type}`);
+            context.projectionHandler.projectCatchupEventForReadModel(
               correlationId,
               targetReadModel,
             )(event);

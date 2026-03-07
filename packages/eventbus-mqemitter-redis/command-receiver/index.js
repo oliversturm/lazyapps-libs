@@ -84,6 +84,20 @@ export const mqEmitterRedis =
               },
             });
           },
+        publishCatchupEvent:
+          (correlationId) => (targetReadModel, event, targetServiceId) => {
+            const log = getLogger('CP/EB/Redis', correlationId);
+            log.debug(`Publishing catch-up event for ${targetReadModel}`);
+            mq.emit({
+              topic: '__catchup',
+              payload: {
+                correlationId,
+                targetReadModel,
+                event,
+                ...(targetServiceId && { targetServiceId }),
+              },
+            });
+          },
         publishSystemMessage: (correlationId) => (message) => {
           const log = getLogger('CP/EB/Redis', correlationId);
           log.debug(`Publishing system message: ${JSON.stringify(message)}`);

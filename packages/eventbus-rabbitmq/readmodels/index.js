@@ -22,6 +22,19 @@ export const rabbitMq = (config) => (context) => {
       case 'REPLAY_CANCELLED':
         context.replayHandler.handleReplayCancelled(msg.readModel);
         break;
+      case 'CATCHUP_EVENTS_DONE':
+        if (context.catchupHandler) {
+          context.catchupHandler.handleCatchupComplete(
+            msg.readModel,
+            msg.toTimestamp,
+          );
+        }
+        break;
+      case 'CATCHUP_CANCELLED':
+        if (context.catchupHandler) {
+          context.catchupHandler.handleCatchupCancelled(msg.readModel);
+        }
+        break;
     }
   };
 
@@ -43,6 +56,7 @@ export const rabbitMq = (config) => (context) => {
           .bindQueue(q.queue, exchange, pattern)
           .then(() => channel.bindQueue(q.queue, exchange, '__system'))
           .then(() => channel.bindQueue(q.queue, exchange, '__replay'))
+          .then(() => channel.bindQueue(q.queue, exchange, '__catchup'))
           .then(() => {
             initLog.info(
               `Event bus connected to Rabbit MQ exchange "${exchange}" with pattern "${pattern}"`,
@@ -80,6 +94,30 @@ export const rabbitMq = (config) => (context) => {
                       `Replay event for ${targetReadModel}: ${event.type}`,
                     );
                     context.projectionHandler.projectEventForReadModel(
+                      correlationId,
+                      targetReadModel,
+                    )(event);
+                  }
+                } else if (msg.fields.routingKey.startsWith('__catchup')) {
+                  const {
+                    correlationId,
+                    targetReadModel,
+                    event,
+                    targetServiceId,
+                  } = JSON.parse(msg.content.toString());
+                  const log = getLogger('RM/EB/Rabbit/CatchUp', correlationId);
+                  if (
+                    targetServiceId &&
+                    context.correlationConfig &&
+                    targetServiceId !== context.correlationConfig.serviceId
+                  ) {
+                    return;
+                  }
+                  if (context.readModels[targetReadModel]) {
+                    log.debug(
+                      `Catch-up event for ${targetReadModel}: ${event.type}`,
+                    );
+                    context.projectionHandler.projectCatchupEventForReadModel(
                       correlationId,
                       targetReadModel,
                     )(event);

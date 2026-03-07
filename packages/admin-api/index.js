@@ -14,7 +14,16 @@ import {
   prepareReplayHandler,
   replayReadModelStatusHandler,
   resetReplayStateHandler,
+  activateReadModelHandler,
+  stopReadModelHandler,
+  activateAllHandler,
 } from './readmodel-handlers.js';
+
+import {
+  startCatchupHandler,
+  cancelCatchupHandler,
+  getCatchupStatusHandler,
+} from './catchup-handlers.js';
 
 export const installReplayAdminApi = (context) => (app) => {
   app.post('/api/admin/startReplay', startReplayHandler(context));
@@ -23,6 +32,18 @@ export const installReplayAdminApi = (context) => (app) => {
   app.post(
     '/api/admin/commandReplayState',
     setCommandReplayStateHandler(context),
+  );
+};
+
+export const installCatchupAdminApi = (context) => (app) => {
+  app.post('/admin/catchup/:readModelName/start', startCatchupHandler(context));
+  app.post(
+    '/admin/catchup/:readModelName/cancel',
+    cancelCatchupHandler(context),
+  );
+  app.get(
+    '/admin/catchup/:readModelName/status',
+    getCatchupStatusHandler(context),
   );
 };
 
@@ -46,4 +67,14 @@ export const installReadModelAdminApi = (context) => (app) => {
     '/admin/replay/:readModelName/state',
     resetReplayStateHandler(context),
   );
+
+  app.post(
+    '/admin/readmodels/:readModelName/activate',
+    activateReadModelHandler(context),
+  );
+  app.post(
+    '/admin/readmodels/:readModelName/stop',
+    stopReadModelHandler(context),
+  );
+  app.post('/admin/readmodels/activate-all', activateAllHandler(context));
 };

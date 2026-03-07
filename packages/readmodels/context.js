@@ -3,6 +3,8 @@ import { createSideEffectsHandler } from './sideEffects.js';
 import { createChangeNotificationHandler } from './changeNotification.js';
 import { createCommandHandler } from './commands.js';
 import { createReadModelReplayHandler } from './replayHandler.js';
+import { createLifecycleManager } from './lifecycleManager.js';
+import { createCatchupHandler } from './catchupHandler.js';
 
 export const initializeContext = (
   correlationConfig,
@@ -13,6 +15,8 @@ export const initializeContext = (
     changeNotificationSender,
     commandSender,
     backup,
+    catchupServiceUrl,
+    autoActivate,
   },
 ) =>
   storage()
@@ -51,4 +55,17 @@ export const initializeContext = (
       ...context,
       replayHandler: createReadModelReplayHandler(context),
     }))
-    .then((context) => eventBus(context).then(() => context));
+    .then((context) => {
+      if (catchupServiceUrl) {
+        const lifecycleManager = createLifecycleManager(context, {
+          catchupServiceUrl,
+        });
+        context.lifecycleManager = lifecycleManager;
+        context.catchupHandler = createCatchupHandler(context);
+        context.connectEventBus = () => eventBus(context);
+        lifecycleManager.initialize(Object.keys(readModels));
+        context.autoActivate = autoActivate;
+        return context;
+      }
+      return eventBus(context).then(() => context);
+    });

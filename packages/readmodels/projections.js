@@ -17,11 +17,21 @@ const projectionDuration = meter.createHistogram(
   },
 );
 
-const collectProjections = (readModels, event, isSkipped) =>
+const collectProjections = (
+  readModels,
+  event,
+  isSkipped,
+  isCatchingUp,
+  queueForCatchup,
+) =>
   Promise.resolve(
     Object.keys(readModels)
       .map((rmName) => {
         if (isSkipped && isSkipped(rmName)) return null;
+        if (isCatchingUp && isCatchingUp(rmName)) {
+          if (queueForCatchup) queueForCatchup(rmName, event);
+          return null;
+        }
         const rm = readModels[rmName];
         const projection = rm.projections && rm.projections[event.type];
         if (projection) {
@@ -82,7 +92,14 @@ const handleProjections =
     );
 
 const projectEvent =
-  (context, eventQueue, getProjectionContext, isReadModelReplaying) =>
+  (
+    context,
+    eventQueue,
+    getProjectionContext,
+    isReadModelReplaying,
+    isReadModelCatchingUp,
+    queueLiveEventForCatchup,
+  ) =>
   (correlationId) => {
     const log = getLogger(`RM/ProjEv`, correlationId);
     return (event, inReplay) => {
@@ -95,7 +112,16 @@ const projectEvent =
             'readmodel.names': Object.keys(context.readModels).join(','),
           },
           () =>
-            collectProjections(context.readModels, event, isReadModelReplaying)
+            collectProjections(
+              context.readModels,
+              event,
+              isReadModelReplaying,
+              isReadModelCatchingUp,
+              queueLiveEventForCatchup
+                ? (rmName, evt) =>
+                    queueLiveEventForCatchup(rmName, correlationId, evt)
+                : undefined,
+            )
               .then(logProjections(log, inReplay))
               .then(
                 updateInternalReadModelTimestamps(event, context.readModels),
@@ -123,12 +149,62 @@ const projectEvent =
     };
   };
 
+const MAX_FIFO_SIZE = 100000;
+
 export const createProjectionHandler = (context) => {
   const eventQueue = createContextQueue(1, Infinity);
   const readModelReplayState = {};
+  const readModelCatchupState = {};
 
   const isReadModelReplaying = (rmName) =>
     readModelReplayState[rmName] === true;
+
+  const isReadModelCatchingUp = (rmName) =>
+    readModelCatchupState[rmName]?.active === true;
+
+  const setReadModelCatchingUp = (rmName) => {
+    readModelCatchupState[rmName] = {
+      active: true,
+      fifoQueue: [],
+      catchupEventFingerprints: new Set(),
+      lastCatchupTimestamp: 0,
+    };
+  };
+
+  const queueLiveEvent = (rmName, correlationId, event) => {
+    const state = readModelCatchupState[rmName];
+    if (!state) return;
+    if (state.fifoQueue.length >= MAX_FIFO_SIZE) {
+      const log = getLogger('RM/CatchUp', correlationId);
+      log.error(
+        `FIFO queue overflow for ${rmName} (${MAX_FIFO_SIZE} events). ` +
+          `Cancelling catch-up.`,
+      );
+      clearCatchupState(rmName);
+      if (context.lifecycleManager) {
+        context.lifecycleManager.setState(rmName, 'waiting');
+      }
+      return;
+    }
+    state.fifoQueue.push({ correlationId, event });
+  };
+
+  const recordCatchupEventFingerprint = (rmName, event) => {
+    const state = readModelCatchupState[rmName];
+    if (!state) return;
+    const fingerprint = `${event.timestamp}:${event.type}:${event.aggregateId}`;
+    state.catchupEventFingerprints.add(fingerprint);
+    state.lastCatchupTimestamp = event.timestamp;
+  };
+
+  const clearCatchupState = (rmName) => {
+    delete readModelCatchupState[rmName];
+  };
+
+  const getFifoQueueSize = (rmName) =>
+    readModelCatchupState[rmName]?.fifoQueue?.length || 0;
+
+  const getCatchupState = (rmName) => readModelCatchupState[rmName] || null;
 
   const getProjectionContext = (correlationId) => (rmName) => (inReplay) => ({
     storage: context.storage.perRequest(correlationId),
@@ -179,14 +255,48 @@ export const createProjectionHandler = (context) => {
     };
   };
 
+  const projectCatchupEventForReadModel = (correlationId, targetRmName) => {
+    const log = getLogger('RM/CatchUp', correlationId);
+    return (event) => {
+      const rm = context.readModels[targetRmName];
+      if (!rm) return Promise.resolve();
+      const projection = rm.projections && rm.projections[event.type];
+      if (!projection) return Promise.resolve();
+      recordCatchupEventFingerprint(targetRmName, event);
+      return eventQueue.add(() =>
+        projection(
+          getProjectionContext(correlationId)(targetRmName)(false),
+          event,
+        )
+          .then(() =>
+            updateTimestamp(
+              correlationId,
+              context.storage,
+              targetRmName,
+              event.timestamp,
+            ),
+          )
+          .catch((err) => {
+            log.error(
+              `Catch-up projection error for ${targetRmName}/${event.type}: ${err}`,
+            );
+            throw err;
+          }),
+      );
+    };
+  };
+
   return {
     projectEvent: projectEvent(
       context,
       eventQueue,
       getProjectionContext,
       isReadModelReplaying,
+      isReadModelCatchingUp,
+      queueLiveEvent,
     ),
     projectEventForReadModel,
+    projectCatchupEventForReadModel,
     setReadModelReplayState: (rmName, state) => {
       readModelReplayState[rmName] = state;
     },
@@ -195,6 +305,13 @@ export const createProjectionHandler = (context) => {
     },
     isReadModelReplaying,
     getReadModelReplayStates: () => ({ ...readModelReplayState }),
+    setReadModelCatchingUp,
+    isReadModelCatchingUp,
+    queueLiveEvent,
+    recordCatchupEventFingerprint,
+    clearCatchupState,
+    getFifoQueueSize,
+    getCatchupState,
   };
 };
 

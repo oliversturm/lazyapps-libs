@@ -15,15 +15,27 @@ const mockReplayHandler = {
   getReplayStatus: vi.fn(),
 };
 
+const mockCatchupHandler = {
+  startCatchup: vi.fn(),
+  cancelCatchup: vi.fn(),
+  getCatchupStatus: vi.fn(),
+};
+
 vi.mock('@lazyapps/command-processor/replayHandler.js', () => ({
   createReplayHandler: vi.fn().mockReturnValue(mockReplayHandler),
 }));
 
+vi.mock('@lazyapps/command-processor/catchupHandler.js', () => ({
+  createCatchupHandler: vi.fn().mockReturnValue(mockCatchupHandler),
+}));
+
 const mockInstallReplayAdminApi = vi.fn().mockReturnValue(vi.fn());
+const mockInstallCatchupAdminApi = vi.fn().mockReturnValue(vi.fn());
 const mockInstallReadModelAdminApi = vi.fn().mockReturnValue(vi.fn());
 
 vi.mock('@lazyapps/admin-api', () => ({
   installReplayAdminApi: mockInstallReplayAdminApi,
+  installCatchupAdminApi: mockInstallCatchupAdminApi,
   installReadModelAdminApi: mockInstallReadModelAdminApi,
 }));
 

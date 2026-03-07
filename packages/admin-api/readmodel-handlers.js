@@ -44,12 +44,19 @@ export const readModelsHandler = (context) => (req, res) => {
   res.json(
     Object.keys(context.readModels).map((name) => {
       const rm = context.readModels[name];
-      return {
+      const base = {
         name,
         lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
         status: replayStates[name] ? 'replaying' : 'active',
         collections: rm.collections || [name],
       };
+      if (context.lifecycleManager) {
+        base.state = context.lifecycleManager.getState(name);
+      }
+      if (context.projectionHandler.getFifoQueueSize) {
+        base.fifoQueueSize = context.projectionHandler.getFifoQueueSize(name);
+      }
+      return base;
     }),
   );
 };
@@ -270,6 +277,68 @@ export const resetReplayStateHandler = (context) => (req, res) => {
 
   context.projectionHandler.clearReadModelReplayState(readModelName);
   res.json({ status: 'reset', readModel: readModelName });
+};
+
+export const activateReadModelHandler = (context) => (req, res) => {
+  const { readModelName } = req.params;
+  const rm = context.readModels[readModelName];
+  if (!rm) {
+    res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  if (!context.lifecycleManager) {
+    res.status(501).json({ error: 'Lifecycle manager not configured' });
+    return;
+  }
+
+  const currentState = context.lifecycleManager.getState(readModelName);
+  if (currentState !== 'waiting' && currentState !== 'stopped') {
+    res.status(409).json({
+      error:
+        `Read model ${readModelName} is in state '${currentState}', ` +
+        `cannot activate`,
+    });
+    return;
+  }
+
+  context.lifecycleManager.activate(readModelName).catch(() => {});
+  res.status(202).json({ status: 'activating', readModel: readModelName });
+};
+
+export const stopReadModelHandler = (context) => (req, res) => {
+  const { readModelName } = req.params;
+  const rm = context.readModels[readModelName];
+  if (!rm) {
+    res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  if (!context.lifecycleManager) {
+    res.status(501).json({ error: 'Lifecycle manager not configured' });
+    return;
+  }
+
+  context.lifecycleManager.stop(readModelName);
+  res.json({ status: 'stopped', readModel: readModelName });
+};
+
+export const activateAllHandler = (context) => (req, res) => {
+  if (!context.lifecycleManager) {
+    res.status(501).json({ error: 'Lifecycle manager not configured' });
+    return;
+  }
+
+  const activated = Object.keys(context.readModels).filter((name) => {
+    const state = context.lifecycleManager.getState(name);
+    return state === 'waiting' || state === 'stopped';
+  });
+
+  activated.forEach((name) => {
+    context.lifecycleManager.activate(name);
+  });
+
+  res.status(202).json({ status: 'activating', readModels: activated });
 };
 
 export const __testing__ = { detectSharedCollections };

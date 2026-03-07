@@ -3,9 +3,11 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { getLogger } from '@lazyapps/logger';
 import { createReplayHandler } from '@lazyapps/command-processor/replayHandler.js';
+import { createCatchupHandler } from '@lazyapps/command-processor/catchupHandler.js';
 import {
   installReplayAdminApi,
   installReadModelAdminApi,
+  installCatchupAdminApi,
 } from '@lazyapps/admin-api';
 
 const log = getLogger('BS/Admin', 'INIT');
@@ -54,6 +56,12 @@ export const startAdmin = (
                     msg.readModel,
                   );
                 }
+                if (
+                  msg.type === 'CATCHUP_EVENTS_DONE' ||
+                  msg.type === 'CATCHUP_CANCELLED'
+                ) {
+                  log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+                }
               }),
             ).then(() => ctx);
           }
@@ -62,6 +70,7 @@ export const startAdmin = (
         .then((ctx) => ({
           ...ctx,
           replayHandler: createReplayHandler(ctx.eventStore, ctx.eventBus),
+          catchupHandler: createCatchupHandler(ctx.eventStore, ctx.eventBus),
         }))
         .then((ctx) => (backup ? { ...ctx, backup: backup(ctx.storage) } : ctx))
         .then((ctx) =>
@@ -78,6 +87,7 @@ export const startAdmin = (
       app.use(bodyParser.json());
 
       installReplayAdminApi(context)(app);
+      installCatchupAdminApi(context)(app);
       installReadModelAdminApi(context)(app);
 
       if (!process.env.ADMIN_READ_MODEL_SERVICES) {
