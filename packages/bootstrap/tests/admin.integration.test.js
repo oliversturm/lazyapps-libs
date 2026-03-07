@@ -9,6 +9,19 @@ import {
 } from 'vitest';
 import { MongoDBContainer } from '@testcontainers/mongodb';
 import { MongoClient } from 'mongodb';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { rm } from 'node:fs/promises';
+
+const hasMongoTools = (() => {
+  try {
+    execFileSync('mongoexport', ['--version'], { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -23,7 +36,8 @@ const { mongodb: eventStoreMongo } =
   await import('@lazyapps/eventstore-mongodb');
 const { mongodb: readModelStorageMongo } =
   await import('@lazyapps/readmodelstorage-mongodb');
-const { mongoBackup } = await import('@lazyapps/readmodel-backup-mongodb');
+const { backup: mongoBackup } =
+  await import('@lazyapps/readmodelstorage-mongodb/backup.js');
 const { startAdmin } = await import('../admin.js');
 
 describe('startAdmin integration', { timeout: 60000 }, () => {
@@ -32,6 +46,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   let cleanupClient;
   let server;
   let adminPort;
+  let backupPath;
 
   const readModels = {
     customers: {
@@ -67,7 +82,13 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
             publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
             publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
           }),
-        backup: mongoBackup(),
+        backup: mongoBackup({
+          backupPath: (backupPath = join(
+            tmpdir(),
+            `lazyapps-backup-test-${Date.now()}`,
+          )),
+          format: 'json',
+        }),
         readModels,
       },
     );
@@ -76,12 +97,14 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   });
 
   afterAll(async () => {
+    if (backupPath) await rm(backupPath, { recursive: true, force: true });
     if (server) await new Promise((resolve) => server.close(resolve));
     if (cleanupClient) await cleanupClient.close();
     if (container) await container.stop();
   });
 
   beforeEach(async () => {
+    if (backupPath) await rm(backupPath, { recursive: true, force: true });
     const db = cleanupClient.db('admin-test');
     const collections = await db.listCollections().toArray();
     for (const col of collections) {
@@ -117,25 +140,27 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(customers.collections).toEqual(['customers_overview']);
     }));
 
-  test('POST /admin/backup/:name creates a backup', () =>
+  test.skipIf(!hasMongoTools)('POST /admin/backup/:name creates a backup', () =>
     fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' }).then(
       ({ status, body }) => {
         expect(status).toBe(200);
-        expect(body.backupId).toMatch(/^backup_\d+_customers$/);
+        expect(body.backupId).toMatch(/^customers__\d{4}-\d{2}-\d{2}T/);
         expect(body.timestamp).toBeGreaterThan(0);
       },
-    ));
+    ),
+  );
 
-  test('GET /admin/backups/:name lists backups', () =>
+  test.skipIf(!hasMongoTools)('GET /admin/backups/:name lists backups', () =>
     fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' })
       .then(() => fetchJSON('/admin/backups/customers'))
       .then(({ status, body }) => {
         expect(status).toBe(200);
         expect(body).toHaveLength(1);
         expect(body[0].readModelName).toBe('customers');
-      }));
+      }),
+  );
 
-  test('DELETE /admin/backup/:id deletes a backup', () =>
+  test.skipIf(!hasMongoTools)('DELETE /admin/backup/:id deletes a backup', () =>
     fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' })
       .then(({ body }) =>
         fetch(`http://127.0.0.1:${adminPort}/admin/backup/${body.backupId}`, {
@@ -148,7 +173,8 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       .then(() => fetchJSON('/admin/backups/customers'))
       .then(({ body }) => {
         expect(body).toHaveLength(0);
-      }));
+      }),
+  );
 
   test('POST /admin/backup/:name returns 404 for unknown read model', () =>
     fetchJSON('/admin/backup/nonexistent', {
@@ -184,33 +210,39 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(body.status).toBe('idle');
     }));
 
-  test('POST /admin/replay/:name/prepare prepares a replay', () =>
-    fetchJSON('/admin/replay/customers/prepare', {
-      method: 'POST',
-      body: '{}',
-    }).then(({ status, body }) => {
-      expect(status).toBe(200);
-      expect(body.status).toBe('prepared');
-      expect(body.readModel).toBe('customers');
-      expect(body.fromTimestamp).toBeDefined();
-      expect(body.preReplayBackupId).toBeDefined();
-    }));
+  test.skipIf(!hasMongoTools)(
+    'POST /admin/replay/:name/prepare prepares a replay',
+    () =>
+      fetchJSON('/admin/replay/customers/prepare', {
+        method: 'POST',
+        body: '{}',
+      }).then(({ status, body }) => {
+        expect(status).toBe(200);
+        expect(body.status).toBe('prepared');
+        expect(body.readModel).toBe('customers');
+        expect(body.fromTimestamp).toBeDefined();
+        expect(body.preReplayBackupId).toBeDefined();
+      }),
+  );
 
-  test('POST /admin/replay/:name/prepare returns 409 when already replaying', () =>
-    fetchJSON('/admin/replay/customers/prepare', {
-      method: 'POST',
-      body: '{}',
-    })
-      .then(() =>
-        fetchJSON('/admin/replay/customers/prepare', {
-          method: 'POST',
-          body: '{}',
+  test.skipIf(!hasMongoTools)(
+    'POST /admin/replay/:name/prepare returns 409 when already replaying',
+    () =>
+      fetchJSON('/admin/replay/customers/prepare', {
+        method: 'POST',
+        body: '{}',
+      })
+        .then(() =>
+          fetchJSON('/admin/replay/customers/prepare', {
+            method: 'POST',
+            body: '{}',
+          }),
+        )
+        .then(({ status, body }) => {
+          expect(status).toBe(409);
+          expect(body.error).toMatch(/already in progress/i);
         }),
-      )
-      .then(({ status, body }) => {
-        expect(status).toBe(409);
-        expect(body.error).toMatch(/already in progress/i);
-      }));
+  );
 
   test('POST /api/admin/cancelReplay returns 400 for missing readModel', () =>
     fetchJSON('/api/admin/cancelReplay', {
@@ -271,88 +303,94 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       .then(() => eventsCol.deleteMany({}));
   });
 
-  test('POST /admin/replay/:name/prepare with fromScratch clears collections', () => {
-    const db = cleanupClient.db('admin-test');
-    // Clear any leftover replay state from prior tests (cancelReplay
-    // doesn't work here because the event bus is mocked and won't
-    // deliver REPLAY_CANCELLED to clear the projection handler state)
-    server.__testing__.context.projectionHandler.clearReadModelReplayState(
-      'customers',
-    );
-    return db
-      .collection('customers_overview')
-      .insertOne(
-        // Insert a document into the customers_overview collection
-        { name: 'existing-customer' },
-      )
-      .then(() =>
-        fetchJSON('/admin/replay/customers/prepare', {
-          method: 'POST',
-          body: JSON.stringify({ fromScratch: true }),
-        }),
-      )
-      .then(({ status, body }) => {
-        expect(status).toBe(200);
-        expect(body.status).toBe('prepared');
-        expect(body.readModel).toBe('customers');
-        expect(body.fromTimestamp).toBe(0);
-        expect(body.preReplayBackupId).toBeDefined();
-        // Verify the collection was cleared
-        return db.collection('customers_overview').countDocuments();
-      })
-      .then((count) => {
-        expect(count).toBe(0);
-      });
-  });
+  test.skipIf(!hasMongoTools)(
+    'POST /admin/replay/:name/prepare with fromScratch clears collections',
+    () => {
+      const db = cleanupClient.db('admin-test');
+      // Clear any leftover replay state from prior tests (cancelReplay
+      // doesn't work here because the event bus is mocked and won't
+      // deliver REPLAY_CANCELLED to clear the projection handler state)
+      server.__testing__.context.projectionHandler.clearReadModelReplayState(
+        'customers',
+      );
+      return db
+        .collection('customers_overview')
+        .insertOne(
+          // Insert a document into the customers_overview collection
+          { name: 'existing-customer' },
+        )
+        .then(() =>
+          fetchJSON('/admin/replay/customers/prepare', {
+            method: 'POST',
+            body: JSON.stringify({ fromScratch: true }),
+          }),
+        )
+        .then(({ status, body }) => {
+          expect(status).toBe(200);
+          expect(body.status).toBe('prepared');
+          expect(body.readModel).toBe('customers');
+          expect(body.fromTimestamp).toBe(0);
+          expect(body.preReplayBackupId).toBeDefined();
+          // Verify the collection was cleared
+          return db.collection('customers_overview').countDocuments();
+        })
+        .then((count) => {
+          expect(count).toBe(0);
+        });
+    },
+  );
 
-  test('POST /admin/replay/:name/prepare with backupId restores backup', () => {
-    const db = cleanupClient.db('admin-test');
-    // Clear any leftover replay state from prior tests
-    server.__testing__.context.projectionHandler.clearReadModelReplayState(
-      'customers',
-    );
-    return db
-      .collection('customers_overview')
-      .insertOne(
-        // Insert a document so the backup has something
-        { name: 'backup-customer' },
-      )
-      .then(() =>
-        // Create a backup
-        fetchJSON('/admin/backup/customers', {
-          method: 'POST',
-          body: '{}',
-        }),
-      )
-      .then(({ status, body }) => {
-        expect(status).toBe(200);
-        const backupId = body.backupId;
-        // Modify the collection so we can verify restore
-        return db
-          .collection('customers_overview')
-          .insertOne({ name: 'post-backup-customer' })
-          .then(() =>
-            fetchJSON('/admin/replay/customers/prepare', {
-              method: 'POST',
-              body: JSON.stringify({ backupId }),
-            }),
-          )
-          .then(({ status, body }) => {
-            expect(status).toBe(200);
-            expect(body.status).toBe('prepared');
-            expect(body.readModel).toBe('customers');
-            expect(body.fromTimestamp).toBeGreaterThanOrEqual(0);
-            expect(body.preReplayBackupId).toBeDefined();
-            // Verify the backup was restored (only the original document)
-            return db.collection('customers_overview').countDocuments();
-          })
-          .then((count) => {
-            expect(count).toBe(1);
-            return db.collection('customers_overview').findOne({});
-          })
-          .then((doc) => {
-            expect(doc.name).toBe('backup-customer');
-          });
-      });
-  });
+  test.skipIf(!hasMongoTools)(
+    'POST /admin/replay/:name/prepare with backupId restores backup',
+    () => {
+      const db = cleanupClient.db('admin-test');
+      // Clear any leftover replay state from prior tests
+      server.__testing__.context.projectionHandler.clearReadModelReplayState(
+        'customers',
+      );
+      return db
+        .collection('customers_overview')
+        .insertOne(
+          // Insert a document so the backup has something
+          { name: 'backup-customer' },
+        )
+        .then(() =>
+          // Create a backup
+          fetchJSON('/admin/backup/customers', {
+            method: 'POST',
+            body: '{}',
+          }),
+        )
+        .then(({ status, body }) => {
+          expect(status).toBe(200);
+          const backupId = body.backupId;
+          // Modify the collection so we can verify restore
+          return db
+            .collection('customers_overview')
+            .insertOne({ name: 'post-backup-customer' })
+            .then(() =>
+              fetchJSON('/admin/replay/customers/prepare', {
+                method: 'POST',
+                body: JSON.stringify({ backupId }),
+              }),
+            )
+            .then(({ status, body }) => {
+              expect(status).toBe(200);
+              expect(body.status).toBe('prepared');
+              expect(body.readModel).toBe('customers');
+              expect(body.fromTimestamp).toBeGreaterThanOrEqual(0);
+              expect(body.preReplayBackupId).toBeDefined();
+              // Verify the backup was restored (only the original document)
+              return db.collection('customers_overview').countDocuments();
+            })
+            .then((count) => {
+              expect(count).toBe(1);
+              return db.collection('customers_overview').findOne({});
+            })
+            .then((doc) => {
+              expect(doc.name).toBe('backup-customer');
+            });
+        });
+    },
+  );
 });

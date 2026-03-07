@@ -59,6 +59,7 @@ export const mongodb =
         return dbcontext;
       })
       .then((dbContext) => ({
+        __connectionInfo__: { url: connectUrl, database },
         perRequest: (correlationId) => ({
           ...wrapCalls(correlationId, dbContext, [
             'insertOne',
