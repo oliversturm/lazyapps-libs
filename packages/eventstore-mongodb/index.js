@@ -101,7 +101,7 @@ export const mongodb =
         countEvents: (fromTimestamp, toTimestamp) =>
           dbContext.collection.countDocuments({
             timestamp: {
-              $gte: fromTimestamp,
+              $gt: fromTimestamp,
               ...(toTimestamp && { $lte: toTimestamp }),
             },
           }),
@@ -118,7 +118,7 @@ export const mongodb =
           dbContext.collection
             .find({
               timestamp: {
-                $gte: fromTimestamp,
+                $gt: fromTimestamp,
                 ...(toTimestamp && { $lte: toTimestamp }),
               },
             })

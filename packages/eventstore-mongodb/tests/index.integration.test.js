@@ -219,14 +219,14 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
       if (store) await store.close();
     });
 
-    test('returns correct count for a timestamp range', () =>
+    test('returns correct count for a timestamp range (exclusive lower bound)', () =>
       store
         .addEvent('corr-c1')({ type: 'A', timestamp: 100 })
         .then(() => store.addEvent('corr-c1')({ type: 'B', timestamp: 200 }))
         .then(() => store.addEvent('corr-c1')({ type: 'C', timestamp: 300 }))
         .then(() => store.countEvents(100, 200))
         .then((count) => {
-          expect(count).toBe(2);
+          expect(count).toBe(1);
         }));
 
     test('with no toTimestamp counts from fromTimestamp to end', () =>
@@ -326,7 +326,7 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
             });
         }));
 
-    test('with range returns only events in range', () =>
+    test('with range returns only events in range (exclusive lower bound)', () =>
       store
         .addEvent('corr-s3')({ type: 'A', timestamp: 100 })
         .then(() => store.addEvent('corr-s3')({ type: 'B', timestamp: 200 }))
@@ -334,9 +334,8 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
         .then(() => store.addEvent('corr-s3')({ type: 'D', timestamp: 400 }))
         .then(() => store.streamEvents(200, 300).toArray())
         .then((events) => {
-          expect(events).toHaveLength(2);
-          expect(events[0].type).toBe('B');
-          expect(events[1].type).toBe('C');
+          expect(events).toHaveLength(1);
+          expect(events[0].type).toBe('C');
         }));
   });
 
