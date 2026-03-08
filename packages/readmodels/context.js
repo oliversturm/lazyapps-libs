@@ -62,7 +62,16 @@ export const initializeContext = (
         });
         context.lifecycleManager = lifecycleManager;
         context.catchupHandler = createCatchupHandler(context);
-        context.connectEventBus = () => eventBus(context);
+        let connectPromise = null;
+        context.connectEventBus = () => {
+          if (!connectPromise) {
+            connectPromise = eventBus(context).catch((err) => {
+              connectPromise = null;
+              throw err;
+            });
+          }
+          return connectPromise;
+        };
         lifecycleManager.initialize(Object.keys(readModels));
         context.autoActivate = autoActivate;
         return context;
