@@ -13,6 +13,7 @@ export const initializeContext = (
     commandSender,
     encryptionDecryptor,
     encryptionQueryDecryptor,
+    encryptionForgetSubject,
     role,
   },
 ) =>
@@ -23,6 +24,7 @@ export const initializeContext = (
       correlationConfig,
       encryptionDecryptor,
       encryptionQueryDecryptor,
+      encryptionForgetSubject,
       encryptionRole: role,
     }))
     .then((context) =>

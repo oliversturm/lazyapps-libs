@@ -31,7 +31,10 @@ export const createStorageEncryptor = (
                 kv: dek.version,
                 wk: dek.wrappedKey,
               },
-            }));
+            }))
+            .catch((err) =>
+              err.code === 'SUBJECT_FORGOTTEN' ? t : Promise.reject(err),
+            );
         }),
       Promise.resolve({ ...target }),
     );

@@ -110,6 +110,7 @@ export function start({
             ),
             storage: enc.wrapStorage(readModels.storage),
             encryptionQueryDecryptor: enc.createQueryDecryptor(),
+            encryptionForgetSubject: enc.forgetSubject,
           }
         : readModels;
       startSubsystems(

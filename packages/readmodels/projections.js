@@ -85,47 +85,56 @@ const projectEvent =
     const log = getLogger(`RM/ProjEv`, correlationId);
     const decrypt = context.encryptionDecryptor || ((e) => Promise.resolve(e));
 
+    const shredIfForget = (event) =>
+      event.type === 'SUBJECT_FORGOTTEN' && context.encryptionForgetSubject
+        ? context
+            .encryptionForgetSubject(event.payload.subjectId)
+            .then(() => event)
+        : Promise.resolve(event);
+
     return (event, inReplay) => {
       const startTime = Date.now();
       return eventQueue.add(() =>
-        decrypt(event).then((decryptedEvent) =>
-          withSpan(
-            'lazyapps.readmodel.projectEvent',
-            {
-              'event.type': decryptedEvent.type,
-              'readmodel.names': Object.keys(context.readModels).join(','),
-            },
-            () =>
-              collectProjections(context.readModels, decryptedEvent)
-                .then(logProjections(log, inReplay))
-                .then(
-                  updateInternalReadModelTimestamps(
-                    decryptedEvent,
-                    context.readModels,
-                  ),
-                )
-                .then(
-                  handleProjections(
-                    correlationId,
-                    log,
-                    context,
-                    getProjectionContext,
-                    inReplay,
-                    decryptedEvent,
-                  ),
-                )
-                .then((result) => {
-                  const duration = Date.now() - startTime;
-                  projectionCounter.add(1, {
-                    'event.type': decryptedEvent.type,
-                  });
-                  projectionDuration.record(duration, {
-                    'event.type': decryptedEvent.type,
-                  });
-                  return result;
-                }),
+        decrypt(event)
+          .then(shredIfForget)
+          .then((decryptedEvent) =>
+            withSpan(
+              'lazyapps.readmodel.projectEvent',
+              {
+                'event.type': decryptedEvent.type,
+                'readmodel.names': Object.keys(context.readModels).join(','),
+              },
+              () =>
+                collectProjections(context.readModels, decryptedEvent)
+                  .then(logProjections(log, inReplay))
+                  .then(
+                    updateInternalReadModelTimestamps(
+                      decryptedEvent,
+                      context.readModels,
+                    ),
+                  )
+                  .then(
+                    handleProjections(
+                      correlationId,
+                      log,
+                      context,
+                      getProjectionContext,
+                      inReplay,
+                      decryptedEvent,
+                    ),
+                  )
+                  .then((result) => {
+                    const duration = Date.now() - startTime;
+                    projectionCounter.add(1, {
+                      'event.type': decryptedEvent.type,
+                    });
+                    projectionDuration.record(duration, {
+                      'event.type': decryptedEvent.type,
+                    });
+                    return result;
+                  }),
+            ),
           ),
-        ),
       );
     };
   };
@@ -141,6 +150,10 @@ export const createProjectionHandler = (context) => {
       correlationId,
       inReplay,
     ),
+    encryption: {
+      queryDecryptor: context.encryptionQueryDecryptor,
+      forgetSubject: context.encryptionForgetSubject,
+    },
   });
 
   return {
