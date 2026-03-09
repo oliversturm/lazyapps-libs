@@ -3,8 +3,7 @@ import { randomBytes } from 'node:crypto';
 export const createEnvelopeManager = (keyStore, contexts) => {
   const dekCache = new Map();
 
-  const cacheKey = (subjectId, contextName) =>
-    `${subjectId}:${contextName}`;
+  const cacheKey = (subjectId, contextName) => `${subjectId}:${contextName}`;
 
   const cacheDEK = (subjectId, contextName, dekInfo) => {
     dekCache.set(cacheKey(subjectId, contextName), dekInfo);
@@ -22,9 +21,7 @@ export const createEnvelopeManager = (keyStore, contexts) => {
           if (storedDEK && storedDEK.forgotten) {
             return Promise.reject(
               Object.assign(
-                new Error(
-                  `Keys for subject ${subjectId} have been forgotten`,
-                ),
+                new Error(`Keys for subject ${subjectId} have been forgotten`),
                 { code: 'SUBJECT_FORGOTTEN' },
               ),
             );

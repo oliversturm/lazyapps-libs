@@ -25,9 +25,17 @@ const authenticateAppRole = (vaultUrl, roleId, secretId) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ role_id: roleId, secret_id: secretId }),
-  })
-    .then((res) => res.json())
-    .then((data) => data.auth.client_token);
+  }).then((res) =>
+    res.ok
+      ? res.json().then((data) => data.auth.client_token)
+      : res.json().then((err) => {
+          const error = new Error(
+            `Vault AppRole login: ${err.errors?.[0] || res.statusText}`,
+          );
+          error.status = res.status;
+          throw error;
+        }),
+  );
 
 const initDekInMemory = () => {
   const deks = new Map();
