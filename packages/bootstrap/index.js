@@ -62,8 +62,12 @@ export function start({
   }
   if (readModels) {
     log.debug('Starting read models');
-    startReadModels(correlationConfig, readModels).then((server) => {
-      handleSignals(server);
+    // When admin is configured, enable lifecycle management for read models
+    const readModelConfig = admin
+      ? { ...readModels, lifecycle: readModels.lifecycle !== false }
+      : readModels;
+    startReadModels(correlationConfig, readModelConfig).then((result) => {
+      handleSignals(result);
     });
   }
   if (changeNotifier) {

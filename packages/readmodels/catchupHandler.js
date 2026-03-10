@@ -12,8 +12,8 @@ const isDuplicate = (event, catchupState, toTimestamp) => {
 };
 
 export const createCatchupHandler = (context) => {
-  const handleCatchupComplete = (readModel, toTimestamp) => {
-    const log = getLogger('RM/CatchUp', 'SYS');
+  const handleCatchupComplete = (readModel, toTimestamp, correlationId) => {
+    const log = getLogger('RM/CatchUp', correlationId || 'SYS');
     log.info(`Catch-up events done for ${readModel}, draining FIFO queue`);
 
     const state = context.projectionHandler.getCatchupState(readModel);
@@ -26,30 +26,30 @@ export const createCatchupHandler = (context) => {
       const entry = state.fifoQueue.shift();
       if (!entry) {
         context.projectionHandler.clearCatchupState(readModel);
-        context.lifecycleManager.setState(readModel, 'live');
+        context.lifecycleManager.setState(readModel, 'live', correlationId);
         log.info(`Read model ${readModel} is now live`);
         return Promise.resolve();
       }
 
-      const { correlationId, event } = entry;
+      const { correlationId: entryCorrelationId, event } = entry;
 
       if (isDuplicate(event, state, toTimestamp)) {
         return drainNext();
       }
 
       return context.projectionHandler
-        .projectCatchupEventForReadModel(correlationId, readModel)(event)
+        .projectCatchupEventForReadModel(entryCorrelationId, readModel)(event)
         .then(drainNext);
     };
 
     return drainNext();
   };
 
-  const handleCatchupCancelled = (readModel) => {
-    const log = getLogger('RM/CatchUp', 'SYS');
+  const handleCatchupCancelled = (readModel, correlationId) => {
+    const log = getLogger('RM/CatchUp', correlationId || 'SYS');
     log.warn(`Catch-up cancelled for ${readModel}`);
     context.projectionHandler.clearCatchupState(readModel);
-    context.lifecycleManager.setState(readModel, 'waiting');
+    context.lifecycleManager.setState(readModel, 'waiting', correlationId);
   };
 
   return { handleCatchupComplete, handleCatchupCancelled };

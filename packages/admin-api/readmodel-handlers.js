@@ -40,9 +40,10 @@ export const statusHandler = (context) => {
 
 export const readModelsHandler = (context) => (req, res) => {
   const replayStates = context.projectionHandler.getReadModelReplayStates();
+  const names = Object.keys(context.readModels);
 
-  res.json(
-    Object.keys(context.readModels).map((name) => {
+  const buildLocal = () =>
+    names.map((name) => {
       const rm = context.readModels[name];
       const base = {
         name,
@@ -57,8 +58,40 @@ export const readModelsHandler = (context) => (req, res) => {
         base.fifoQueueSize = context.projectionHandler.getFifoQueueSize(name);
       }
       return base;
-    }),
-  );
+    });
+
+  // When the admin context has an activator but no lifecycle manager
+  // (i.e., admin service running separately or in monolith without
+  // sharedState), proxy state from the RM HTTP endpoints.
+  if (context.activator && !context.lifecycleManager) {
+    Promise.all(
+      names.map((name) =>
+        context.activator.queryReadModelState(name).catch(() => null),
+      ),
+    )
+      .then((rmStates) => {
+        const local = buildLocal();
+        local.forEach((entry, i) => {
+          const remote = rmStates[i];
+          if (remote) {
+            entry.state = remote.state;
+            entry.lastProjectedEventTimestamp =
+              remote.lastProjectedEventTimestamp ||
+              entry.lastProjectedEventTimestamp;
+            if (remote.fifoQueueSize !== undefined) {
+              entry.fifoQueueSize = remote.fifoQueueSize;
+            }
+          }
+        });
+        res.json(local);
+      })
+      .catch(() => {
+        res.json(buildLocal());
+      });
+    return;
+  }
+
+  res.json(buildLocal());
 };
 
 export const createBackupHandler = (context) => (req, res) => {
@@ -111,8 +144,8 @@ export const listBackupsHandler = (context) => (req, res) => {
       res.json(backups);
     })
     .catch((err) => {
-      const log = getLogger('Admin/Backup', 'list');
-      log.error(`Failed to list backups: ${err}`);
+      const log = getLogger('Admin/Backup', nanoid());
+      log.error(`Failed to list backups for ${readModelName}: ${err}`);
       res.status(500).json({ error: String(err) });
     });
 };
@@ -281,9 +314,22 @@ export const resetReplayStateHandler = (context) => (req, res) => {
 
 export const activateReadModelHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
+  const correlationId = req.body?.correlationId || nanoid();
   const rm = context.readModels[readModelName];
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  if (context.activator) {
+    // Use the admin service's orchestration: message bus → query RM → CP catchup
+    context.activator.activateReadModel(readModelName).catch((err) => {
+      const log = getLogger('Admin/RM', correlationId);
+      log.error(
+        `Activation orchestration failed for '${readModelName}': ${err.message}`,
+      );
+    });
+    res.status(202).json({ status: 'activating', readModel: readModelName });
     return;
   }
 
@@ -302,15 +348,24 @@ export const activateReadModelHandler = (context) => (req, res) => {
     return;
   }
 
-  context.lifecycleManager.activate(readModelName).catch(() => {});
+  context.lifecycleManager
+    .activate(readModelName, correlationId)
+    .catch(() => {});
   res.status(202).json({ status: 'activating', readModel: readModelName });
 };
 
 export const stopReadModelHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
+  const correlationId = req.body?.correlationId || nanoid();
   const rm = context.readModels[readModelName];
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  if (context.activator) {
+    context.activator.stopReadModel(readModelName);
+    res.json({ status: 'stopped', readModel: readModelName });
     return;
   }
 
@@ -319,11 +374,27 @@ export const stopReadModelHandler = (context) => (req, res) => {
     return;
   }
 
-  context.lifecycleManager.stop(readModelName);
+  context.lifecycleManager.stop(readModelName, correlationId);
   res.json({ status: 'stopped', readModel: readModelName });
 };
 
 export const activateAllHandler = (context) => (req, res) => {
+  const correlationId = req.body?.correlationId || nanoid();
+
+  if (context.activator) {
+    const allNames = Object.keys(context.readModels);
+    allNames.forEach((name) => {
+      context.activator.activateReadModel(name).catch((err) => {
+        const log = getLogger('Admin/RM', correlationId);
+        log.error(
+          `Activation orchestration failed for '${name}': ${err.message}`,
+        );
+      });
+    });
+    res.status(202).json({ status: 'activating', readModels: allNames });
+    return;
+  }
+
   if (!context.lifecycleManager) {
     res.status(501).json({ error: 'Lifecycle manager not configured' });
     return;
@@ -335,7 +406,7 @@ export const activateAllHandler = (context) => (req, res) => {
   });
 
   activated.forEach((name) => {
-    context.lifecycleManager.activate(name);
+    context.lifecycleManager.activate(name, correlationId);
   });
 
   res.status(202).json({ status: 'activating', readModels: activated });

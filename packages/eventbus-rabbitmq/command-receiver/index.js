@@ -90,6 +90,17 @@ export const rabbitMq = (config) => () => {
           Buffer.from(JSON.stringify({ correlationId, event: message })),
         );
       },
+      publishAdminInstruction: (correlationId) => (instruction) => {
+        const log = getLogger('CmdProc/EB/Rabbit', correlationId);
+        log.debug(
+          `Publishing admin instruction: ${JSON.stringify(instruction)}`,
+        );
+        channel.publish(
+          exchange,
+          '__admin',
+          Buffer.from(JSON.stringify({ correlationId, instruction })),
+        );
+      },
       subscribeSystemMessages: (handler) =>
         channel.assertQueue('', { exclusive: true }).then((q) =>
           channel.bindQueue(q.queue, exchange, '__system').then(() =>

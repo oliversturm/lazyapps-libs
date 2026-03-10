@@ -86,6 +86,7 @@ describe('catchupHandler', () => {
         expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
           'customers',
           'live',
+          undefined,
         );
       });
     });
@@ -130,6 +131,7 @@ describe('catchupHandler', () => {
         expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
           'customers',
           'live',
+          undefined,
         );
       });
     });
@@ -226,6 +228,7 @@ describe('catchupHandler', () => {
       expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
         'customers',
         'waiting',
+        undefined,
       );
     });
   });

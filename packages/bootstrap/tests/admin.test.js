@@ -39,6 +39,19 @@ vi.mock('@lazyapps/admin-api', () => ({
   installReadModelAdminApi: mockInstallReadModelAdminApi,
 }));
 
+const mockActivator = {
+  activateReadModel: vi.fn().mockResolvedValue(),
+  stopReadModel: vi.fn(),
+  restartReadModel: vi.fn().mockResolvedValue(),
+  queryReadModelState: vi.fn().mockResolvedValue({}),
+  signalCpReady: vi.fn().mockResolvedValue(),
+  autoActivateAll: vi.fn().mockResolvedValue(),
+};
+
+vi.mock('../activator.js', () => ({
+  createActivator: vi.fn().mockReturnValue(mockActivator),
+}));
+
 const mockListen = vi.fn();
 const mockUse = vi.fn();
 const mockOn = vi.fn();
@@ -259,4 +272,13 @@ describe('startAdmin', () => {
       'port in use',
     );
   });
+
+  test('context includes activator for orchestration', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      expect(context.activator).toBeDefined();
+      expect(context.activator.activateReadModel).toBeInstanceOf(Function);
+      expect(context.activator.stopReadModel).toBeInstanceOf(Function);
+      expect(context.activator.signalCpReady).toBeInstanceOf(Function);
+    }));
 });

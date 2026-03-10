@@ -32,12 +32,16 @@
   },
   "devDependencies": {
     "@lazyapps/aggregatestore-inmemory": "workspace:^",
+    "@lazyapps/eventbus-mqemitter-redis": "workspace:^",
+    "@lazyapps/eventbus-rabbitmq": "workspace:^",
     "@lazyapps/eventstore-mongodb": "workspace:^",
     "@lazyapps/express": "workspace:^",
     "@lazyapps/mqemitter": "workspace:^",
     "@lazyapps/readmodel-backup-mongodb": "workspace:^",
     "@lazyapps/readmodelstorage-mongodb": "workspace:^",
     "@testcontainers/mongodb": "^11.11.0",
+    "@testcontainers/rabbitmq": "^11.11.0",
+    "@testcontainers/redis": "^11.11.0",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "eslint": "^8.46.0",
@@ -52,7 +56,8 @@
     "@lazyapps/command-processor": "workspace:^",
     "@lazyapps/logger": "workspace:^",
     "@lazyapps/readmodels": "workspace:^",
-    "@opentelemetry/api": "^1.9.0"
+    "@opentelemetry/api": "^1.9.0",
+    "nanoid": "^5.0.7"
   },
   "peerDependencies": {
     "@lazyapps/admin-ui": ">=0.1.0",

@@ -25,6 +25,13 @@ import {
   getCatchupStatusHandler,
 } from './catchup-handlers.js';
 
+import { setReadyHandler, getReadyHandler } from './ready-handler.js';
+
+export const installReadyAdminApi = (context) => (app) => {
+  app.post('/admin/ready', setReadyHandler(context));
+  app.get('/admin/ready', getReadyHandler(context));
+};
+
 export const installReplayAdminApi = (context) => (app) => {
   app.post('/api/admin/startReplay', startReplayHandler(context));
   app.get('/api/admin/replayStatus/:readModel', replayStatusHandler(context));

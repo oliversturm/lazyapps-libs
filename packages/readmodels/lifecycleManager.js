@@ -8,27 +8,31 @@ const VALID_STATES = [
   'stopped',
 ];
 
-export const createLifecycleManager = (context, { catchupServiceUrl }) => {
+export const createLifecycleManager = (context) => {
   const states = {};
   let eventBusConnected = false;
 
   const initialize = (readModelNames) => {
+    const log = getLogger('RM/Lifecycle', 'SYS');
     readModelNames.forEach((name) => {
       states[name] = 'waiting';
     });
+    log.info(
+      `Initialized lifecycle for read models: ${readModelNames.join(', ')}`,
+    );
   };
 
   const getState = (name) => states[name] || 'unknown';
 
-  const setState = (name, state) => {
-    const log = getLogger('RM/Lifecycle', 'SYS');
+  const setState = (name, state, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const prev = states[name];
     states[name] = state;
     log.info(`Read model '${name}': ${prev} -> ${state}`);
   };
 
-  const activate = (readModelName) => {
-    const log = getLogger('RM/Lifecycle', 'SYS');
+  const activate = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const current = getState(readModelName);
     if (current !== 'waiting' && current !== 'stopped') {
       return Promise.reject(
@@ -36,7 +40,8 @@ export const createLifecycleManager = (context, { catchupServiceUrl }) => {
       );
     }
 
-    setState(readModelName, 'activating');
+    setState(readModelName, 'activating', correlationId);
+    log.info(`Activating read model '${readModelName}'`);
 
     const connectEventBus = eventBusConnected
       ? Promise.resolve()
@@ -47,65 +52,21 @@ export const createLifecycleManager = (context, { catchupServiceUrl }) => {
     return connectEventBus
       .then(() => {
         context.projectionHandler.setReadModelCatchingUp(readModelName);
-        setState(readModelName, 'catching-up');
-
-        const fromTimestamp =
-          context.readModels[readModelName].lastProjectedEventTimestamp || 0;
-
-        return fetch(
-          `${catchupServiceUrl}/admin/catchup/${readModelName}/start`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fromTimestamp,
-              serviceId: context.correlationConfig.serviceId,
-            }),
-          },
-        );
-      })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(
-            `Catch-up request failed: ${response.status} ${response.statusText}`,
-          );
-        }
-        log.info(`Catch-up started for ${readModelName}`);
+        setState(readModelName, 'catching-up', correlationId);
+        log.info(`Read model '${readModelName}' is now catching up`);
       })
       .catch((err) => {
         log.error(`Activation failed for ${readModelName}: ${err}`);
         context.projectionHandler.clearCatchupState(readModelName);
-        setState(readModelName, 'waiting');
+        setState(readModelName, 'waiting', correlationId);
         throw err;
       });
   };
 
-  const stop = (readModelName) => {
-    setState(readModelName, 'stopped');
-  };
-
-  const autoActivateWithRetry = (readModelName, maxRetries = 10) => {
-    const log = getLogger('RM/AutoActivate', 'SYS');
-    let attempt = 0;
-    const tryActivate = () =>
-      activate(readModelName).catch((err) => {
-        attempt++;
-        if (attempt >= maxRetries) {
-          log.error(
-            `Auto-activation failed for ${readModelName} after ${maxRetries} attempts`,
-          );
-          return;
-        }
-        const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-        log.warn(
-          `Auto-activation attempt ${attempt} failed for ${readModelName}, ` +
-            `retrying in ${delay}ms: ${err}`,
-        );
-        return new Promise((resolve) => setTimeout(resolve, delay)).then(
-          tryActivate,
-        );
-      });
-    return tryActivate();
+  const stop = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
+    log.info(`Stopping read model '${readModelName}'`);
+    setState(readModelName, 'stopped', correlationId);
   };
 
   return {
@@ -114,7 +75,6 @@ export const createLifecycleManager = (context, { catchupServiceUrl }) => {
     setState,
     activate,
     stop,
-    autoActivateWithRetry,
   };
 };
 

@@ -206,6 +206,7 @@ describe('readModelEventBusMqEmitter', () => {
 
         expect(context.replayHandler.handleReplayComplete).toHaveBeenCalledWith(
           'items',
+          'corr-1',
         );
         expect(cb).toHaveBeenCalled();
       },
@@ -241,7 +242,7 @@ describe('readModelEventBusMqEmitter', () => {
 
         expect(
           context.replayHandler.handleReplayCancelled,
-        ).toHaveBeenCalledWith('orders');
+        ).toHaveBeenCalledWith('orders', 'corr-1');
         expect(cb).toHaveBeenCalled();
       },
     );

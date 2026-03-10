@@ -106,6 +106,16 @@ export const mqEmitterRedis =
             payload: { correlationId, event: message },
           });
         },
+        publishAdminInstruction: (correlationId) => (instruction) => {
+          const log = getLogger('CP/EB/Redis', correlationId);
+          log.debug(
+            `Publishing admin instruction: ${JSON.stringify(instruction)}`,
+          );
+          mq.emit({
+            topic: '__admin',
+            payload: { correlationId, instruction },
+          });
+        },
         subscribeSystemMessages: (handler) => {
           mq.on('__system', ({ payload }, cb) => {
             handler(payload.event);

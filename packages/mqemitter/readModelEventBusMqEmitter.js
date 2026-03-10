@@ -6,7 +6,7 @@ export const readModelEventBusMqEmitter =
   (context) => {
     let inReplay = false;
 
-    const handleSysMessage = (msg) => {
+    const handleSysMessage = (msg, correlationId) => {
       switch (msg.type) {
         case 'SET_REPLAY_STATE':
           if (msg.readModel) {
@@ -19,22 +19,32 @@ export const readModelEventBusMqEmitter =
           }
           break;
         case 'REPLAY_EVENTS_DONE':
-          context.replayHandler.handleReplayComplete(msg.readModel);
+          context.replayHandler.handleReplayComplete(
+            msg.readModel,
+            correlationId,
+          );
           break;
         case 'REPLAY_CANCELLED':
-          context.replayHandler.handleReplayCancelled(msg.readModel);
+          context.replayHandler.handleReplayCancelled(
+            msg.readModel,
+            correlationId,
+          );
           break;
         case 'CATCHUP_EVENTS_DONE':
           if (context.catchupHandler) {
             context.catchupHandler.handleCatchupComplete(
               msg.readModel,
               msg.toTimestamp,
+              correlationId,
             );
           }
           break;
         case 'CATCHUP_CANCELLED':
           if (context.catchupHandler) {
-            context.catchupHandler.handleCatchupCancelled(msg.readModel);
+            context.catchupHandler.handleCatchupCancelled(
+              msg.readModel,
+              correlationId,
+            );
           }
           break;
       }
@@ -42,25 +52,40 @@ export const readModelEventBusMqEmitter =
 
     const initLog = getLogger('RM/EB', 'INIT');
 
+    const subscribeToEvents = (mq) => {
+      mq.on('events', ({ payload }, cb) => {
+        const { correlationId } = payload;
+        const log = getLogger('RM/EB', correlationId);
+        log.debug(`Received event: ${JSON.stringify(payload)}`);
+        context.projectionHandler.projectEvent(correlationId)(
+          payload,
+          inReplay,
+        );
+
+        cb();
+      });
+      initLog.debug('Subscribed to events topic');
+    };
+
     return Promise.resolve(getSharedMqEmitter('INIT', mqName))
       .then((mq) => {
-        mq.on('events', ({ payload }, cb) => {
-          const { correlationId } = payload;
-          const log = getLogger('RM/EB', correlationId);
-          log.debug(`Received event: ${JSON.stringify(payload)}`);
-          context.projectionHandler.projectEvent(correlationId)(
-            payload,
-            inReplay,
+        if (context.deferEventsSubscription) {
+          context.subscribeToEvents = () => {
+            subscribeToEvents(mq);
+            return Promise.resolve();
+          };
+          initLog.debug(
+            'Deferred events subscription — waiting for activate()',
           );
-
-          cb();
-        });
+        } else {
+          subscribeToEvents(mq);
+        }
         mq.on('__system', ({ payload }, cb) => {
           const { correlationId, event } = payload;
           const log = getLogger('RM/EB', correlationId);
           log.debug(`Received '__system' event: ${JSON.stringify(event)}`);
 
-          handleSysMessage(event);
+          handleSysMessage(event, correlationId);
           cb();
         });
         mq.on('__replay', ({ payload }, cb) => {
@@ -102,6 +127,48 @@ export const readModelEventBusMqEmitter =
               correlationId,
               targetReadModel,
             )(event);
+          }
+          cb();
+        });
+        mq.on('__admin', ({ payload }, cb) => {
+          const { correlationId, instruction } = payload;
+          const log = getLogger('RM/EB/Admin', correlationId);
+          if (
+            context.expectedAdminToken &&
+            instruction.token !== context.expectedAdminToken
+          ) {
+            log.warn(
+              `[${correlationId}] Rejected admin instruction: invalid token`,
+            );
+            cb();
+            return;
+          }
+          if (
+            instruction.targetServiceId &&
+            context.correlationConfig &&
+            instruction.targetServiceId !== context.correlationConfig.serviceId
+          ) {
+            log.debug(
+              `Ignoring admin instruction for service '${instruction.targetServiceId}'`,
+            );
+            cb();
+            return;
+          }
+          if (
+            instruction.targetReadModel &&
+            !context.readModels[instruction.targetReadModel]
+          ) {
+            log.debug(
+              `Ignoring admin instruction for unknown read model '${instruction.targetReadModel}'`,
+            );
+            cb();
+            return;
+          }
+          log.debug(
+            `Received admin instruction: ${instruction.type} for ${instruction.targetReadModel || 'all'}`,
+          );
+          if (context.adminInstructionHandler) {
+            context.adminInstructionHandler(correlationId, instruction);
           }
           cb();
         });

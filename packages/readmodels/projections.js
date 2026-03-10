@@ -182,7 +182,7 @@ export const createProjectionHandler = (context) => {
       );
       clearCatchupState(rmName);
       if (context.lifecycleManager) {
-        context.lifecycleManager.setState(rmName, 'waiting');
+        context.lifecycleManager.setState(rmName, 'waiting', correlationId);
       }
       return;
     }
@@ -268,14 +268,16 @@ export const createProjectionHandler = (context) => {
           getProjectionContext(correlationId)(targetRmName)(false),
           event,
         )
-          .then(() =>
-            updateTimestamp(
+          .then(() => {
+            context.readModels[targetRmName].lastProjectedEventTimestamp =
+              event.timestamp;
+            return updateTimestamp(
               correlationId,
               context.storage,
               targetRmName,
               event.timestamp,
-            ),
-          )
+            );
+          })
           .catch((err) => {
             log.error(
               `Catch-up projection error for ${targetRmName}/${event.type}: ${err}`,

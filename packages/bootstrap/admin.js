@@ -9,6 +9,8 @@ import {
   installReadModelAdminApi,
   installCatchupAdminApi,
 } from '@lazyapps/admin-api';
+import { adminTokenAuth } from '@lazyapps/admin-api/adminTokenAuth.js';
+import { createActivator } from './activator.js';
 
 const log = getLogger('BS/Admin', 'INIT');
 
@@ -28,7 +30,16 @@ const createAdminProjectionHandler = () => {
 
 export const startAdmin = (
   correlationConfig,
-  { port = 3005, eventStore, readModelStorage, eventBus, backup, readModels },
+  {
+    port = 3005,
+    eventStore,
+    readModelStorage,
+    eventBus,
+    backup,
+    readModels,
+    autoActivate,
+    token,
+  },
 ) => {
   log.info('Initializing admin service');
 
@@ -82,28 +93,51 @@ export const startAdmin = (
         );
     })
     .then((context) => {
-      const app = expressApp();
-      app.use(cors());
-      app.use(bodyParser.json());
-
-      installReplayAdminApi(context)(app);
-      installCatchupAdminApi(context)(app);
-      installReadModelAdminApi(context)(app);
+      // Determine admin read model services and CP URL from config or env.
+      // ADMIN_INTERNAL_* env vars are for server-to-server communication
+      // (e.g., Docker internal network). Falls back to ADMIN_* env vars
+      // which are also used by the admin-ui frontend for browser-side calls.
+      const adminReadModelServices =
+        process.env.ADMIN_INTERNAL_READ_MODEL_SERVICES ||
+        process.env.ADMIN_READ_MODEL_SERVICES ||
+        JSON.stringify({ default: `http://localhost:${port}` });
+      const commandProcessorUrl =
+        process.env.ADMIN_INTERNAL_COMMAND_PROCESSOR_URL ||
+        process.env.ADMIN_COMMAND_PROCESSOR_URL ||
+        `http://localhost:${port}`;
 
       if (!process.env.ADMIN_READ_MODEL_SERVICES) {
-        process.env.ADMIN_READ_MODEL_SERVICES = JSON.stringify({
-          default: `http://localhost:${port}`,
-        });
+        process.env.ADMIN_READ_MODEL_SERVICES = adminReadModelServices;
         log.info(
           `ADMIN_READ_MODEL_SERVICES not set, defaulting to http://localhost:${port}`,
         );
       }
       if (!process.env.ADMIN_COMMAND_PROCESSOR_URL) {
-        process.env.ADMIN_COMMAND_PROCESSOR_URL = `http://localhost:${port}`;
+        process.env.ADMIN_COMMAND_PROCESSOR_URL = commandProcessorUrl;
         log.info(
           `ADMIN_COMMAND_PROCESSOR_URL not set, defaulting to http://localhost:${port}`,
         );
       }
+
+      // Create activator for orchestration
+      const activator = createActivator({
+        eventBus: context.eventBus,
+        adminReadModelServices,
+        commandProcessorUrl,
+        correlationConfig,
+        token,
+      });
+
+      context.activator = activator;
+
+      const app = expressApp();
+      app.use(cors());
+      app.use(bodyParser.json());
+      app.use(adminTokenAuth(token));
+
+      installReplayAdminApi(context)(app);
+      installCatchupAdminApi(context)(app);
+      installReadModelAdminApi(context)(app);
 
       return import('@lazyapps/admin-ui/build/handler.js')
         .then(({ handler }) => {
@@ -129,6 +163,22 @@ export const startAdmin = (
                   `Admin server listening on ${addr.address}:${addr.port}`,
                 );
                 server.__testing__ = { context };
+
+                // Auto-activate read models after server is listening
+                if (autoActivate) {
+                  const rmNames =
+                    autoActivate === true
+                      ? Object.keys(readModels)
+                      : Array.isArray(autoActivate)
+                        ? autoActivate
+                        : Object.keys(readModels);
+
+                  log.info(
+                    `Auto-activation configured for: ${rmNames.join(', ')}`,
+                  );
+                  activator.autoActivateAll(rmNames);
+                }
+
                 resolve(server);
               });
             }),

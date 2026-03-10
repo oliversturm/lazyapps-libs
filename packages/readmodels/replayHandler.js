@@ -32,22 +32,30 @@ const sendBulkRefreshNotification = (context, correlationId, readModelName) => {
 };
 
 export const createReadModelReplayHandler = (context) => {
-  const handleReplayComplete = (readModel) => {
-    const log = getLogger('RM/Replay', 'SYS');
+  const handleReplayComplete = (readModel, correlationId) => {
+    const log = getLogger('RM/Replay', correlationId || 'SYS');
     log.info(`Replay events done for ${readModel}, finalizing`);
     context.projectionHandler.clearReadModelReplayState(readModel);
     return clearReplayInProgress(context.storage, readModel).then(() =>
-      sendBulkRefreshNotification(context, 'replay', readModel),
+      sendBulkRefreshNotification(
+        context,
+        correlationId || 'replay',
+        readModel,
+      ),
     );
   };
 
-  const handleReplayCancelled = (readModel) => {
-    const log = getLogger('RM/Replay', 'SYS');
+  const handleReplayCancelled = (readModel, correlationId) => {
+    const log = getLogger('RM/Replay', correlationId || 'SYS');
     log.info(`Replay cancelled for ${readModel}, restoring pre-replay backup`);
     return getPreReplayBackupId(context.storage, readModel)
       .then((backupId) =>
         backupId && context.backup
-          ? context.backup.restoreBackup('replay', readModel, backupId)
+          ? context.backup.restoreBackup(
+              correlationId || 'replay',
+              readModel,
+              backupId,
+            )
           : Promise.resolve(),
       )
       .then(() => {

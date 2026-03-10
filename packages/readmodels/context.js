@@ -15,8 +15,7 @@ export const initializeContext = (
     changeNotificationSender,
     commandSender,
     backup,
-    catchupServiceUrl,
-    autoActivate,
+    lifecycle,
   },
 ) =>
   storage()
@@ -56,25 +55,41 @@ export const initializeContext = (
       replayHandler: createReadModelReplayHandler(context),
     }))
     .then((context) => {
-      if (catchupServiceUrl) {
-        const lifecycleManager = createLifecycleManager(context, {
-          catchupServiceUrl,
-        });
+      if (lifecycle) {
+        const lifecycleManager = createLifecycleManager(context);
         context.lifecycleManager = lifecycleManager;
         context.catchupHandler = createCatchupHandler(context);
-        let connectPromise = null;
+
+        // Signal to event bus: connect to message bus and subscribe to
+        // __admin, __system, __catchup, __replay topics on startup,
+        // but defer the events topic subscription until activate().
+        context.deferEventsSubscription = true;
+
+        // connectEventBus subscribes to the events topic. Called by
+        // lifecycleManager.activate() when a read model is activated.
+        // The event bus implementation places subscribeToEvents() on
+        // the context during initial connection.
+        let eventsSubscribed = false;
         context.connectEventBus = () => {
-          if (!connectPromise) {
-            connectPromise = eventBus(context).catch((err) => {
-              connectPromise = null;
-              throw err;
-            });
+          if (eventsSubscribed) return Promise.resolve();
+          if (!context.subscribeToEvents) {
+            return Promise.reject(
+              new Error(
+                'Event bus did not provide subscribeToEvents — ' +
+                  'ensure the event bus supports deferred events subscription',
+              ),
+            );
           }
-          return connectPromise;
+          return context.subscribeToEvents().then(() => {
+            eventsSubscribed = true;
+          });
         };
+
         lifecycleManager.initialize(Object.keys(readModels));
-        context.autoActivate = autoActivate;
-        return context;
+
+        // Connect to message bus on startup (subscribes to all topics
+        // except events due to deferEventsSubscription flag)
+        return eventBus(context).then(() => context);
       }
       return eventBus(context).then(() => context);
     });

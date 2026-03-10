@@ -34,9 +34,7 @@ describe('lifecycleManager', () => {
   describe('initialize', () => {
     test('sets all read models to waiting', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
 
       lm.initialize(['customers', 'orders']);
 
@@ -46,9 +44,7 @@ describe('lifecycleManager', () => {
 
     test('returns unknown for uninitialized read model', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
 
       expect(lm.getState('nonexistent')).toBe('unknown');
     });
@@ -57,9 +53,7 @@ describe('lifecycleManager', () => {
   describe('setState', () => {
     test('transitions state with logging', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
 
       lm.initialize(['customers']);
       lm.setState('customers', 'live');
@@ -71,12 +65,8 @@ describe('lifecycleManager', () => {
   describe('activate', () => {
     test('transitions waiting -> activating -> catching-up', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
-
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
 
       return lm.activate('customers').then(() => {
         expect(context.connectEventBus).toHaveBeenCalledOnce();
@@ -84,29 +74,13 @@ describe('lifecycleManager', () => {
           context.projectionHandler.setReadModelCatchingUp,
         ).toHaveBeenCalledWith('customers');
         expect(lm.getState('customers')).toBe('catching-up');
-        expect(fetch).toHaveBeenCalledWith(
-          'http://admin:3005/admin/catchup/customers/start',
-          expect.objectContaining({
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fromTimestamp: 500,
-              serviceId: 'test-service',
-            }),
-          }),
-        );
-        vi.unstubAllGlobals();
       });
     });
 
     test('connects event bus only once across multiple activations', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers', 'orders']);
-
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
 
       return lm
         .activate('customers')
@@ -116,21 +90,17 @@ describe('lifecycleManager', () => {
         })
         .then(() => {
           expect(context.connectEventBus).toHaveBeenCalledOnce();
-          vi.unstubAllGlobals();
         });
     });
 
-    test('reverts to waiting when CP is unavailable', () => {
-      const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
+    test('reverts to waiting when event bus connection fails', () => {
+      const context = createMockContext({
+        connectEventBus: vi
+          .fn()
+          .mockRejectedValue(new Error('Connection failed')),
       });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
-
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
-      );
 
       return lm.activate('customers').then(
         () => {
@@ -141,43 +111,13 @@ describe('lifecycleManager', () => {
           expect(
             context.projectionHandler.clearCatchupState,
           ).toHaveBeenCalledWith('customers');
-          vi.unstubAllGlobals();
-        },
-      );
-    });
-
-    test('reverts to waiting when CP returns non-ok response', () => {
-      const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
-      lm.initialize(['customers']);
-
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({
-          ok: false,
-          status: 500,
-          statusText: 'Internal Server Error',
-        }),
-      );
-
-      return lm.activate('customers').then(
-        () => {
-          throw new Error('should not resolve');
-        },
-        () => {
-          expect(lm.getState('customers')).toBe('waiting');
-          vi.unstubAllGlobals();
         },
       );
     });
 
     test('rejects activation from catching-up state', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'catching-up');
 
@@ -192,19 +132,58 @@ describe('lifecycleManager', () => {
       );
     });
 
+    test('rejects activation from live state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'live');
+
+      return lm.activate('customers').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('Cannot activate');
+          expect(err.message).toContain('live');
+        },
+      );
+    });
+
+    test('rejects activation from activating state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'activating');
+
+      return lm.activate('customers').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('Cannot activate');
+          expect(err.message).toContain('activating');
+        },
+      );
+    });
+
     test('allows activation from stopped state', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'stopped');
 
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
-
       return lm.activate('customers').then(() => {
         expect(lm.getState('customers')).toBe('catching-up');
-        vi.unstubAllGlobals();
+      });
+    });
+
+    test('does not return fromTimestamp', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      return lm.activate('customers').then((result) => {
+        expect(result).toBeUndefined();
       });
     });
   });
@@ -212,99 +191,13 @@ describe('lifecycleManager', () => {
   describe('stop', () => {
     test('transitions to stopped', () => {
       const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
+      const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'live');
 
       lm.stop('customers');
 
       expect(lm.getState('customers')).toBe('stopped');
-    });
-  });
-
-  describe('autoActivateWithRetry', () => {
-    test('succeeds on first attempt', () => {
-      const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
-      lm.initialize(['customers']);
-
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
-
-      return lm.autoActivateWithRetry('customers', 3).then(() => {
-        expect(lm.getState('customers')).toBe('catching-up');
-        vi.unstubAllGlobals();
-      });
-    });
-
-    test('retries on failure and succeeds', () => {
-      vi.useFakeTimers();
-      const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
-      lm.initialize(['customers']);
-
-      let callCount = 0;
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount < 3) {
-            return Promise.reject(new Error('ECONNREFUSED'));
-          }
-          return Promise.resolve({ ok: true });
-        }),
-      );
-
-      const p = lm.autoActivateWithRetry('customers', 5);
-
-      const advanceTimers = () =>
-        vi.advanceTimersByTimeAsync(60000).then(() => {
-          if (callCount < 3) return advanceTimers();
-          return Promise.resolve();
-        });
-
-      return advanceTimers().then(() =>
-        p.then(() => {
-          expect(lm.getState('customers')).toBe('catching-up');
-          expect(callCount).toBe(3);
-          vi.unstubAllGlobals();
-          vi.useRealTimers();
-        }),
-      );
-    });
-
-    test('gives up after max retries', () => {
-      vi.useFakeTimers();
-      const context = createMockContext();
-      const lm = createLifecycleManager(context, {
-        catchupServiceUrl: 'http://admin:3005',
-      });
-      lm.initialize(['customers']);
-
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockRejectedValue(new Error('ECONNREFUSED')),
-      );
-
-      const p = lm.autoActivateWithRetry('customers', 2);
-
-      const advanceTimers = () =>
-        vi
-          .advanceTimersByTimeAsync(60000)
-          .then(() => vi.advanceTimersByTimeAsync(60000));
-
-      return advanceTimers().then(() =>
-        p.then(() => {
-          expect(lm.getState('customers')).toBe('waiting');
-          vi.unstubAllGlobals();
-          vi.useRealTimers();
-        }),
-      );
     });
   });
 });

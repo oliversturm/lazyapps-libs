@@ -10,7 +10,8 @@ vi.mock('@lazyapps/logger', () => ({
 }));
 
 const { backup, __testing__ } = await import('../backup.js');
-const { formatTimestamp, generateBackupId, parseMaxAge } = __testing__;
+const { formatTimestamp, generateBackupId, parseMaxAge, validatePath } =
+  __testing__;
 
 describe('formatTimestamp', () => {
   test('replaces colons with hyphens in ISO string', () => {
@@ -57,6 +58,30 @@ describe('parseMaxAge', () => {
 
   test('returns 0 for empty string', () => {
     expect(parseMaxAge('')).toBe(0);
+  });
+});
+
+describe('validatePath', () => {
+  test('allows paths within base directory', () => {
+    expect(() =>
+      validatePath('/tmp/backups', '/tmp/backups/rm/id'),
+    ).not.toThrow();
+  });
+
+  test('rejects path traversal with ..', () => {
+    expect(() =>
+      validatePath('/tmp/backups', '/tmp/backups/rm/../../etc/passwd'),
+    ).toThrow('Path traversal detected');
+  });
+
+  test('rejects path that escapes base via ..', () => {
+    expect(() =>
+      validatePath('/tmp/backups', '/tmp/backups/../secret'),
+    ).toThrow('Path traversal detected');
+  });
+
+  test('allows base directory itself', () => {
+    expect(() => validatePath('/tmp/backups', '/tmp/backups')).not.toThrow();
   });
 });
 

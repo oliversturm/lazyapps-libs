@@ -1,8 +1,17 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdir, readdir, rm, readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { getLogger } from '@lazyapps/logger';
+
+const validatePath = (basePath, targetPath) => {
+  const resolved = resolve(targetPath);
+  const resolvedBase = resolve(basePath);
+  if (!resolved.startsWith(resolvedBase + '/') && resolved !== resolvedBase) {
+    throw new Error('Path traversal detected');
+  }
+  return resolved;
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -164,6 +173,7 @@ export const backup =
       restoreBackup: (correlationId, readModelName, backupId) => {
         const log = getLogger('RM/Backup', correlationId);
         const backupDir = join(backupPath, readModelName, backupId);
+        validatePath(backupPath, backupDir);
 
         log.debug(`Restoring backup ${backupId} for ${readModelName}`);
 
@@ -200,6 +210,7 @@ export const backup =
                 chain.then((found) => {
                   if (found) return found;
                   const candidate = join(backupPath, rmDir, backupId);
+                  validatePath(backupPath, candidate);
                   return readFile(join(candidate, 'metadata.json'), 'utf8')
                     .then(() => candidate)
                     .catch(() => null);
@@ -301,4 +312,5 @@ export const __testing__ = {
   dumpJson,
   restoreBson,
   restoreJson,
+  validatePath,
 };

@@ -1,4 +1,57 @@
+import { getLogger } from '@lazyapps/logger';
 import { initializeContext } from './context.js';
+
+const createAdminInstructionHandler =
+  (context) => (correlationId, instruction) => {
+    const log = getLogger('RM/Admin', correlationId);
+    const { type, targetReadModel } = instruction;
+    const lm = context.lifecycleManager;
+
+    if (!lm) {
+      log.warn(
+        'Received admin instruction but no lifecycle manager configured',
+      );
+      return;
+    }
+
+    log.info(
+      `Admin instruction: ${type} for read model '${targetReadModel || 'all'}'`,
+    );
+
+    switch (type) {
+      case 'activate':
+        if (!targetReadModel) {
+          log.warn('Activate instruction missing targetReadModel');
+          return;
+        }
+        lm.activate(targetReadModel, correlationId).catch((err) => {
+          log.error(`Failed to activate '${targetReadModel}': ${err.message}`);
+        });
+        break;
+
+      case 'stop':
+        if (!targetReadModel) {
+          log.warn('Stop instruction missing targetReadModel');
+          return;
+        }
+        lm.stop(targetReadModel, correlationId);
+        break;
+
+      case 'restart':
+        if (!targetReadModel) {
+          log.warn('Restart instruction missing targetReadModel');
+          return;
+        }
+        lm.stop(targetReadModel, correlationId);
+        lm.activate(targetReadModel, correlationId).catch((err) => {
+          log.error(`Failed to restart '${targetReadModel}': ${err.message}`);
+        });
+        break;
+
+      default:
+        log.warn(`Unknown admin instruction type: ${type}`);
+    }
+  };
 
 export const startReadModels = (correlationConfig, config) =>
   initializeContext(correlationConfig, {
@@ -8,13 +61,13 @@ export const startReadModels = (correlationConfig, config) =>
     changeNotificationSender: config.changeNotificationSender,
     commandSender: config.commandSender,
     backup: config.backup,
-    catchupServiceUrl: config.catchupServiceUrl,
-    autoActivate: config.autoActivate,
+    lifecycle: config.lifecycle,
   }).then((context) => {
-    if (context.autoActivate && context.lifecycleManager) {
-      Object.keys(config.readModels).forEach((name) => {
-        context.lifecycleManager.autoActivateWithRetry(name);
-      });
+    if (context.lifecycleManager) {
+      context.adminInstructionHandler = createAdminInstructionHandler(context);
+    }
+    if (config.token) {
+      context.expectedAdminToken = config.token;
     }
     return config.listener(context);
   });

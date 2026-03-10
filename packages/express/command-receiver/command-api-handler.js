@@ -1,8 +1,23 @@
 import { getLogger } from '@lazyapps/logger';
 
 export const createApiHandler =
-  ({ aggregateStore, eventStore, eventBus, aggregates, handleCommand }) =>
+  ({
+    aggregateStore,
+    eventStore,
+    eventBus,
+    aggregates,
+    handleCommand,
+    isReady,
+  }) =>
   (req, res) => {
+    if (isReady && !isReady()) {
+      res.status(503).json({
+        error:
+          'Command processor is waiting for read model activation to complete',
+      });
+      return;
+    }
+
     // Record timestamp as early as possible
     const reqTimestamp = Date.now();
 
