@@ -1,14 +1,33 @@
 import { getLogger } from '@lazyapps/logger';
 
-const initLogger = getLogger('CmdProc/AS', 'INIT');
-
 export const inmemory = () => (aggregates) => {
   const store = {};
   let lastProjectedEventTimestamp = 0;
-  let inReplay = false;
+  let eventStoreRef = null;
+
+  const setEventStoreRef = (getEventsForAggregate) => {
+    eventStoreRef = getEventsForAggregate;
+  };
+
+  const reconstructFromEvents = (name, id) =>
+    eventStoreRef(name, id).then((events) => {
+      let state = aggregates[name].initial();
+      for (const event of events) {
+        const projection =
+          aggregates[name].projections &&
+          aggregates[name].projections[event.type];
+        if (projection) state = projection(state, event);
+      }
+      setAggregateState(name, id, state);
+      return state;
+    });
 
   const getAggregateState = (name, id) =>
-    (store[name] && store[name][id]) || aggregates[name].initial();
+    store[name] && store[name][id]
+      ? Promise.resolve(store[name][id])
+      : eventStoreRef
+        ? reconstructFromEvents(name, id)
+        : Promise.resolve(aggregates[name].initial());
 
   const setAggregateState = (name, id, state) => {
     if (!store[name]) store[name] = {};
@@ -21,45 +40,36 @@ export const inmemory = () => (aggregates) => {
       aggregates[aggregateName].projections &&
       aggregates[aggregateName].projections[type];
     const log = getLogger('CmdProc/AS', correlationId);
-    if (projection) {
-      const state = getAggregateState(aggregateName, aggregateId);
-      const projected = projection(state, event);
-      setAggregateState(aggregateName, aggregateId, projected);
-      log.debug(
-        `Applied aggregate projection for event timestamp ${timestamp}`,
-      );
-    } else {
-      log.debug(
-        `No aggregate projection for type in event ${JSON.stringify(event)}`,
-      );
-    }
+    return getAggregateState(aggregateName, aggregateId).then((state) => {
+      if (projection) {
+        const projected = projection(state, event);
+        setAggregateState(aggregateName, aggregateId, projected);
+        log.debug(
+          `Applied aggregate projection for event timestamp ${timestamp}`,
+        );
+      } else {
+        log.debug(
+          `No aggregate projection for type in event ${JSON.stringify(event)}`,
+        );
+      }
 
-    if (!inReplay && timestamp < lastProjectedEventTimestamp)
-      log.debug(
-        `Noticing event out of sequence (lastPET=${lastProjectedEventTimestamp}, ts=${timestamp}): ${JSON.stringify(
-          event,
-        )}`,
-      );
+      if (timestamp < lastProjectedEventTimestamp)
+        log.debug(
+          `Noticing event out of sequence (lastPET=${lastProjectedEventTimestamp}, ts=${timestamp}): ${JSON.stringify(
+            event,
+          )}`,
+        );
 
-    lastProjectedEventTimestamp = timestamp;
+      lastProjectedEventTimestamp = timestamp;
 
-    return event;
+      return event;
+    });
   };
 
-  const startReplay = () => {
-    initLogger.debug('Starting replay state for aggregate store');
-    inReplay = true;
-  };
-
-  const endReplay = () => {
-    initLogger.debug('Ending replay state for aggregate store');
-    inReplay = false;
-  };
   return {
     getAggregateState,
+    setEventStoreRef,
     applyAggregateProjection,
-    startReplay,
-    endReplay,
     forgetSubject: (subjectId) => {
       for (const name of Object.keys(store)) {
         delete store[name][subjectId];

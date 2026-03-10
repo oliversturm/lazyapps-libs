@@ -223,6 +223,51 @@ describe('createEncryption', () => {
         );
       }));
 
+    test('addEvent for forgotten subject throws SubjectForgottenError', () =>
+      makeEncryption().then((enc) => {
+        const mockStore = {
+          addEvent: () => (event) => Promise.resolve(event),
+          replay: vi.fn(),
+          close: vi.fn(),
+        };
+        const wrappedFactory = enc.wrapEventStore(() =>
+          Promise.resolve(mockStore),
+        );
+
+        return wrappedFactory().then((wrapped) =>
+          // First create an event to generate DEKs for this subject
+          wrapped
+            .addEvent('corr-1')({
+              type: 'CUSTOMER_CREATED',
+              aggregateName: 'customer',
+              aggregateId: 'cust-forgotten',
+              payload: { name: 'Alice' },
+              timestamp: 1,
+            })
+            // Forget the subject (crypto-shred)
+            .then(() => enc.forgetSubject('cust-forgotten'))
+            // Attempt to add another event for the forgotten subject
+            .then(() =>
+              wrapped
+                .addEvent('corr-2')({
+                  type: 'CUSTOMER_UPDATED',
+                  aggregateName: 'customer',
+                  aggregateId: 'cust-forgotten',
+                  payload: { name: 'Alice Smith' },
+                  timestamp: 2,
+                })
+                .then(() => {
+                  throw new Error('Should have thrown SubjectForgottenError');
+                })
+                .catch((err) => {
+                  expect(err.name).toBe('SubjectForgottenError');
+                  expect(err.code).toBe('SUBJECT_FORGOTTEN');
+                  expect(err.message).toMatch(/forgotten/);
+                }),
+            ),
+        );
+      }));
+
     test('wraps replay to decrypt events for aggregate projection', () =>
       makeEncryption().then((enc) => {
         // Simulate events that would be stored encrypted in MongoDB

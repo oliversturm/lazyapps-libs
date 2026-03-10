@@ -57,8 +57,31 @@ export const createEncryption = ({
                     return store
                       .addEvent(correlationId)(encryptedEvent)
                       .then(() => shredIfForget(event));
+                  })
+                  .catch((err) => {
+                    if (err.code === 'SUBJECT_FORGOTTEN') {
+                      throw Object.assign(
+                        new Error(
+                          'Cannot modify subject whose personal data has been forgotten',
+                        ),
+                        {
+                          name: 'SubjectForgottenError',
+                          code: 'SUBJECT_FORGOTTEN',
+                        },
+                      );
+                    }
+                    throw err;
                   });
               },
+
+              getEventsForAggregate: store.getEventsForAggregate
+                ? (aggregateName, aggregateId) =>
+                    store
+                      .getEventsForAggregate(aggregateName, aggregateId)
+                      .then((events) =>
+                        Promise.all(events.map(decryptEventSafe)),
+                      )
+                : undefined,
 
               // Wrap replay to decrypt events before aggregate
               // projection. During command processor startup, replay

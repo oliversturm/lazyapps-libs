@@ -95,6 +95,10 @@ export const mongodb =
               return event;
             });
         },
+        getEventsForAggregate: (aggregateName, aggregateId) =>
+          dbContext.collection
+            .find({ aggregateName, aggregateId }, { sort: { timestamp: 1 } })
+            .toArray(),
         close: () => dbContext.client.close(),
         replay: replay(dbContext),
       }));

@@ -191,6 +191,34 @@ describe('createApiHandler', () => {
     });
   });
 
+  test('returns 409 on SubjectForgottenError', () => {
+    const err = Object.assign(
+      new Error('Cannot modify subject whose personal data has been forgotten'),
+      { name: 'SubjectForgottenError', code: 'SUBJECT_FORGOTTEN' },
+    );
+    const handleCommand = vi.fn().mockRejectedValue(err);
+    const handler = createApiHandler({
+      aggregates: testAggregates,
+      handleCommand,
+    });
+    const req = mockReq({
+      command: 'UPDATE',
+      aggregateName: 'thing',
+      aggregateId: '1',
+      payload: {},
+      correlationId: 'corr-1',
+    });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({
+        error: 'SubjectForgotten',
+        message: 'Cannot modify subject whose personal data has been forgotten',
+      });
+    });
+  });
+
   test('returns 500 on unknown error', () => {
     const handleCommand = vi
       .fn()

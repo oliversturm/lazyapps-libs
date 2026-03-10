@@ -7,7 +7,6 @@ describe('initializeContext', () => {
     const aggregateStoreResult = { name: 'aggregateStore' };
     const eventStoreResult = {
       name: 'eventStore',
-      replay: vi.fn().mockReturnValue(vi.fn().mockResolvedValue()),
     };
     const eventBusResult = { name: 'eventBus' };
 
@@ -33,7 +32,6 @@ describe('initializeContext', () => {
       expect(aggregateStore).toHaveBeenCalledWith(aggregates);
       expect(eventStore).toHaveBeenCalledOnce();
       expect(eventBus).toHaveBeenCalledOnce();
-      expect(eventStoreResult.replay).toHaveBeenCalledWith('INIT');
     });
   });
 });

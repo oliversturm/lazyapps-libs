@@ -63,9 +63,18 @@ export const createApiHandler =
           log.error(`Unauthorized while handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
 
           ${JSON.stringify(payload)}
-                
+
           ${err}`);
           res.sendStatus(403);
+        } else if (err.name === 'SubjectForgottenError') {
+          log.error(
+            `Subject forgotten while handling command ${command} for aggregate ${aggregateName}(${aggregateId}): ${err}`,
+          );
+          res.status(409).json({
+            error: 'SubjectForgotten',
+            message:
+              'Cannot modify subject whose personal data has been forgotten',
+          });
         } else {
           log.error(`Unknown error handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
 
