@@ -92,6 +92,20 @@ export const commandProcessorEventBusMqEmitter =
             cb();
           });
         },
+        subscribeAdminMessages: (handler) => {
+          mq.on('__admin', ({ payload }, cb) => {
+            handler(payload.correlationId, payload.instruction);
+            cb();
+          });
+          return Promise.resolve();
+        },
+        subscribeAdminReply: (replyTopic, handler) => {
+          mq.on(replyTopic, ({ payload }, cb) => {
+            handler(payload);
+            cb();
+          });
+          return Promise.resolve();
+        },
       }))
       .then((res) => {
         initLog.debug('Event bus ready');

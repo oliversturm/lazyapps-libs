@@ -114,6 +114,34 @@ export const rabbitMq = (config) => () => {
             ),
           ),
         ),
+      subscribeAdminMessages: (handler) =>
+        channel.assertQueue('', { exclusive: true }).then((q) =>
+          channel.bindQueue(q.queue, exchange, '__admin').then(() =>
+            channel.consume(
+              q.queue,
+              (msg) => {
+                const { correlationId, instruction } = JSON.parse(
+                  msg.content.toString(),
+                );
+                handler(correlationId, instruction);
+              },
+              { noAck: true },
+            ),
+          ),
+        ),
+      subscribeAdminReply: (replyTopic, handler) =>
+        channel.assertQueue('', { exclusive: true }).then((q) =>
+          channel.bindQueue(q.queue, exchange, replyTopic).then(() =>
+            channel.consume(
+              q.queue,
+              (msg) => {
+                const payload = JSON.parse(msg.content.toString());
+                handler(payload);
+              },
+              { noAck: true },
+            ),
+          ),
+        ),
     };
   });
 };

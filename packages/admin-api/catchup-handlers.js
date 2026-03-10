@@ -9,11 +9,13 @@ export const startCatchupHandler = (context) => (req, res) => {
 
   log.info(`Starting catch-up for ${readModelName} from ${fromTimestamp || 0}`);
 
-  context.catchupHandler
-    .startCatchup(correlationId, readModelName, fromTimestamp || 0)
-    .catch((err) => {
-      log.error(`Catch-up failed for ${readModelName}: ${err}`);
-    });
+  context.eventBus.publishAdminInstruction(correlationId)({
+    type: 'start_catchup',
+    readModel: readModelName,
+    fromTimestamp: fromTimestamp || 0,
+    serviceId,
+    correlationId,
+  });
 
   res.json({
     status: 'started',
@@ -29,18 +31,23 @@ export const cancelCatchupHandler = (context) => (req, res) => {
 
   log.info(`Cancelling catch-up for ${readModelName}`);
 
-  return context.catchupHandler
-    .cancelCatchup(correlationId, readModelName)
-    .then(() => {
-      res.json({ status: 'cancelling', readModel: readModelName });
-    })
-    .catch((err) => {
-      log.error(`Failed to cancel catch-up: ${err}`);
-      res.status(500).json({ error: String(err) });
-    });
+  context.eventBus.publishAdminInstruction(correlationId)({
+    type: 'cancel_catchup',
+    readModel: readModelName,
+    correlationId,
+  });
+
+  res.json({ status: 'cancelling', readModel: readModelName });
 };
 
 export const getCatchupStatusHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
-  res.json(context.catchupHandler.getCatchupStatus(readModelName));
+  // Catch-up status is tracked on the CP side; the admin service
+  // monitors __system messages for CATCHUP_EVENTS_DONE / CATCHUP_CANCELLED.
+  // Return what we know from the projection handler.
+  const replayStates = context.projectionHandler.getReadModelReplayStates();
+  res.json({
+    readModel: readModelName,
+    status: replayStates[readModelName] ? 'in_progress' : 'idle',
+  });
 };

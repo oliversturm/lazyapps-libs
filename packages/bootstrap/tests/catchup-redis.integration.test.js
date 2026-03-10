@@ -118,6 +118,27 @@ const createInlineAdminInstructionHandler = (context) => {
           lm.activate(instruction.targetReadModel).catch(() => {});
         }
         break;
+      case 'query_state': {
+        const { replyTopic, targetReadModel } = instruction;
+        if (!replyTopic || !context.publishAdminReply) return;
+        const names = targetReadModel
+          ? [targetReadModel]
+          : Object.keys(context.readModels);
+        const result = names.map((name) => {
+          const rm = context.readModels[name];
+          return {
+            name,
+            lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+            state: lm.getState(name),
+            collections: rm.collections || [name],
+          };
+        });
+        context.publishAdminReply(replyTopic, {
+          correlationId,
+          readModels: result,
+        });
+        break;
+      }
     }
   };
 };
@@ -154,9 +175,6 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
     process.on('uncaughtException', errorHandler);
 
     readModels = createTestReadModels();
-
-    delete process.env.ADMIN_READ_MODEL_SERVICES;
-    delete process.env.ADMIN_COMMAND_PROCESSOR_URL;
 
     return Promise.all([
       getPort(),
@@ -219,11 +237,6 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
         });
       })
       .then(() => {
-        // Set env vars for admin service
-        process.env.ADMIN_READ_MODEL_SERVICES = JSON.stringify({
-          default: `http://127.0.0.1:${rmAdminPort}`,
-        });
-
         // Start admin server with Redis event bus (CP-side)
         return startAdmin(
           { serviceId: 'REDIS-TEST' },
@@ -267,8 +280,6 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
       .then(() => delay(2000))
       .then(() => {
         process.removeListener('uncaughtException', errorHandler);
-        delete process.env.ADMIN_READ_MODEL_SERVICES;
-        delete process.env.ADMIN_COMMAND_PROCESSOR_URL;
       });
   }, 60000);
 

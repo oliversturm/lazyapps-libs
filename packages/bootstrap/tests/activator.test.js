@@ -17,6 +17,8 @@ const { createActivator } = await import('../activator.js');
 
 const createMockEventBus = () => ({
   publishAdminInstruction: vi.fn().mockReturnValue(vi.fn()),
+  subscribeAdminReply: vi.fn().mockResolvedValue(undefined),
+  subscribeAdminMessages: vi.fn().mockResolvedValue(undefined),
 });
 
 describe('createActivator', () => {
@@ -33,28 +35,26 @@ describe('createActivator', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      const activator = createActivator({
-        eventBus,
-        adminReadModelServices: JSON.stringify({
-          default: 'http://localhost:3000',
-        }),
-        commandProcessorUrl: 'http://localhost:3001',
-        correlationConfig: { serviceId: 'TEST' },
+      // subscribeAdminReply triggers the handler with mock state data
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [
+              {
+                name: 'customers',
+                lastProjectedEventTimestamp: 100,
+                state: 'catching-up',
+              },
+            ],
+          }),
+        );
+        return Promise.resolve();
       });
 
-      // Mock fetch to avoid real HTTP calls
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve([
-            {
-              name: 'customers',
-              lastProjectedEventTimestamp: 100,
-              state: 'catching-up',
-            },
-          ]),
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
       });
-      vi.stubGlobal('fetch', mockFetch);
 
       return activator.activateReadModel('customers').then(() => {
         expect(eventBus.publishAdminInstruction).toHaveBeenCalled();
@@ -64,7 +64,6 @@ describe('createActivator', () => {
             targetReadModel: 'customers',
           }),
         );
-        vi.unstubAllGlobals();
       });
     });
 
@@ -72,24 +71,20 @@ describe('createActivator', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [{ name: 'customers', lastProjectedEventTimestamp: 0 }],
+          }),
+        );
+        return Promise.resolve();
+      });
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: JSON.stringify({
-          default: 'http://localhost:3000',
-        }),
-        commandProcessorUrl: 'http://localhost:3001',
         correlationConfig: { serviceId: 'TEST' },
         token: 'secret-token',
       });
-
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve([
-            { name: 'customers', lastProjectedEventTimestamp: 0 },
-          ]),
-      });
-      vi.stubGlobal('fetch', mockFetch);
 
       return activator.activateReadModel('customers').then(() => {
         expect(publishFn).toHaveBeenCalledWith(
@@ -98,85 +93,64 @@ describe('createActivator', () => {
             token: 'secret-token',
           }),
         );
-        // Verify token in HTTP headers
-        expect(mockFetch).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.objectContaining({
-            headers: expect.objectContaining({
-              Authorization: 'Bearer secret-token',
-            }),
-          }),
-        );
-        vi.unstubAllGlobals();
       });
     });
 
-    test('rejects when no service URL configured for read model', () => {
+    test('rejects activation when query_state gets no reply', () => {
+      const publishFn = vi.fn();
+      eventBus.publishAdminInstruction.mockReturnValue(publishFn);
+
+      // subscribeAdminReply never calls handler → timeout
+      eventBus.subscribeAdminReply.mockResolvedValue(undefined);
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: JSON.stringify({}),
-        commandProcessorUrl: 'http://localhost:3001',
         correlationConfig: { serviceId: 'TEST' },
       });
 
-      return activator.activateReadModel('unknown').then(
+      return activator.activateReadModel('unreachable').then(
         () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('No read model service URL');
+          expect(err.message).toContain('Timed out');
         },
       );
-    });
+    }, 10000);
 
-    test('queries RM state and calls CP catch-up endpoint', () => {
+    test('queries RM state via event bus and starts catch-up', () => {
+      const publishFn = vi.fn();
+      eventBus.publishAdminInstruction.mockReturnValue(publishFn);
+
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [{ name: 'orders', lastProjectedEventTimestamp: 500 }],
+          }),
+        );
+        return Promise.resolve();
+      });
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: JSON.stringify({
-          default: 'http://rm:3000',
-        }),
-        commandProcessorUrl: 'http://cp:3001',
         correlationConfig: { serviceId: 'TEST' },
       });
 
-      const mockFetch = vi.fn().mockImplementation((url) => {
-        if (url.includes('/admin/readmodels')) {
-          return Promise.resolve({
-            ok: true,
-            json: () =>
-              Promise.resolve([
-                { name: 'orders', lastProjectedEventTimestamp: 500 },
-              ]),
-          });
-        }
-        if (url.includes('/admin/catchup/')) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ started: true }),
-          });
-        }
-        return Promise.reject(new Error(`Unexpected URL: ${url}`));
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
       return activator.activateReadModel('orders').then(() => {
-        // Should have queried RM state
-        const rmCall = mockFetch.mock.calls.find((c) =>
-          c[0].includes('/admin/readmodels'),
+        // Should have published query_state instruction
+        const queryStateCall = publishFn.mock.calls.find(
+          (c) => c[0].type === 'query_state',
         );
-        expect(rmCall).toBeDefined();
-        expect(rmCall[0]).toBe('http://rm:3000/admin/readmodels');
+        expect(queryStateCall).toBeDefined();
+        expect(queryStateCall[0].replyTopic).toBeDefined();
 
-        // Should have called CP catch-up
-        const cpCall = mockFetch.mock.calls.find((c) =>
-          c[0].includes('/admin/catchup/'),
+        // Should have published start_catchup instruction
+        const catchupCall = publishFn.mock.calls.find(
+          (c) => c[0].type === 'start_catchup',
         );
-        expect(cpCall).toBeDefined();
-        expect(cpCall[0]).toBe('http://cp:3001/admin/catchup/orders/start');
-        const cpBody = JSON.parse(cpCall[1].body);
-        expect(cpBody.fromTimestamp).toBe(500);
-        expect(cpBody.serviceId).toBe('TEST');
-        vi.unstubAllGlobals();
+        expect(catchupCall).toBeDefined();
+        expect(catchupCall[0].readModel).toBe('orders');
+        expect(catchupCall[0].fromTimestamp).toBe(500);
       });
     });
   });
@@ -188,8 +162,6 @@ describe('createActivator', () => {
 
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: '{}',
-        commandProcessorUrl: 'http://localhost:3001',
         correlationConfig: { serviceId: 'TEST' },
       });
 
@@ -205,105 +177,88 @@ describe('createActivator', () => {
   });
 
   describe('signalCpReady', () => {
-    test('sends POST to CP /admin/ready endpoint', () => {
+    test('publishes set_ready instruction via event bus', () => {
+      const publishFn = vi.fn();
+      eventBus.publishAdminInstruction.mockReturnValue(publishFn);
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: '{}',
-        commandProcessorUrl: 'http://cp:3001',
         correlationConfig: { serviceId: 'TEST' },
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: 'ready' }),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
       return activator.signalCpReady().then((result) => {
-        expect(mockFetch).toHaveBeenCalledWith(
-          'http://cp:3001/admin/ready',
-          expect.objectContaining({ method: 'POST' }),
+        expect(publishFn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'set_ready',
+          }),
         );
         expect(result).toEqual({ status: 'ready' });
-        vi.unstubAllGlobals();
       });
     });
 
-    test('includes token in Authorization header when configured', () => {
+    test('includes token when configured', () => {
+      const publishFn = vi.fn();
+      eventBus.publishAdminInstruction.mockReturnValue(publishFn);
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: '{}',
-        commandProcessorUrl: 'http://cp:3001',
         correlationConfig: { serviceId: 'TEST' },
         token: 'my-token',
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: 'ready' }),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
       return activator.signalCpReady().then(() => {
-        expect(mockFetch).toHaveBeenCalledWith(
-          expect.any(String),
+        expect(publishFn).toHaveBeenCalledWith(
           expect.objectContaining({
-            headers: expect.objectContaining({
-              Authorization: 'Bearer my-token',
-            }),
+            type: 'set_ready',
+            token: 'my-token',
           }),
         );
-        vi.unstubAllGlobals();
       });
     });
   });
 
   describe('queryReadModelState', () => {
-    test('fetches and returns specific read model state', () => {
-      const activator = createActivator({
-        eventBus,
-        adminReadModelServices: JSON.stringify({
-          customers: 'http://rm1:3000',
-        }),
-        commandProcessorUrl: 'http://cp:3001',
-        correlationConfig: { serviceId: 'TEST' },
+    test('queries and returns specific read model state via event bus', () => {
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [
+              {
+                name: 'customers',
+                state: 'live',
+                lastProjectedEventTimestamp: 999,
+              },
+            ],
+          }),
+        );
+        return Promise.resolve();
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve([
-            {
-              name: 'customers',
-              state: 'live',
-              lastProjectedEventTimestamp: 999,
-            },
-          ]),
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
       });
-      vi.stubGlobal('fetch', mockFetch);
 
       return activator.queryReadModelState('customers').then((rm) => {
         expect(rm.name).toBe('customers');
         expect(rm.state).toBe('live');
-        vi.unstubAllGlobals();
       });
     });
 
     test('rejects when read model not found in response', () => {
-      const activator = createActivator({
-        eventBus,
-        adminReadModelServices: JSON.stringify({
-          default: 'http://rm:3000',
-        }),
-        commandProcessorUrl: 'http://cp:3001',
-        correlationConfig: { serviceId: 'TEST' },
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [{ name: 'other' }],
+          }),
+        );
+        return Promise.resolve();
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve([{ name: 'other' }]),
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
       });
-      vi.stubGlobal('fetch', mockFetch);
 
       return activator.queryReadModelState('missing').then(
         () => {
@@ -311,16 +266,16 @@ describe('createActivator', () => {
         },
         (err) => {
           expect(err.message).toContain('not found');
-          vi.unstubAllGlobals();
         },
       );
     });
 
-    test('rejects when no service URL configured', () => {
+    test('rejects on timeout when no reply received', () => {
+      // subscribeAdminReply never calls handler → timeout
+      eventBus.subscribeAdminReply.mockResolvedValue(undefined);
+
       const activator = createActivator({
         eventBus,
-        adminReadModelServices: JSON.stringify({}),
-        commandProcessorUrl: 'http://cp:3001',
         correlationConfig: { serviceId: 'TEST' },
       });
 
@@ -329,10 +284,10 @@ describe('createActivator', () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('No read model service URL');
+          expect(err.message).toContain('Timed out');
         },
       );
-    });
+    }, 10000);
   });
 
   describe('restartReadModel', () => {
@@ -340,23 +295,19 @@ describe('createActivator', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      const activator = createActivator({
-        eventBus,
-        adminReadModelServices: JSON.stringify({
-          default: 'http://rm:3000',
-        }),
-        commandProcessorUrl: 'http://cp:3001',
-        correlationConfig: { serviceId: 'TEST' },
+      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
+        setTimeout(() =>
+          handler({
+            readModels: [{ name: 'customers', lastProjectedEventTimestamp: 0 }],
+          }),
+        );
+        return Promise.resolve();
       });
 
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve([
-            { name: 'customers', lastProjectedEventTimestamp: 0 },
-          ]),
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
       });
-      vi.stubGlobal('fetch', mockFetch);
 
       return activator.restartReadModel('customers').then(() => {
         // First call should be restart instruction
@@ -369,7 +320,6 @@ describe('createActivator', () => {
           (c) => c[0].type === 'activate',
         );
         expect(activateCall).toBeDefined();
-        vi.unstubAllGlobals();
       });
     });
   });

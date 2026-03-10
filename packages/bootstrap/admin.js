@@ -83,6 +83,43 @@ export const startAdmin = (
           replayHandler: createReplayHandler(ctx.eventStore, ctx.eventBus),
           catchupHandler: createCatchupHandler(ctx.eventStore, ctx.eventBus),
         }))
+        .then((ctx) => {
+          if (ctx.eventBus.subscribeAdminMessages) {
+            return Promise.resolve(
+              ctx.eventBus.subscribeAdminMessages(
+                (correlationId, instruction) => {
+                  switch (instruction.type) {
+                    case 'start_catchup':
+                      ctx.catchupHandler
+                        .startCatchup(
+                          correlationId,
+                          instruction.readModel,
+                          instruction.fromTimestamp || 0,
+                        )
+                        .catch((err) => {
+                          log.error(
+                            `Catch-up failed for ${instruction.readModel}: ${err}`,
+                          );
+                        });
+                      break;
+                    case 'cancel_catchup':
+                      ctx.catchupHandler.cancelCatchup(
+                        correlationId,
+                        instruction.readModel,
+                      );
+                      break;
+                    case 'set_ready':
+                      log.info(
+                        'Received set_ready instruction (admin service — no-op)',
+                      );
+                      break;
+                  }
+                },
+              ),
+            ).then(() => ctx);
+          }
+          return ctx;
+        })
         .then((ctx) => (backup ? { ...ctx, backup: backup(ctx.storage) } : ctx))
         .then((ctx) =>
           storageInstance.readLastProjectedEventTimestamps
@@ -93,37 +130,9 @@ export const startAdmin = (
         );
     })
     .then((context) => {
-      // Determine admin read model services and CP URL from config or env.
-      // ADMIN_INTERNAL_* env vars are for server-to-server communication
-      // (e.g., Docker internal network). Falls back to ADMIN_* env vars
-      // which are also used by the admin-ui frontend for browser-side calls.
-      const adminReadModelServices =
-        process.env.ADMIN_INTERNAL_READ_MODEL_SERVICES ||
-        process.env.ADMIN_READ_MODEL_SERVICES ||
-        JSON.stringify({ default: `http://localhost:${port}` });
-      const commandProcessorUrl =
-        process.env.ADMIN_INTERNAL_COMMAND_PROCESSOR_URL ||
-        process.env.ADMIN_COMMAND_PROCESSOR_URL ||
-        `http://localhost:${port}`;
-
-      if (!process.env.ADMIN_READ_MODEL_SERVICES) {
-        process.env.ADMIN_READ_MODEL_SERVICES = adminReadModelServices;
-        log.info(
-          `ADMIN_READ_MODEL_SERVICES not set, defaulting to http://localhost:${port}`,
-        );
-      }
-      if (!process.env.ADMIN_COMMAND_PROCESSOR_URL) {
-        process.env.ADMIN_COMMAND_PROCESSOR_URL = commandProcessorUrl;
-        log.info(
-          `ADMIN_COMMAND_PROCESSOR_URL not set, defaulting to http://localhost:${port}`,
-        );
-      }
-
-      // Create activator for orchestration
+      // Create activator for orchestration via event bus
       const activator = createActivator({
         eventBus: context.eventBus,
-        adminReadModelServices,
-        commandProcessorUrl,
         correlationConfig,
         token,
       });

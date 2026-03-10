@@ -3,48 +3,53 @@ import { nanoid } from 'nanoid';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const fetchJson = (url, options) =>
-  fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  }).then((res) => {
-    if (!res.ok) {
-      return res.text().then((text) => {
-        throw new Error(`HTTP ${res.status}: ${text}`);
-      });
-    }
-    return res.json();
-  });
+export const createActivator = ({ eventBus, correlationConfig, token }) => {
+  const queryReadModelState = (readModelName) => {
+    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
+    const log = getLogger('Admin/Activator', correlationId);
 
-const getReadModelServiceUrl = (adminReadModelServices, readModelName) => {
-  if (typeof adminReadModelServices === 'string') {
-    adminReadModelServices = JSON.parse(adminReadModelServices);
-  }
-  return (
-    adminReadModelServices[readModelName] ||
-    adminReadModelServices.default ||
-    null
-  );
-};
+    const replyTopic = `__admin_reply/${nanoid()}`;
 
-// A7: Known interaction — if BOTH jwtSecret (express-jwt on runExpress) AND
-// a plain admin token are configured, the activator's plain Bearer token will
-// be rejected by express-jwt on CP /admin/ready endpoints. This is a
-// pre-existing architectural conflict: the CP command express app applies
-// express-jwt globally when jwtSecret is set, but the admin activator sends
-// a plain shared-secret Bearer token. Resolving this requires either
-// separating the admin endpoints onto a different Express app or exempting
-// /admin routes from express-jwt. Out of scope for the current implementation.
-export const createActivator = ({
-  eventBus,
-  adminReadModelServices,
-  commandProcessorUrl,
-  correlationConfig,
-  token,
-}) => {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(
+          new Error(
+            `Timed out waiting for query_state reply for '${readModelName}'`,
+          ),
+        );
+      }, 5000);
+
+      eventBus
+        .subscribeAdminReply(replyTopic, (payload) => {
+          clearTimeout(timeout);
+          const rm = readModelName
+            ? payload.readModels.find((r) => r.name === readModelName)
+            : payload.readModels[0];
+          if (!rm) {
+            reject(
+              new Error(
+                `Read model '${readModelName}' not found in query_state response`,
+              ),
+            );
+            return;
+          }
+          log.debug(
+            `Read model '${readModelName}' state: ${JSON.stringify(rm)}`,
+          );
+          resolve(rm);
+        })
+        .then(() => {
+          eventBus.publishAdminInstruction(correlationId)({
+            type: 'query_state',
+            targetReadModel: readModelName,
+            replyTopic,
+            ...(token && { token }),
+            correlationId,
+          });
+        });
+    });
+  };
+
   const activateReadModel = (readModelName) => {
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
@@ -65,31 +70,11 @@ export const createActivator = ({
     // Step 2: Wait briefly for RM to process activation
     return delay(200)
       .then(() => {
-        // Step 3: Query RM's HTTP endpoint to get fromTimestamp
-        const rmUrl = getReadModelServiceUrl(
-          adminReadModelServices,
-          readModelName,
-        );
-        if (!rmUrl) {
-          throw new Error(
-            `No read model service URL configured for '${readModelName}'`,
-          );
-        }
-
-        log.info(`Querying RM state at ${rmUrl}/admin/readmodels`);
-        const headers = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        return fetchJson(`${rmUrl}/admin/readmodels`, { headers });
+        // Step 3: Query RM state via event bus
+        log.info(`Querying RM state via event bus for '${readModelName}'`);
+        return queryReadModelState(readModelName);
       })
-      .then((readModels) => {
-        const rm = readModels.find((r) => r.name === readModelName);
-        if (!rm) {
-          throw new Error(
-            `Read model '${readModelName}' not found in RM service response`,
-          );
-        }
+      .then((rm) => {
         const fromTimestamp = rm.lastProjectedEventTimestamp || 0;
         log.info(
           `Read model '${readModelName}' fromTimestamp: ${fromTimestamp}, state: ${rm.state || 'unknown'}`,
@@ -97,25 +82,24 @@ export const createActivator = ({
         return fromTimestamp;
       })
       .then((fromTimestamp) => {
-        // Step 4: Call CP's catch-up endpoint via HTTP
+        // Step 4: Start catch-up via event bus
+        const catchupCorrelationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
         log.info(
-          `Starting catch-up on CP for '${readModelName}' from ${fromTimestamp}`,
+          `Starting catch-up for '${readModelName}' from ${fromTimestamp}`,
         );
-        const headers = {};
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        return fetchJson(
-          `${commandProcessorUrl}/admin/catchup/${readModelName}/start`,
-          {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              fromTimestamp,
-              serviceId: correlationConfig?.serviceId,
-            }),
-          },
-        );
+        eventBus.publishAdminInstruction(catchupCorrelationId)({
+          type: 'start_catchup',
+          readModel: readModelName,
+          fromTimestamp,
+          serviceId: correlationConfig?.serviceId,
+          ...(token && { token }),
+          correlationId: catchupCorrelationId,
+        });
+        return {
+          status: 'started',
+          readModel: readModelName,
+          correlationId: catchupCorrelationId,
+        };
       })
       .then((result) => {
         log.info(
@@ -161,55 +145,18 @@ export const createActivator = ({
     return delay(500).then(() => activateReadModel(readModelName));
   };
 
-  const queryReadModelState = (readModelName) => {
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    const rmUrl = getReadModelServiceUrl(adminReadModelServices, readModelName);
-    if (!rmUrl) {
-      return Promise.reject(
-        new Error(
-          `No read model service URL configured for '${readModelName}'`,
-        ),
-      );
-    }
-
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    return fetchJson(`${rmUrl}/admin/readmodels`, { headers }).then(
-      (readModels) => {
-        const rm = readModels.find((r) => r.name === readModelName);
-        if (!rm) {
-          throw new Error(
-            `Read model '${readModelName}' not found in RM service response`,
-          );
-        }
-        log.debug(`Read model '${readModelName}' state: ${JSON.stringify(rm)}`);
-        return rm;
-      },
-    );
-  };
-
   const signalCpReady = () => {
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
-    log.info('Signaling CP readiness');
-    const headers = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    return fetchJson(`${commandProcessorUrl}/admin/ready`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ correlationId }),
-    }).then((result) => {
-      log.info(`CP readiness signaled: ${JSON.stringify(result)}`);
-      return result;
+    log.info('Signaling CP readiness via event bus');
+    eventBus.publishAdminInstruction(correlationId)({
+      type: 'set_ready',
+      ...(token && { token }),
+      correlationId,
     });
+    log.info('CP readiness signaled');
+    return Promise.resolve({ status: 'ready' });
   };
 
   const autoActivateAll = (readModelNames) => {

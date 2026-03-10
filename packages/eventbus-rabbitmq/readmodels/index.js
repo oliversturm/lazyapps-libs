@@ -62,8 +62,15 @@ export const rabbitMq = (config) => (context) => {
   let eventsSubscribed = false;
 
   return channelWithExchange(actualConfig, initLog)
-    .then(({ channel }) =>
-      channel.assertQueue('', { exclusive: true }).then((q) => {
+    .then(({ channel }) => {
+      context.publishAdminReply = (replyTopic, payload) => {
+        channel.publish(
+          exchange,
+          replyTopic,
+          Buffer.from(JSON.stringify(payload)),
+        );
+      };
+      return channel.assertQueue('', { exclusive: true }).then((q) => {
         const bindEvents = () =>
           channel.bindQueue(q.queue, exchange, pattern).then(() => {
             eventsSubscribed = true;
@@ -142,7 +149,7 @@ export const rabbitMq = (config) => (context) => {
                     targetReadModel,
                   )(event);
                 }
-              } else if (msg.fields.routingKey.startsWith('__admin')) {
+              } else if (msg.fields.routingKey === '__admin') {
                 const { correlationId, instruction } = JSON.parse(
                   msg.content.toString(),
                 );
@@ -215,8 +222,8 @@ export const rabbitMq = (config) => (context) => {
               })
             : bindEvents().then(() => bindSystemTopics())
         ).then(() => startConsuming());
-      }),
-    )
+      });
+    })
     .catch((err) => {
       initLog.error(`Failed to bind queue to Rabbit MQ exchange: ${err}`);
     });

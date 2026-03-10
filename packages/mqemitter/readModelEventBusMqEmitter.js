@@ -69,6 +69,9 @@ export const readModelEventBusMqEmitter =
 
     return Promise.resolve(getSharedMqEmitter('INIT', mqName))
       .then((mq) => {
+        context.publishAdminReply = (replyTopic, payload) => {
+          mq.emit({ topic: replyTopic, payload });
+        };
         if (context.deferEventsSubscription) {
           context.subscribeToEvents = () => {
             subscribeToEvents(mq);

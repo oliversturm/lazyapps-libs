@@ -78,6 +78,9 @@ export const mqEmitterRedis =
         initLog.error(`Failed to connect to Redis on port ${port}: ${err}`);
       })
       .then((mq) => {
+        context.publishAdminReply = (replyTopic, payload) => {
+          mq.emit({ topic: replyTopic, payload });
+        };
         if (context.deferEventsSubscription) {
           context.subscribeToEvents = () => {
             subscribeToEvents(mq);

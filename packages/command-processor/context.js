@@ -1,4 +1,5 @@
 import { createReplayHandler } from './replayHandler.js';
+import { createCatchupHandler } from './catchupHandler.js';
 import { getLogger } from '@lazyapps/logger';
 
 export const initializeContext = (
@@ -39,7 +40,58 @@ export const initializeContext = (
           context.eventStore,
           context.eventBus,
         ),
+        catchupHandler: createCatchupHandler(
+          context.eventStore,
+          context.eventBus,
+        ),
       }))
+      .then((context) => {
+        if (context.eventBus.subscribeAdminMessages) {
+          const adminLog = getLogger('CP/Admin', 'SYS');
+          context.eventBus.subscribeAdminMessages(
+            (correlationId, instruction) => {
+              const log = getLogger('CP/Admin', correlationId);
+              switch (instruction.type) {
+                case 'set_ready':
+                  log.info('Received set_ready instruction');
+                  context.setReady(true);
+                  break;
+                case 'start_catchup':
+                  log.info(
+                    `Received start_catchup for ${instruction.readModel} from ${instruction.fromTimestamp || 0}`,
+                  );
+                  context.catchupHandler
+                    .startCatchup(
+                      correlationId,
+                      instruction.readModel,
+                      instruction.fromTimestamp || 0,
+                    )
+                    .catch((err) => {
+                      log.error(
+                        `Catch-up failed for ${instruction.readModel}: ${err}`,
+                      );
+                    });
+                  break;
+                case 'cancel_catchup':
+                  log.info(
+                    `Received cancel_catchup for ${instruction.readModel}`,
+                  );
+                  context.catchupHandler.cancelCatchup(
+                    correlationId,
+                    instruction.readModel,
+                  );
+                  break;
+                default:
+                  log.debug(
+                    `Ignoring admin instruction type: ${instruction.type}`,
+                  );
+              }
+            },
+          );
+          adminLog.info('Subscribed to admin messages on event bus');
+        }
+        return context;
+      })
       // We run a full replay on startup, to get all aggregates
       // up and running. Not a great idea for production.
       .then((context) =>
