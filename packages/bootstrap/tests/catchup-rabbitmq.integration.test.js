@@ -25,6 +25,8 @@ const { rabbitMq: cpRabbitMq } =
   await import('@lazyapps/eventbus-rabbitmq/command-receiver/index.js');
 const { rabbitMq: rmRabbitMq } =
   await import('@lazyapps/eventbus-rabbitmq/readmodels/index.js');
+const { createCatchupHandler } =
+  await import('@lazyapps/command-processor/catchupHandler.js');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
 const { installReadModelAdminApi } = await import('@lazyapps/admin-api');
 const { startAdmin } = await import('../admin.js');
@@ -260,8 +262,31 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
       })
       .then((server) => {
         adminServer = server;
-        // Allow RabbitMQ connections to settle
-        return delay(1000);
+
+        // Set up CP-side catch-up handler using the admin's event bus and
+        // event store. In the real system, the CP handles start_catchup;
+        // here we simulate that by subscribing a second handler on the
+        // same RabbitMQ exchange.
+        const ctx = server.__testing__.context;
+        const handler = createCatchupHandler(ctx.eventStore, ctx.eventBus);
+        return ctx.eventBus
+          .subscribeAdminMessages((correlationId, instruction) => {
+            switch (instruction.type) {
+              case 'start_catchup':
+                handler
+                  .startCatchup(
+                    correlationId,
+                    instruction.readModel,
+                    instruction.fromTimestamp || 0,
+                  )
+                  .catch(() => {});
+                break;
+              case 'cancel_catchup':
+                handler.cancelCatchup(correlationId, instruction.readModel);
+                break;
+            }
+          })
+          .then(() => delay(1000));
       });
   }, 120000);
 

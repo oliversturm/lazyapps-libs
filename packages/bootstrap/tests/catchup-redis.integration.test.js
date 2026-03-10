@@ -25,6 +25,8 @@ const { mqEmitterRedis: cpRedis } =
   await import('@lazyapps/eventbus-mqemitter-redis/command-receiver/index.js');
 const { mqEmitterRedis: rmRedis } =
   await import('@lazyapps/eventbus-mqemitter-redis/readmodels/index.js');
+const { createCatchupHandler } =
+  await import('@lazyapps/command-processor/catchupHandler.js');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
 const { installReadModelAdminApi } = await import('@lazyapps/admin-api');
 const { startAdmin } = await import('../admin.js');
@@ -260,8 +262,31 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
       })
       .then((server) => {
         adminServer = server;
-        // Allow Redis connections to settle
-        return delay(2000);
+
+        // Set up CP-side catch-up handler using the admin's event bus and
+        // event store. In the real system, the CP handles start_catchup;
+        // here we simulate that by subscribing a second handler on the
+        // same Redis event bus.
+        const ctx = server.__testing__.context;
+        const handler = createCatchupHandler(ctx.eventStore, ctx.eventBus);
+        return ctx.eventBus
+          .subscribeAdminMessages((correlationId, instruction) => {
+            switch (instruction.type) {
+              case 'start_catchup':
+                handler
+                  .startCatchup(
+                    correlationId,
+                    instruction.readModel,
+                    instruction.fromTimestamp || 0,
+                  )
+                  .catch(() => {});
+                break;
+              case 'cancel_catchup':
+                handler.cancelCatchup(correlationId, instruction.readModel);
+                break;
+            }
+          })
+          .then(() => delay(2000));
       });
   }, 120000);
 

@@ -3,7 +3,7 @@ import bodyParser from 'body-parser';
 import cors from 'cors';
 import { getLogger } from '@lazyapps/logger';
 import { createReplayHandler } from '@lazyapps/command-processor/replayHandler.js';
-import { createCatchupHandler } from '@lazyapps/command-processor/catchupHandler.js';
+
 import {
   installReplayAdminApi,
   installReadModelAdminApi,
@@ -81,7 +81,6 @@ export const startAdmin = (
         .then((ctx) => ({
           ...ctx,
           replayHandler: createReplayHandler(ctx.eventStore, ctx.eventBus),
-          catchupHandler: createCatchupHandler(ctx.eventStore, ctx.eventBus),
         }))
         .then((ctx) => {
           if (ctx.eventBus.subscribeAdminMessages) {
@@ -90,22 +89,13 @@ export const startAdmin = (
                 (correlationId, instruction) => {
                   switch (instruction.type) {
                     case 'start_catchup':
-                      ctx.catchupHandler
-                        .startCatchup(
-                          correlationId,
-                          instruction.readModel,
-                          instruction.fromTimestamp || 0,
-                        )
-                        .catch((err) => {
-                          log.error(
-                            `Catch-up failed for ${instruction.readModel}: ${err}`,
-                          );
-                        });
+                      log.info(
+                        `Received start_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
+                      );
                       break;
                     case 'cancel_catchup':
-                      ctx.catchupHandler.cancelCatchup(
-                        correlationId,
-                        instruction.readModel,
+                      log.info(
+                        `Received cancel_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
                       );
                       break;
                     case 'set_ready':

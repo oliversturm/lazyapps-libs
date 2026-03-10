@@ -28,6 +28,8 @@ const {
   readModelEventBusMqEmitter,
   readModelListenerMqEmitter,
 } = await import('@lazyapps/mqemitter');
+const { createCatchupHandler } =
+  await import('@lazyapps/command-processor/catchupHandler.js');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
 const { installReadModelAdminApi } = await import('@lazyapps/admin-api');
 const { startAdmin } = await import('../admin.js');
@@ -243,7 +245,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         });
       })
       .then(() => {
-        // Start admin server (CP-side with catchup + activator)
+        // Start admin server (orchestrator — no longer handles catch-up)
         return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
@@ -266,6 +268,32 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
       })
       .then((server) => {
         env.adminServer = server;
+
+        // Set up CP-side catch-up handler using the admin's event bus and
+        // event store. In the real system, the CP handles start_catchup;
+        // here we simulate that by subscribing to __admin on the shared
+        // mqemitter and delegating to a catchupHandler.
+        const ctx = server.__testing__.context;
+        const handler = createCatchupHandler(ctx.eventStore, ctx.eventBus);
+        const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
+        mq.on('__admin', ({ payload }, cb) => {
+          const { correlationId, instruction } = payload;
+          switch (instruction.type) {
+            case 'start_catchup':
+              handler
+                .startCatchup(
+                  correlationId,
+                  instruction.readModel,
+                  instruction.fromTimestamp || 0,
+                )
+                .catch(() => {});
+              break;
+            case 'cancel_catchup':
+              handler.cancelCatchup(correlationId, instruction.readModel);
+              break;
+          }
+          cb();
+        });
       });
   };
 
