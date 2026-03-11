@@ -36,13 +36,14 @@ const mockRes = () => {
 
 describe('startReplayHandler', () => {
   let context;
+  let publishFn;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    publishFn = vi.fn();
     context = {
-      replayHandler: {
-        getReplayStatus: vi.fn().mockReturnValue({ status: 'idle' }),
-        startReplay: vi.fn().mockResolvedValue(),
+      eventBus: {
+        publishAdminInstruction: vi.fn().mockReturnValue(publishFn),
       },
     };
   });
@@ -60,39 +61,28 @@ describe('startReplayHandler', () => {
     });
   });
 
-  test('returns 409 if replay already in progress', () => {
-    context.replayHandler.getReplayStatus.mockReturnValue({
-      status: 'in_progress',
-    });
-    const handler = startReplayHandler(context);
-    const req = mockReq({ readModel: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.stringMatching(/already/) }),
-    );
-  });
-
-  test('starts replay and responds with started status', () => {
+  test('publishes start_replay instruction via event bus', () => {
     const handler = startReplayHandler(context);
     const req = mockReq({ readModel: 'items', fromTimestamp: 100 });
     const res = mockRes();
 
     handler(req, res);
 
-    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
+    expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
       'test-corr-id',
-      'items',
-      100,
-      null,
-      undefined,
     );
+    expect(publishFn).toHaveBeenCalledWith({
+      type: 'start_replay',
+      readModel: 'items',
+      fromTimestamp: 100,
+      toTimestamp: null,
+      targetServiceId: undefined,
+      correlationId: 'test-corr-id',
+    });
     expect(res.json).toHaveBeenCalledWith({
       status: 'started',
       readModel: 'items',
+      correlationId: 'test-corr-id',
     });
   });
 
@@ -106,12 +96,15 @@ describe('startReplayHandler', () => {
 
     handler(req, res);
 
-    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
+    expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
       'custom-corr',
-      'items',
-      0,
-      null,
-      undefined,
+    );
+    expect(publishFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'start_replay',
+        readModel: 'items',
+        correlationId: 'custom-corr',
+      }),
     );
   });
 
@@ -122,12 +115,11 @@ describe('startReplayHandler', () => {
 
     handler(req, res);
 
-    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
-      'test-corr-id',
-      'items',
-      0,
-      null,
-      undefined,
+    expect(publishFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromTimestamp: 0,
+        toTimestamp: null,
+      }),
     );
   });
 
@@ -142,16 +134,15 @@ describe('startReplayHandler', () => {
 
     handler(req, res);
 
-    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
-      'test-corr-id',
-      'items',
-      100,
-      500,
-      undefined,
+    expect(publishFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fromTimestamp: 100,
+        toTimestamp: 500,
+      }),
     );
   });
 
-  test('passes targetServiceId to startReplay when provided', () => {
+  test('passes targetServiceId when provided', () => {
     const handler = startReplayHandler(context);
     const req = mockReq({
       readModel: 'items',
@@ -161,68 +152,39 @@ describe('startReplayHandler', () => {
 
     handler(req, res);
 
-    expect(context.replayHandler.startReplay).toHaveBeenCalledWith(
-      'test-corr-id',
-      'items',
-      0,
-      null,
-      'orders-service',
+    expect(publishFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetServiceId: 'orders-service',
+      }),
     );
-  });
-
-  test('catches background replay errors without crashing', () => {
-    context.replayHandler.startReplay.mockRejectedValue(
-      new Error('stream error'),
-    );
-    const handler = startReplayHandler(context);
-    const req = mockReq({ readModel: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    // Response is sent before the error occurs
-    expect(res.json).toHaveBeenCalledWith({
-      status: 'started',
-      readModel: 'items',
-    });
   });
 });
 
 describe('replayStatusHandler', () => {
-  test('returns replay status for the given read model', () => {
-    const context = {
-      replayHandler: {
-        getReplayStatus: vi.fn().mockReturnValue({
-          status: 'in_progress',
-          readModel: 'items',
-          eventsPublished: 500,
-          eventsTotal: 1000,
-        }),
-      },
+  test('returns in_progress when replay state is set', () => {
+    const projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({
+        items: true,
+      }),
     };
+    const context = { projectionHandler };
     const handler = replayStatusHandler(context);
     const req = mockReq({}, { readModel: 'items' });
     const res = mockRes();
 
     handler(req, res);
 
-    expect(context.replayHandler.getReplayStatus).toHaveBeenCalledWith('items');
     expect(res.json).toHaveBeenCalledWith({
-      status: 'in_progress',
       readModel: 'items',
-      eventsPublished: 500,
-      eventsTotal: 1000,
+      status: 'in_progress',
     });
   });
 
   test('returns idle status for unknown read model', () => {
-    const context = {
-      replayHandler: {
-        getReplayStatus: vi
-          .fn()
-          .mockReturnValue({ status: 'idle', readModel: 'unknown' }),
-      },
+    const projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({}),
     };
+    const context = { projectionHandler };
     const handler = replayStatusHandler(context);
     const req = mockReq({}, { readModel: 'unknown' });
     const res = mockRes();
@@ -230,20 +192,22 @@ describe('replayStatusHandler', () => {
     handler(req, res);
 
     expect(res.json).toHaveBeenCalledWith({
-      status: 'idle',
       readModel: 'unknown',
+      status: 'idle',
     });
   });
 });
 
 describe('cancelReplayHandler', () => {
   let context;
+  let publishFn;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    publishFn = vi.fn();
     context = {
-      replayHandler: {
-        cancelReplay: vi.fn().mockResolvedValue(),
+      eventBus: {
+        publishAdminInstruction: vi.fn().mockReturnValue(publishFn),
       },
     };
   });
@@ -261,20 +225,24 @@ describe('cancelReplayHandler', () => {
     });
   });
 
-  test('cancels replay and responds with cancelling status', () => {
+  test('publishes cancel_replay instruction via event bus', () => {
     const handler = cancelReplayHandler(context);
     const req = mockReq({ readModel: 'items' });
     const res = mockRes();
 
-    return handler(req, res).then(() => {
-      expect(context.replayHandler.cancelReplay).toHaveBeenCalledWith(
-        'test-corr-id',
-        'items',
-      );
-      expect(res.json).toHaveBeenCalledWith({
-        status: 'cancelling',
-        readModel: 'items',
-      });
+    handler(req, res);
+
+    expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+      'test-corr-id',
+    );
+    expect(publishFn).toHaveBeenCalledWith({
+      type: 'cancel_replay',
+      readModel: 'items',
+      correlationId: 'test-corr-id',
+    });
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'cancelling',
+      readModel: 'items',
     });
   });
 
@@ -286,28 +254,11 @@ describe('cancelReplayHandler', () => {
     });
     const res = mockRes();
 
-    return handler(req, res).then(() => {
-      expect(context.replayHandler.cancelReplay).toHaveBeenCalledWith(
-        'custom-corr',
-        'items',
-      );
-    });
-  });
+    handler(req, res);
 
-  test('returns 500 on error', () => {
-    context.replayHandler.cancelReplay.mockRejectedValue(
-      new Error('cancel failed'),
+    expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+      'custom-corr',
     );
-    const handler = cancelReplayHandler(context);
-    const req = mockReq({ readModel: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.status).toHaveBeenCalledWith(500);
-      expect(res.json).toHaveBeenCalledWith({
-        error: 'Error: cancel failed',
-      });
-    });
   });
 });
 

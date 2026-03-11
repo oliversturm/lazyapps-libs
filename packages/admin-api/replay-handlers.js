@@ -11,35 +11,27 @@ export const startReplayHandler = (context) => (req, res) => {
     return;
   }
 
-  const currentStatus = context.replayHandler.getReplayStatus(readModel);
-  if (currentStatus.status === 'in_progress') {
-    res
-      .status(409)
-      .json({ error: `Replay already in progress for ${readModel}` });
-    return;
-  }
-
   log.info(`Starting replay for ${readModel} from ${fromTimestamp || 0}`);
 
-  // Start replay in background (streaming runs asynchronously)
-  context.replayHandler
-    .startReplay(
-      correlationId,
-      readModel,
-      fromTimestamp || 0,
-      toTimestamp || null,
-      targetServiceId,
-    )
-    .catch((err) => {
-      log.error(`Replay failed for ${readModel}: ${err}`);
-    });
+  context.eventBus.publishAdminInstruction(correlationId)({
+    type: 'start_replay',
+    readModel,
+    fromTimestamp: fromTimestamp || 0,
+    toTimestamp: toTimestamp || null,
+    targetServiceId,
+    correlationId,
+  });
 
-  res.json({ status: 'started', readModel });
+  res.json({ status: 'started', readModel, correlationId });
 };
 
 export const replayStatusHandler = (context) => (req, res) => {
   const { readModel } = req.params;
-  res.json(context.replayHandler.getReplayStatus(readModel));
+  const replayStates = context.projectionHandler.getReadModelReplayStates();
+  res.json({
+    readModel,
+    status: replayStates[readModel] ? 'in_progress' : 'idle',
+  });
 };
 
 export const setCommandReplayStateHandler = (context) => (req, res) => {
@@ -77,13 +69,11 @@ export const cancelReplayHandler = (context) => (req, res) => {
 
   log.info(`Cancelling replay for ${readModel}`);
 
-  return context.replayHandler
-    .cancelReplay(correlationId, readModel)
-    .then(() => {
-      res.json({ status: 'cancelling', readModel });
-    })
-    .catch((err) => {
-      log.error(`Failed to cancel replay: ${err}`);
-      res.status(500).json({ error: String(err) });
-    });
+  context.eventBus.publishAdminInstruction(correlationId)({
+    type: 'cancel_replay',
+    readModel,
+    correlationId,
+  });
+
+  res.json({ status: 'cancelling', readModel });
 };

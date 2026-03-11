@@ -9,26 +9,6 @@ vi.mock('@lazyapps/logger', () => ({
   }),
 }));
 
-const mockReplayHandler = {
-  startReplay: vi.fn(),
-  cancelReplay: vi.fn(),
-  getReplayStatus: vi.fn(),
-};
-
-const mockCatchupHandler = {
-  startCatchup: vi.fn(),
-  cancelCatchup: vi.fn(),
-  getCatchupStatus: vi.fn(),
-};
-
-vi.mock('@lazyapps/command-processor/replayHandler.js', () => ({
-  createReplayHandler: vi.fn().mockReturnValue(mockReplayHandler),
-}));
-
-vi.mock('@lazyapps/command-processor/catchupHandler.js', () => ({
-  createCatchupHandler: vi.fn().mockReturnValue(mockCatchupHandler),
-}));
-
 const mockInstallReplayAdminApi = vi.fn().mockReturnValue(vi.fn());
 const mockInstallCatchupAdminApi = vi.fn().mockReturnValue(vi.fn());
 const mockInstallReadModelAdminApi = vi.fn().mockReturnValue(vi.fn());
@@ -76,54 +56,23 @@ vi.mock('cors', () => ({
   default: vi.fn().mockReturnValue('corsMiddleware'),
 }));
 
-const { createReplayHandler } =
-  await import('@lazyapps/command-processor/replayHandler.js');
 const { startAdmin } = await import('../admin.js');
 
 describe('startAdmin', () => {
-  let eventStoreInstance;
-  let storageInstance;
   let eventBusInstance;
-  let backupInstance;
   let config;
 
   beforeEach(() => {
     vi.clearAllMocks();
-
-    eventStoreInstance = {
-      countEvents: vi.fn(),
-      streamEvents: vi.fn(),
-      getLatestEventTimestamp: vi.fn(),
-    };
-
-    storageInstance = {
-      perRequest: vi.fn().mockReturnValue({
-        find: vi.fn(),
-        insertOne: vi.fn(),
-      }),
-      readLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
-    };
 
     eventBusInstance = {
       publishReplayEvent: vi.fn(),
       publishSystemMessage: vi.fn(),
     };
 
-    backupInstance = {
-      createBackup: vi.fn(),
-      listBackups: vi.fn(),
-      restoreBackup: vi.fn(),
-      deleteBackup: vi.fn(),
-      clearCollections: vi.fn(),
-      cleanupBackups: vi.fn(),
-    };
-
     config = {
       port: 3005,
-      eventStore: vi.fn().mockResolvedValue(eventStoreInstance),
-      readModelStorage: vi.fn().mockResolvedValue(storageInstance),
       eventBus: vi.fn().mockResolvedValue(eventBusInstance),
-      backup: vi.fn().mockReturnValue(backupInstance),
       readModels: { customers: { resolvers: { all: vi.fn() } } },
     };
 
@@ -135,42 +84,16 @@ describe('startAdmin', () => {
     });
   });
 
-  test('initializes event store and read model storage', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(config.eventStore).toHaveBeenCalledOnce();
-      expect(config.readModelStorage).toHaveBeenCalledOnce();
-    }));
-
   test('initializes event bus', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
       expect(config.eventBus).toHaveBeenCalledOnce();
     }));
 
-  test('creates replay handler from event store and event bus', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(createReplayHandler).toHaveBeenCalledWith(
-        eventStoreInstance,
-        eventBusInstance,
-      );
-    }));
-
-  test('initializes backup module with storage', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(config.backup).toHaveBeenCalledWith(storageInstance);
-    }));
-
-  test('works without backup configured', () => {
-    const configNoBackup = { ...config, backup: undefined };
-    return startAdmin({ serviceId: 'TEST' }, configNoBackup).then(() => {
-      expect(mockInstallReplayAdminApi).toHaveBeenCalledOnce();
-    });
-  });
-
   test('installs replay admin API routes', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
       expect(mockInstallReplayAdminApi).toHaveBeenCalledOnce();
       const context = mockInstallReplayAdminApi.mock.calls[0][0];
-      expect(context.replayHandler).toBe(mockReplayHandler);
+      expect(context.eventBus).toBe(eventBusInstance);
     }));
 
   test('installs read model admin API routes', () =>
@@ -178,12 +101,6 @@ describe('startAdmin', () => {
       expect(mockInstallReadModelAdminApi).toHaveBeenCalledOnce();
       const context = mockInstallReadModelAdminApi.mock.calls[0][0];
       expect(context.readModels).toBe(config.readModels);
-    }));
-
-  test('context includes backup module', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      expect(context.backup).toBe(backupInstance);
     }));
 
   test('context includes projectionHandler with replay state tracking', () =>
@@ -232,34 +149,14 @@ describe('startAdmin', () => {
       expect(server.on).toBeDefined();
     }));
 
-  test('calls readLastProjectedEventTimestamps when available', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(
-        storageInstance.readLastProjectedEventTimestamps,
-      ).toHaveBeenCalledWith(config.readModels);
-    }));
-
-  test('works when storage has no readLastProjectedEventTimestamps', () => {
-    const storageNoRead = {
-      perRequest: vi.fn(),
-    };
-    const configNoRead = {
+  test('rejects when event bus initialization fails', () => {
+    const configBadEB = {
       ...config,
-      readModelStorage: vi.fn().mockResolvedValue(storageNoRead),
-    };
-    return startAdmin({ serviceId: 'TEST' }, configNoRead).then(() => {
-      expect(mockInstallReplayAdminApi).toHaveBeenCalledOnce();
-    });
-  });
-
-  test('rejects when event store initialization fails', () => {
-    const configBadES = {
-      ...config,
-      eventStore: vi.fn().mockRejectedValue(new Error('ES fail')),
+      eventBus: vi.fn().mockRejectedValue(new Error('EB fail')),
     };
     return expect(
-      startAdmin({ serviceId: 'TEST' }, configBadES),
-    ).rejects.toThrow('ES fail');
+      startAdmin({ serviceId: 'TEST' }, configBadEB),
+    ).rejects.toThrow('EB fail');
   });
 
   test('rejects when server listen fails', () => {
@@ -281,4 +178,57 @@ describe('startAdmin', () => {
       expect(context.activator.stopReadModel).toBeInstanceOf(Function);
       expect(context.activator.signalCpReady).toBeInstanceOf(Function);
     }));
+
+  test('subscribes to system messages when available', () => {
+    const subscribeSystemMessages = vi.fn();
+    eventBusInstance.subscribeSystemMessages = subscribeSystemMessages;
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      expect(subscribeSystemMessages).toHaveBeenCalledOnce();
+    });
+  });
+
+  test('subscribes to admin messages when available', () => {
+    const subscribeAdminMessages = vi.fn();
+    eventBusInstance.subscribeAdminMessages = subscribeAdminMessages;
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      expect(subscribeAdminMessages).toHaveBeenCalledOnce();
+    });
+  });
+
+  test('clears replay state on REPLAY_EVENTS_DONE system message', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      context.projectionHandler.setReadModelReplayState('items', true);
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        true,
+      );
+      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        false,
+      );
+    });
+  });
+
+  test('clears replay state on REPLAY_CANCELLED system message', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      context.projectionHandler.setReadModelReplayState('items', true);
+      systemHandler({ type: 'REPLAY_CANCELLED', readModel: 'items' });
+      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
+        false,
+      );
+    });
+  });
 });

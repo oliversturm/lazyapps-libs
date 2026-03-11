@@ -32,8 +32,6 @@ vi.mock('@lazyapps/logger', () => ({
   }),
 }));
 
-const { mongodb: eventStoreMongo } =
-  await import('@lazyapps/eventstore-mongodb');
 const { mongodb: readModelStorageMongo } =
   await import('@lazyapps/readmodelstorage-mongodb');
 const { backup: mongoBackup } =
@@ -61,34 +59,161 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
     },
   };
 
+  // Create mock event bus that routes admin instructions to
+  // an RM-side handler that processes backups and replies.
+  const createTestEventBus = (backupInstance, storageInstance) => {
+    const replyHandlers = {};
+    let adminHandler = null;
+
+    const publishAdminReply = (replyTopic, payload) => {
+      const handler = replyHandlers[replyTopic];
+      if (handler) {
+        Promise.resolve().then(() => handler(payload));
+      }
+    };
+
+    // Simulated RM-side handler for admin instructions
+    const handleInstruction = (correlationId, instruction) => {
+      const { type, targetReadModel, replyTopic } = instruction;
+      const rm = readModels[targetReadModel];
+      const collectionNames = rm ? rm.collections || [targetReadModel] : [];
+
+      const sendReply = (payload) =>
+        publishAdminReply(replyTopic, { correlationId, ...payload });
+      const sendError = (err) =>
+        publishAdminReply(replyTopic, { correlationId, error: String(err) });
+
+      switch (type) {
+        case 'create_backup':
+          backupInstance
+            .createBackup(correlationId, targetReadModel, collectionNames)
+            .then(sendReply)
+            .catch(sendError);
+          break;
+        case 'list_backups':
+          backupInstance
+            .listBackups(targetReadModel)
+            .then((backups) => sendReply({ backups }))
+            .catch(sendError);
+          break;
+        case 'delete_backup':
+          backupInstance
+            .deleteBackup(correlationId, instruction.backupId)
+            .then(() => sendReply({ deleted: true }))
+            .catch(sendError);
+          break;
+        case 'prepare_for_replay': {
+          const { backupId, fromScratch } = instruction;
+          (backupInstance
+            ? backupInstance.createBackup(
+                correlationId,
+                targetReadModel,
+                collectionNames,
+              )
+            : Promise.resolve(null)
+          )
+            .then((backupResult) => {
+              const preReplayBackupId = backupResult
+                ? backupResult.backupId
+                : null;
+              const restoreStep = backupId
+                ? backupInstance.restoreBackup(
+                    correlationId,
+                    targetReadModel,
+                    backupId,
+                  )
+                : fromScratch
+                  ? backupInstance.clearCollections(
+                      correlationId,
+                      targetReadModel,
+                      collectionNames,
+                    )
+                  : Promise.resolve();
+              return restoreStep
+                .then(() => {
+                  if (backupId) {
+                    return backupInstance
+                      .listBackups(targetReadModel)
+                      .then((backups) => {
+                        const restored = backups.find(
+                          (b) => b.backupId === backupId,
+                        );
+                        return restored ? restored.eventTimestamp : 0;
+                      });
+                  }
+                  if (fromScratch) return 0;
+                  return rm.lastProjectedEventTimestamp || 0;
+                })
+                .then((fromTimestamp) =>
+                  storageInstance
+                    .perRequest(correlationId)
+                    .updateOne(
+                      'readmodel.state',
+                      { name: targetReadModel },
+                      {
+                        $set: {
+                          replayInProgress: true,
+                          preReplayBackupId,
+                        },
+                      },
+                    )
+                    .then(() =>
+                      sendReply({ fromTimestamp, preReplayBackupId }),
+                    ),
+                );
+            })
+            .catch(sendError);
+          break;
+        }
+      }
+    };
+
+    return () =>
+      Promise.resolve({
+        publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
+        publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
+        publishAdminInstruction: vi
+          .fn()
+          .mockImplementation((correlationId) => (instruction) => {
+            handleInstruction(correlationId, instruction);
+          }),
+        subscribeAdminReply: vi.fn().mockImplementation((topic, handler) => {
+          replyHandlers[topic] = handler;
+          return Promise.resolve();
+        }),
+        subscribeSystemMessages: vi.fn().mockImplementation(() => {
+          return Promise.resolve();
+        }),
+        subscribeAdminMessages: vi.fn().mockImplementation((handler) => {
+          adminHandler = handler;
+          return Promise.resolve();
+        }),
+      });
+  };
+
   beforeAll(async () => {
     container = await new MongoDBContainer('mongo:7').start();
     connectionString =
       container.getConnectionString() + '?directConnection=true';
     cleanupClient = await MongoClient.connect(connectionString);
 
+    backupPath = join(tmpdir(), `lazyapps-backup-test-${Date.now()}`);
+    const storageFactory = readModelStorageMongo({
+      url: connectionString,
+      database: 'admin-test',
+    });
+    const storageInstance = await storageFactory();
+    const backupInstance = mongoBackup({
+      backupPath,
+      format: 'json',
+    })(storageInstance);
+
     // Use port 0 to get a random available port
     server = await startAdmin(
       { serviceId: 'INTEGRATION-TEST' },
       {
         port: 0,
-        eventStore: eventStoreMongo({ url: connectionString }),
-        readModelStorage: readModelStorageMongo({
-          url: connectionString,
-          database: 'admin-test',
-        }),
-        eventBus: () =>
-          Promise.resolve({
-            publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
-            publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
-          }),
-        backup: mongoBackup({
-          backupPath: (backupPath = join(
-            tmpdir(),
-            `lazyapps-backup-test-${Date.now()}`,
-          )),
-          format: 'json',
-        }),
+        eventBus: createTestEventBus(backupInstance, storageInstance),
         readModels,
       },
     );
@@ -163,9 +288,10 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   test.skipIf(!hasMongoTools)('DELETE /admin/backup/:id deletes a backup', () =>
     fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' })
       .then(({ body }) =>
-        fetch(`http://127.0.0.1:${adminPort}/admin/backup/${body.backupId}`, {
-          method: 'DELETE',
-        }),
+        fetch(
+          `http://127.0.0.1:${adminPort}/admin/backup/${body.backupId}?readModelName=customers`,
+          { method: 'DELETE' },
+        ),
       )
       .then((res) => {
         expect(res.status).toBe(204);
@@ -185,7 +311,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(body.error).toMatch(/not found/i);
     }));
 
-  test('POST /api/admin/startReplay starts event replay', () =>
+  test('POST /api/admin/startReplay delegates replay via event bus', () =>
     fetchJSON('/api/admin/startReplay', {
       method: 'POST',
       body: JSON.stringify({
@@ -194,7 +320,9 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       }),
     }).then(({ status, body }) => {
       expect(status).toBe(200);
-      expect(body).toHaveProperty('status');
+      expect(body.status).toBe('started');
+      expect(body.readModel).toBe('customers');
+      expect(body.correlationId).toBeDefined();
     }));
 
   test('GET /api/admin/replayStatus/:name returns replay status', () =>
@@ -263,45 +391,15 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(body.readModel).toBe('customers');
     }));
 
-  test('POST /api/admin/cancelReplay cancels an in-progress replay', () => {
-    const eventsDb = cleanupClient.db('events');
-    const eventsCol = eventsDb.collection('events');
-    const events = Array.from({ length: 200 }, (_, i) => ({
-      type: 'TEST_EVENT',
-      aggregateId: `agg-${i}`,
-      timestamp: i + 1,
-      payload: {},
+  test('POST /api/admin/cancelReplay delegates cancel via event bus', () =>
+    fetchJSON('/api/admin/cancelReplay', {
+      method: 'POST',
+      body: JSON.stringify({ readModel: 'orders' }),
+    }).then(({ status, body }) => {
+      expect(status).toBe(200);
+      expect(body.status).toBe('cancelling');
+      expect(body.readModel).toBe('orders');
     }));
-    return eventsCol
-      .insertMany(events)
-      .then(() =>
-        fetchJSON('/api/admin/startReplay', {
-          method: 'POST',
-          body: JSON.stringify({
-            readModel: 'orders',
-            fromTimestamp: 0,
-          }),
-        }),
-      )
-      .then(({ status }) => {
-        expect(status).toBe(200);
-        return fetchJSON('/api/admin/cancelReplay', {
-          method: 'POST',
-          body: JSON.stringify({ readModel: 'orders' }),
-        });
-      })
-      .then(({ status, body }) => {
-        expect(status).toBe(200);
-        expect(body.status).toBe('cancelling');
-        expect(body.readModel).toBe('orders');
-        return new Promise((resolve) => setTimeout(resolve, 1000));
-      })
-      .then(() => fetchJSON('/api/admin/replayStatus/orders'))
-      .then(({ body }) => {
-        expect(['cancelled', 'completed']).toContain(body.status);
-      })
-      .then(() => eventsCol.deleteMany({}));
-  });
 
   test.skipIf(!hasMongoTools)(
     'POST /admin/replay/:name/prepare with fromScratch clears collections',

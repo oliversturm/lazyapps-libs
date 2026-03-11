@@ -245,36 +245,45 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         });
       })
       .then(() => {
-        // Start admin server (orchestrator — no longer handles catch-up)
-        return startAdmin(
-          { serviceId: `${dbPrefix}-TEST` },
-          {
-            port: env.adminPort,
-            eventStore: eventStoreMongo({
-              url: env.connectionString,
-              database: `${dbPrefix}-events`,
-            }),
-            readModelStorage: readModelStorageMongo({
-              url: env.connectionString,
-              database: `${dbPrefix}-rm`,
-            }),
-            eventBus: commandProcessorEventBusMqEmitter({
-              mqName: `${mqPrefix}-events`,
-            }),
-            readModels: env.readModels,
-            ...(token && { token }),
+        // Create CP-side event store and event bus independently.
+        // In the real system, the CP owns these; admin only delegates
+        // via the event bus.
+        const cpEventStoreFactory = eventStoreMongo({
+          url: env.connectionString,
+          database: `${dbPrefix}-events`,
+        });
+        const cpEventBusFactory = commandProcessorEventBusMqEmitter({
+          mqName: `${mqPrefix}-events`,
+        });
+
+        return Promise.all([cpEventStoreFactory(), cpEventBusFactory()]).then(
+          ([cpEventStore, cpEventBus]) => {
+            env.cpEventStore = cpEventStore;
+            env.cpEventBus = cpEventBus;
+
+            // Start admin server (orchestrator — delegates via event bus)
+            return startAdmin(
+              { serviceId: `${dbPrefix}-TEST` },
+              {
+                port: env.adminPort,
+                eventBus: commandProcessorEventBusMqEmitter({
+                  mqName: `${mqPrefix}-events`,
+                }),
+                readModels: env.readModels,
+                ...(token && { token }),
+              },
+            );
           },
         );
       })
       .then((server) => {
         env.adminServer = server;
 
-        // Set up CP-side catch-up handler using the admin's event bus and
-        // event store. In the real system, the CP handles start_catchup;
-        // here we simulate that by subscribing to __admin on the shared
-        // mqemitter and delegating to a catchupHandler.
-        const ctx = server.__testing__.context;
-        const handler = createCatchupHandler(ctx.eventStore, ctx.eventBus);
+        // Set up CP-side catch-up handler. In the real system, the CP
+        // handles start_catchup; here we simulate that by subscribing
+        // to __admin on the shared mqemitter and delegating to a
+        // catchupHandler backed by the CP's own event store and bus.
+        const handler = createCatchupHandler(env.cpEventStore, env.cpEventBus);
         const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
         mq.on('__admin', ({ payload }, cb) => {
           const { correlationId, instruction } = payload;

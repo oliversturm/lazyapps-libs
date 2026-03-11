@@ -81,6 +81,33 @@ export const initializeContext = (
                     instruction.readModel,
                   );
                   break;
+                case 'start_replay':
+                  log.info(
+                    `Received start_replay for ${instruction.readModel} from ${instruction.fromTimestamp || 0}`,
+                  );
+                  context.replayHandler
+                    .startReplay(
+                      correlationId,
+                      instruction.readModel,
+                      instruction.fromTimestamp || 0,
+                      instruction.toTimestamp || null,
+                      instruction.targetServiceId,
+                    )
+                    .catch((err) => {
+                      log.error(
+                        `Replay failed for ${instruction.readModel}: ${err}`,
+                      );
+                    });
+                  break;
+                case 'cancel_replay':
+                  log.info(
+                    `Received cancel_replay for ${instruction.readModel}`,
+                  );
+                  context.replayHandler.cancelReplay(
+                    correlationId,
+                    instruction.readModel,
+                  );
+                  break;
                 default:
                   log.debug(
                     `Ignoring admin instruction type: ${instruction.type}`,

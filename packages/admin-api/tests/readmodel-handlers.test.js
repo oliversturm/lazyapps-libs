@@ -24,9 +24,10 @@ const {
   __testing__,
 } = await import('../readmodel-handlers.js');
 
-const mockReq = (body = {}, params = {}) => ({
+const mockReq = (body = {}, params = {}, query = {}) => ({
   body,
   params,
+  query,
 });
 
 const mockRes = () => {
@@ -36,6 +37,21 @@ const mockRes = () => {
   res.sendStatus = vi.fn().mockReturnValue(res);
   res.send = vi.fn().mockReturnValue(res);
   return res;
+};
+
+const mockEventBus = (replyPayload) => {
+  let replyHandler;
+  return {
+    subscribeAdminReply: vi.fn().mockImplementation((topic, handler) => {
+      replyHandler = handler;
+      return Promise.resolve();
+    }),
+    publishAdminInstruction: vi.fn().mockImplementation(() => (instruction) => {
+      if (replyHandler && replyPayload) {
+        Promise.resolve().then(() => replyHandler(replyPayload));
+      }
+    }),
+  };
 };
 
 describe('detectSharedCollections', () => {
@@ -183,13 +199,12 @@ describe('createBackupHandler', () => {
       readModels: {
         items: { collections: ['items'] },
       },
-      backup: {
-        createBackup: vi.fn().mockResolvedValue({
-          backupId: 'backup_123_items',
-          timestamp: 123,
-          eventTimestamp: 100,
-        }),
-      },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        backupId: 'backup_123_items',
+        timestamp: 123,
+        eventTimestamp: 100,
+      }),
     };
   });
 
@@ -203,53 +218,27 @@ describe('createBackupHandler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('returns 501 if backup not configured', () => {
-    context.backup = undefined;
-    const handler = createBackupHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(501);
-  });
-
-  test('creates backup and returns result', () => {
+  test('delegates to RM via event bus and returns result', () => {
     const handler = createBackupHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.createBackup).toHaveBeenCalledWith(
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
         'test-corr-id',
-        'items',
-        ['items'],
       );
-      expect(res.json).toHaveBeenCalledWith({
-        backupId: 'backup_123_items',
-        timestamp: 123,
-        eventTimestamp: 100,
-      });
-    });
-  });
-
-  test('uses default collection name when not specified', () => {
-    context.readModels.orders = {};
-    const handler = createBackupHandler(context);
-    const req = mockReq({}, { readModelName: 'orders' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(context.backup.createBackup).toHaveBeenCalledWith(
-        'test-corr-id',
-        'orders',
-        ['orders'],
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backupId: 'backup_123_items',
+          timestamp: 123,
+          eventTimestamp: 100,
+        }),
       );
     });
   });
 
-  test('returns 500 on backup error', () => {
-    context.backup.createBackup.mockRejectedValue(new Error('disk full'));
+  test('returns 500 on error reply', () => {
+    context.eventBus = mockEventBus({ error: 'disk full' });
     const handler = createBackupHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
@@ -264,7 +253,7 @@ describe('listBackupsHandler', () => {
   test('returns 404 for unknown read model', () => {
     const context = {
       readModels: {},
-      backup: { listBackups: vi.fn() },
+      eventBus: mockEventBus(),
     };
     const handler = listBackupsHandler(context);
     const req = mockReq({}, { readModelName: 'unknown' });
@@ -275,74 +264,64 @@ describe('listBackupsHandler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('returns 501 if backup not configured', () => {
-    const context = { readModels: { items: {} }, backup: undefined };
-    const handler = listBackupsHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(501);
-  });
-
-  test('lists backups for read model', () => {
+  test('lists backups via event bus delegation', () => {
     const backups = [
       { backupId: 'b1', timestamp: 100, eventTimestamp: 90 },
       { backupId: 'b2', timestamp: 200, eventTimestamp: 190 },
     ];
     const context = {
       readModels: { items: {} },
-      backup: { listBackups: vi.fn().mockResolvedValue(backups) },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        backups,
+      }),
     };
     const handler = listBackupsHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.listBackups).toHaveBeenCalledWith('items');
       expect(res.json).toHaveBeenCalledWith(backups);
     });
   });
 });
 
 describe('deleteBackupHandler', () => {
-  test('returns 501 if backup not configured', () => {
-    const context = { backup: undefined };
+  test('returns 400 if readModelName query param missing', () => {
+    const context = {
+      eventBus: mockEventBus({ deleted: true }),
+    };
     const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' });
+    const req = mockReq({}, { backupId: 'b1' }, {});
     const res = mockRes();
 
     handler(req, res);
 
-    expect(res.status).toHaveBeenCalledWith(501);
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  test('deletes backup and returns 204', () => {
+  test('deletes backup via event bus and returns 204', () => {
     const context = {
-      backup: { deleteBackup: vi.fn().mockResolvedValue() },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        deleted: true,
+      }),
     };
     const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' });
+    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.deleteBackup).toHaveBeenCalledWith(
-        'test-corr-id',
-        'b1',
-      );
       expect(res.sendStatus).toHaveBeenCalledWith(204);
     });
   });
 
-  test('returns 500 on error', () => {
+  test('returns 500 on error reply', () => {
     const context = {
-      backup: {
-        deleteBackup: vi.fn().mockRejectedValue(new Error('not found')),
-      },
+      eventBus: mockEventBus({ error: 'not found' }),
     };
     const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' });
+    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
@@ -368,26 +347,10 @@ describe('prepareReplayHandler', () => {
         setReadModelReplayState: vi.fn(),
         clearReadModelReplayState: vi.fn(),
       },
-      backup: {
-        createBackup: vi.fn().mockResolvedValue({
-          backupId: 'backup_pre_items',
-          timestamp: 1000,
-          eventTimestamp: 500,
-        }),
-        restoreBackup: vi.fn().mockResolvedValue(),
-        clearCollections: vi.fn().mockResolvedValue(),
-        listBackups: vi.fn().mockResolvedValue([
-          {
-            backupId: 'backup_old_items',
-            eventTimestamp: 300,
-          },
-        ]),
-      },
-      storage: {
-        perRequest: vi.fn().mockReturnValue({
-          updateOne: vi.fn().mockResolvedValue(),
-        }),
-      },
+      eventBus: mockEventBus({
+        fromTimestamp: 500,
+        preReplayBackupId: 'backup_pre_items',
+      }),
       correlationConfig: { serviceId: 'test-service' },
     };
   });
@@ -413,32 +376,18 @@ describe('prepareReplayHandler', () => {
     expect(res.status).toHaveBeenCalledWith(409);
   });
 
-  test('returns 501 if backup required but not configured', () => {
-    context.backup = undefined;
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({ fromScratch: true }, { readModelName: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(501);
-  });
-
-  test('prepares replay from current state (default)', () => {
+  test('delegates prepare_for_replay to RM service via event bus', () => {
     const handler = prepareReplayHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.createBackup).toHaveBeenCalledWith(
-        'test-corr-id',
-        'items',
-        ['items'],
-      );
       expect(
         context.projectionHandler.setReadModelReplayState,
       ).toHaveBeenCalledWith('items', true);
-      expect(context.storage.perRequest).toHaveBeenCalledWith('test-corr-id');
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
       expect(res.json).toHaveBeenCalledWith({
         status: 'prepared',
         readModel: 'items',
@@ -450,16 +399,18 @@ describe('prepareReplayHandler', () => {
     });
   });
 
-  test('prepares replay from scratch', () => {
+  test('delegates fromScratch to RM service', () => {
+    context.eventBus = mockEventBus({
+      fromTimestamp: 0,
+      preReplayBackupId: 'backup_pre_items',
+    });
     const handler = prepareReplayHandler(context);
     const req = mockReq({ fromScratch: true }, { readModelName: 'items' });
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.clearCollections).toHaveBeenCalledWith(
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
         'test-corr-id',
-        'items',
-        ['items'],
       );
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ fromTimestamp: 0 }),
@@ -467,7 +418,11 @@ describe('prepareReplayHandler', () => {
     });
   });
 
-  test('prepares replay from backup', () => {
+  test('delegates backupId to RM service', () => {
+    context.eventBus = mockEventBus({
+      fromTimestamp: 300,
+      preReplayBackupId: 'backup_pre_items',
+    });
     const handler = prepareReplayHandler(context);
     const req = mockReq(
       { backupId: 'backup_old_items' },
@@ -476,30 +431,11 @@ describe('prepareReplayHandler', () => {
     const res = mockRes();
 
     return handler(req, res).then(() => {
-      expect(context.backup.restoreBackup).toHaveBeenCalledWith(
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
         'test-corr-id',
-        'items',
-        'backup_old_items',
       );
-      expect(context.backup.listBackups).toHaveBeenCalledWith('items');
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ fromTimestamp: 300 }),
-      );
-    });
-  });
-
-  test('defaults fromTimestamp to 0 when backup not found', () => {
-    context.backup.listBackups.mockResolvedValue([]);
-    const handler = prepareReplayHandler(context);
-    const req = mockReq(
-      { backupId: 'nonexistent' },
-      { readModelName: 'items' },
-    );
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ fromTimestamp: 0 }),
       );
     });
   });
@@ -521,29 +457,8 @@ describe('prepareReplayHandler', () => {
     });
   });
 
-  test('marks replayInProgress in readmodel.state', () => {
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      const updateOne =
-        context.storage.perRequest.mock.results[0].value.updateOne;
-      expect(updateOne).toHaveBeenCalledWith(
-        'readmodel.state',
-        { name: 'items' },
-        {
-          $set: {
-            replayInProgress: true,
-            preReplayBackupId: 'backup_pre_items',
-          },
-        },
-      );
-    });
-  });
-
-  test('clears replay state on error', () => {
-    context.backup.createBackup.mockRejectedValue(new Error('backup failed'));
+  test('clears replay state on delegation error', () => {
+    context.eventBus = mockEventBus({ error: 'backup failed' });
     const handler = prepareReplayHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
@@ -553,26 +468,6 @@ describe('prepareReplayHandler', () => {
         context.projectionHandler.clearReadModelReplayState,
       ).toHaveBeenCalledWith('items');
       expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  test('works without backup configured (simple replay)', () => {
-    context.backup = undefined;
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(
-        context.projectionHandler.setReadModelReplayState,
-      ).toHaveBeenCalledWith('items', true);
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          status: 'prepared',
-          preReplayBackupId: null,
-          fromTimestamp: 500,
-        }),
-      );
     });
   });
 });

@@ -94,6 +94,37 @@ export const readModelsHandler = (context) => (req, res) => {
   res.json(buildLocal());
 };
 
+const delegateToRm = (context, correlationId, instruction, timeoutMs) => {
+  const replyTopic = `__admin_reply/${nanoid()}`;
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `Timed out waiting for ${instruction.type} reply for '${instruction.targetReadModel}'`,
+        ),
+      );
+    }, timeoutMs || 30000);
+
+    context.eventBus
+      .subscribeAdminReply(replyTopic, (payload) => {
+        clearTimeout(timeout);
+        if (payload.error) {
+          reject(new Error(payload.error));
+        } else {
+          resolve(payload);
+        }
+      })
+      .then(() => {
+        context.eventBus.publishAdminInstruction(correlationId)({
+          ...instruction,
+          replyTopic,
+          correlationId,
+        });
+      });
+  });
+};
+
 export const createBackupHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Backup', correlationId);
@@ -105,16 +136,12 @@ export const createBackupHandler = (context) => (req, res) => {
     return;
   }
 
-  if (!context.backup) {
-    res.status(501).json({ error: 'Backup not configured' });
-    return;
-  }
-
-  const collectionNames = rm.collections || [readModelName];
   log.info(`Creating backup for ${readModelName}`);
 
-  return context.backup
-    .createBackup(correlationId, readModelName, collectionNames)
+  return delegateToRm(context, correlationId, {
+    type: 'create_backup',
+    targetReadModel: readModelName,
+  })
     .then((result) => {
       res.json(result);
     })
@@ -126,6 +153,8 @@ export const createBackupHandler = (context) => (req, res) => {
 
 export const listBackupsHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
+  const correlationId = nanoid();
+  const log = getLogger('Admin/Backup', correlationId);
 
   const rm = context.readModels[readModelName];
   if (!rm) {
@@ -133,18 +162,14 @@ export const listBackupsHandler = (context) => (req, res) => {
     return;
   }
 
-  if (!context.backup) {
-    res.status(501).json({ error: 'Backup not configured' });
-    return;
-  }
-
-  return context.backup
-    .listBackups(readModelName)
-    .then((backups) => {
-      res.json(backups);
+  return delegateToRm(context, correlationId, {
+    type: 'list_backups',
+    targetReadModel: readModelName,
+  })
+    .then((result) => {
+      res.json(result.backups);
     })
     .catch((err) => {
-      const log = getLogger('Admin/Backup', nanoid());
       log.error(`Failed to list backups for ${readModelName}: ${err}`);
       res.status(500).json({ error: String(err) });
     });
@@ -154,16 +179,22 @@ export const deleteBackupHandler = (context) => (req, res) => {
   const correlationId = nanoid();
   const log = getLogger('Admin/Backup', correlationId);
   const { backupId } = req.params;
+  const { readModelName } = req.query;
 
-  if (!context.backup) {
-    res.status(501).json({ error: 'Backup not configured' });
+  if (!readModelName) {
+    res
+      .status(400)
+      .json({ error: 'readModelName query parameter is required' });
     return;
   }
 
   log.info(`Deleting backup ${backupId}`);
 
-  return context.backup
-    .deleteBackup(correlationId, backupId)
+  return delegateToRm(context, correlationId, {
+    type: 'delete_backup',
+    targetReadModel: readModelName,
+    backupId,
+  })
     .then(() => {
       res.sendStatus(204);
     })
@@ -192,13 +223,6 @@ export const prepareReplayHandler = (context) => (req, res) => {
     return;
   }
 
-  if ((backupId || fromScratch) && !context.backup) {
-    res.status(501).json({
-      error: 'Backup module required for restore or from-scratch replay',
-    });
-    return;
-  }
-
   const collectionNames = rm.collections || [readModelName];
   const warnings = detectSharedCollections(
     context.readModels,
@@ -208,70 +232,28 @@ export const prepareReplayHandler = (context) => (req, res) => {
 
   log.info(`Preparing replay for ${readModelName}`);
 
-  // Step 1: Create pre-replay safety backup
-  return (
-    context.backup
-      ? context.backup.createBackup(
-          correlationId,
-          readModelName,
-          collectionNames,
-        )
-      : Promise.resolve(null)
+  context.projectionHandler.setReadModelReplayState(readModelName, true);
+
+  return delegateToRm(
+    context,
+    correlationId,
+    {
+      type: 'prepare_for_replay',
+      targetReadModel: readModelName,
+      backupId,
+      fromScratch,
+    },
+    60000,
   )
-    .then((backupResult) => {
-      const preReplayBackupId = backupResult ? backupResult.backupId : null;
-
-      // Step 2: Set per-read-model replay state
-      context.projectionHandler.setReadModelReplayState(readModelName, true);
-
-      // Step 3: Restore backup or clear collections
-      const restoreStep = backupId
-        ? context.backup.restoreBackup(correlationId, readModelName, backupId)
-        : fromScratch
-          ? context.backup.clearCollections(
-              correlationId,
-              readModelName,
-              collectionNames,
-            )
-          : Promise.resolve();
-
-      return restoreStep
-        .then(() => {
-          // Step 4: Determine fromTimestamp
-          if (backupId) {
-            return context.backup.listBackups(readModelName).then((backups) => {
-              const restored = backups.find((b) => b.backupId === backupId);
-              return restored ? restored.eventTimestamp : 0;
-            });
-          }
-          if (fromScratch) return Promise.resolve(0);
-          return Promise.resolve(rm.lastProjectedEventTimestamp || 0);
-        })
-        .then((fromTimestamp) =>
-          // Step 5: Mark replayInProgress in readmodel.state
-          context.storage
-            .perRequest(correlationId)
-            .updateOne(
-              'readmodel.state',
-              { name: readModelName },
-              {
-                $set: {
-                  replayInProgress: true,
-                  preReplayBackupId,
-                },
-              },
-            )
-            .then(() => {
-              res.json({
-                status: 'prepared',
-                readModel: readModelName,
-                fromTimestamp,
-                preReplayBackupId,
-                warnings,
-                serviceId: context.correlationConfig.serviceId,
-              });
-            }),
-        );
+    .then((result) => {
+      res.json({
+        status: 'prepared',
+        readModel: readModelName,
+        fromTimestamp: result.fromTimestamp,
+        preReplayBackupId: result.preReplayBackupId,
+        warnings,
+        serviceId: context.correlationConfig.serviceId,
+      });
     })
     .catch((err) => {
       log.error(`Failed to prepare replay: ${err}`);

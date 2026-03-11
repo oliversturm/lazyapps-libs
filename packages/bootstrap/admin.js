@@ -2,8 +2,6 @@ import expressApp from 'express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import { getLogger } from '@lazyapps/logger';
-import { createReplayHandler } from '@lazyapps/command-processor/replayHandler.js';
-
 import {
   installReplayAdminApi,
   installReadModelAdminApi,
@@ -30,94 +28,84 @@ const createAdminProjectionHandler = () => {
 
 export const startAdmin = (
   correlationConfig,
-  {
-    port = 3005,
-    eventStore,
-    readModelStorage,
-    eventBus,
-    backup,
-    readModels,
-    autoActivate,
-    token,
-  },
+  { port = 3005, eventBus, readModels, autoActivate, token },
 ) => {
   log.info('Initializing admin service');
 
-  return Promise.all([eventStore(), readModelStorage()])
-    .then(([eventStoreInstance, storageInstance]) => {
-      const context = {
-        correlationConfig,
-        eventStore: eventStoreInstance,
-        storage: storageInstance,
-        readModels,
-        projectionHandler: createAdminProjectionHandler(),
-      };
+  const context = {
+    correlationConfig,
+    readModels,
+    projectionHandler: createAdminProjectionHandler(),
+  };
 
-      return eventBus()
-        .then((eventBusInstance) => {
-          const ctx = { ...context, eventBus: eventBusInstance };
-          if (eventBusInstance.subscribeSystemMessages) {
-            return Promise.resolve(
-              eventBusInstance.subscribeSystemMessages((msg) => {
-                if (
-                  msg.type === 'REPLAY_EVENTS_DONE' ||
-                  msg.type === 'REPLAY_CANCELLED'
-                ) {
-                  context.projectionHandler.clearReadModelReplayState(
-                    msg.readModel,
-                  );
-                }
-                if (
-                  msg.type === 'CATCHUP_EVENTS_DONE' ||
-                  msg.type === 'CATCHUP_CANCELLED'
-                ) {
-                  log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
-                }
-              }),
-            ).then(() => ctx);
-          }
-          return ctx;
-        })
-        .then((ctx) => ({
-          ...ctx,
-          replayHandler: createReplayHandler(ctx.eventStore, ctx.eventBus),
-        }))
-        .then((ctx) => {
-          if (ctx.eventBus.subscribeAdminMessages) {
-            return Promise.resolve(
-              ctx.eventBus.subscribeAdminMessages(
-                (correlationId, instruction) => {
-                  switch (instruction.type) {
-                    case 'start_catchup':
-                      log.info(
-                        `Received start_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
-                      );
-                      break;
-                    case 'cancel_catchup':
-                      log.info(
-                        `Received cancel_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
-                      );
-                      break;
-                    case 'set_ready':
-                      log.info(
-                        'Received set_ready instruction (admin service — no-op)',
-                      );
-                      break;
-                  }
-                },
-              ),
-            ).then(() => ctx);
-          }
-          return ctx;
-        })
-        .then((ctx) => (backup ? { ...ctx, backup: backup(ctx.storage) } : ctx))
-        .then((ctx) =>
-          storageInstance.readLastProjectedEventTimestamps
-            ? storageInstance
-                .readLastProjectedEventTimestamps(readModels)
-                .then(() => ctx)
-            : ctx,
-        );
+  return eventBus()
+    .then((eventBusInstance) => {
+      const ctx = { ...context, eventBus: eventBusInstance };
+      if (eventBusInstance.subscribeSystemMessages) {
+        return Promise.resolve(
+          eventBusInstance.subscribeSystemMessages((msg) => {
+            if (
+              msg.type === 'REPLAY_EVENTS_DONE' ||
+              msg.type === 'REPLAY_CANCELLED'
+            ) {
+              context.projectionHandler.clearReadModelReplayState(
+                msg.readModel,
+              );
+            }
+            if (
+              msg.type === 'CATCHUP_EVENTS_DONE' ||
+              msg.type === 'CATCHUP_CANCELLED'
+            ) {
+              log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+            }
+          }),
+        ).then(() => ctx);
+      }
+      return ctx;
+    })
+    .then((ctx) => {
+      if (ctx.eventBus.subscribeAdminMessages) {
+        return Promise.resolve(
+          ctx.eventBus.subscribeAdminMessages((correlationId, instruction) => {
+            switch (instruction.type) {
+              case 'start_catchup':
+                log.info(
+                  `Received start_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
+                );
+                break;
+              case 'cancel_catchup':
+                log.info(
+                  `Received cancel_catchup for ${instruction.readModel} (admin service — no-op, handled by CP)`,
+                );
+                break;
+              case 'start_replay':
+                log.info(
+                  `Received start_replay for ${instruction.readModel} (admin service — no-op, handled by CP)`,
+                );
+                break;
+              case 'cancel_replay':
+                log.info(
+                  `Received cancel_replay for ${instruction.readModel} (admin service — no-op, handled by CP)`,
+                );
+                break;
+              case 'create_backup':
+              case 'list_backups':
+              case 'delete_backup':
+              case 'prepare_for_replay':
+                log.info(
+                  `Received ${instruction.type} for ${instruction.targetReadModel} (admin service — no-op, handled by RM)`,
+                );
+                break;
+              case 'set_ready':
+                log.info(
+                  'Received set_ready instruction (admin service — no-op)',
+                );
+                break;
+            }
+          }),
+        ).then(() => ctx);
+      }
+      return ctx;
     })
     .then((context) => {
       // Create activator for orchestration via event bus

@@ -221,19 +221,12 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
         ),
       )
       .then(() =>
-        // Start admin server
+        // Start admin server (delegates via event bus, no direct
+        // eventStore/readModelStorage access)
         startAdmin(
           { serviceId: 'ISO-CMD' },
           {
             port: 0,
-            eventStore: eventStoreMongo({
-              url: connectionString,
-              database: 'iso-events',
-            }),
-            readModelStorage: readModelStorageMongo({
-              url: connectionString,
-              database: 'iso-readmodels',
-            }),
             eventBus: commandProcessorEventBusMqEmitter({
               mqName: 'iso-events',
             }),
@@ -370,21 +363,14 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
         expect(status).toBe(200);
         expect(body.status).toBe('started');
 
-        // Step 6: Wait for replay to complete
+        // Step 6: Wait for orders to be re-projected (admin delegates
+        // replay to CP via event bus, so we check data directly)
         return waitForCondition(() =>
-          fetchAdmin('/api/admin/replayStatus/overview').then(
-            ({ body: s }) => s.status === 'completed',
-          ),
-        );
-      })
-      .then(() =>
-        // Step 7: Wait for orders to be re-projected
-        waitForCondition(() =>
           getCollection('orders_overview').then(
             (orders) => orders.length === 2,
           ),
-        ),
-      )
+        );
+      })
       .then(() =>
         // Step 8: Verify customers were NOT duplicated
         Promise.all([
@@ -433,16 +419,9 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
         expect(status).toBe(200);
         expect(body.status).toBe('started');
 
-        // Wait for replay to complete
+        // Wait for both services to project (admin delegates replay
+        // to CP via event bus, so we check data directly)
         return waitForCondition(() =>
-          fetchAdmin('/api/admin/replayStatus/overview').then(
-            ({ body: s }) => s.status === 'completed',
-          ),
-        );
-      })
-      .then(() =>
-        // Wait for both services to project
-        waitForCondition(() =>
           Promise.all([
             getCollection('customers_overview'),
             getCollection('orders_overview'),
@@ -450,8 +429,8 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
             ([customers, orders]) =>
               customers.length === 2 && orders.length === 2,
           ),
-        ),
-      )
+        );
+      })
       .then(() =>
         Promise.all([
           getCollection('customers_overview'),
