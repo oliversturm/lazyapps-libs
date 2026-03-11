@@ -186,6 +186,47 @@ describe('lifecycleManager', () => {
         expect(result).toBeUndefined();
       });
     });
+
+    test('concurrent activate calls share single connectEventBus call', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers', 'orders']);
+
+      return Promise.all([
+        lm.activate('customers'),
+        lm.activate('orders'),
+      ]).then(() => {
+        expect(context.connectEventBus).toHaveBeenCalledOnce();
+        expect(lm.getState('customers')).toBe('catching-up');
+        expect(lm.getState('orders')).toBe('catching-up');
+      });
+    });
+
+    test('retries connectEventBus after failure', () => {
+      const connectEventBus = vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Connection failed'))
+        .mockResolvedValueOnce();
+      const context = createMockContext({ connectEventBus });
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      return lm
+        .activate('customers')
+        .then(
+          () => {
+            throw new Error('should not resolve');
+          },
+          () => {
+            expect(lm.getState('customers')).toBe('waiting');
+            return lm.activate('customers');
+          },
+        )
+        .then(() => {
+          expect(connectEventBus).toHaveBeenCalledTimes(2);
+          expect(lm.getState('customers')).toBe('catching-up');
+        });
+    });
   });
 
   describe('stop', () => {

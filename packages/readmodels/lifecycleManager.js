@@ -10,7 +10,7 @@ const VALID_STATES = [
 
 export const createLifecycleManager = (context) => {
   const states = {};
-  let eventBusConnected = false;
+  let connectPromise = null;
 
   const initialize = (readModelNames) => {
     const log = getLogger('RM/Lifecycle', 'SYS');
@@ -43,11 +43,13 @@ export const createLifecycleManager = (context) => {
     setState(readModelName, 'activating', correlationId);
     log.info(`Activating read model '${readModelName}'`);
 
-    const connectEventBus = eventBusConnected
-      ? Promise.resolve()
-      : context.connectEventBus().then(() => {
-          eventBusConnected = true;
-        });
+    if (!connectPromise) {
+      connectPromise = context.connectEventBus().catch((err) => {
+        connectPromise = null;
+        throw err;
+      });
+    }
+    const connectEventBus = connectPromise;
 
     return connectEventBus
       .then(() => {

@@ -8,4 +8,4 @@
 '@lazyapps/readmodels': patch
 ---
 
-Replace HTTP-based admin communication with event bus messages for topology-agnostic inter-service communication. Remove duplicate catch-up handling from admin service — start_catchup and cancel_catchup are now handled exclusively by the command processor.
+Replace HTTP-based admin communication with event bus messages for topology-agnostic inter-service communication. Remove duplicate catch-up handling from admin service — start_catchup and cancel_catchup are now handled exclusively by the command processor. Fix subscription race condition in connectEventBus and lifecycle manager activate when multiple read models activate concurrently.

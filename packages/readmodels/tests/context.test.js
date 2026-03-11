@@ -1,4 +1,4 @@
-import { describe, test, expect, vi } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { initializeContext } from '../context.js';
 
 describe('context', () => {
@@ -59,5 +59,62 @@ describe('context', () => {
       expect(context.backup).toBe(backupInstance);
       expect(backup).toHaveBeenCalledWith(storageResult);
     });
+  });
+
+  test('concurrent connectEventBus calls result in single subscription', () => {
+    const readModels = { rm1: {}, rm2: {} };
+    const subscribeToEvents = vi.fn().mockResolvedValue();
+    const storageResult = {
+      readLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+    };
+    const storage = vi.fn().mockResolvedValue(storageResult);
+    const eventBus = vi.fn().mockImplementation((context) => {
+      context.subscribeToEvents = subscribeToEvents;
+      return Promise.resolve();
+    });
+    return initializeContext(
+      {},
+      { readModels, storage, eventBus, lifecycle: true },
+    ).then((context) =>
+      Promise.all([
+        context.connectEventBus(),
+        context.connectEventBus(),
+        context.connectEventBus(),
+      ]).then(() => {
+        expect(subscribeToEvents).toHaveBeenCalledOnce();
+      }),
+    );
+  });
+
+  test('connectEventBus retries after failure', () => {
+    const readModels = { rm1: {} };
+    const subscribeToEvents = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockResolvedValueOnce();
+    const storageResult = {
+      readLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+    };
+    const storage = vi.fn().mockResolvedValue(storageResult);
+    const eventBus = vi.fn().mockImplementation((context) => {
+      context.subscribeToEvents = subscribeToEvents;
+      return Promise.resolve();
+    });
+    return initializeContext(
+      {},
+      { readModels, storage, eventBus, lifecycle: true },
+    ).then((context) =>
+      context
+        .connectEventBus()
+        .then(
+          () => {
+            throw new Error('should not resolve');
+          },
+          () => context.connectEventBus(),
+        )
+        .then(() => {
+          expect(subscribeToEvents).toHaveBeenCalledTimes(2);
+        }),
+    );
   });
 });

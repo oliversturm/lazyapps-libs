@@ -69,9 +69,10 @@ export const initializeContext = (
         // lifecycleManager.activate() when a read model is activated.
         // The event bus implementation places subscribeToEvents() on
         // the context during initial connection.
-        let eventsSubscribed = false;
+        // Uses promise-caching to prevent duplicate subscriptions when
+        // multiple read models activate concurrently.
+        let subscribePromise = null;
         context.connectEventBus = () => {
-          if (eventsSubscribed) return Promise.resolve();
           if (!context.subscribeToEvents) {
             return Promise.reject(
               new Error(
@@ -80,9 +81,13 @@ export const initializeContext = (
               ),
             );
           }
-          return context.subscribeToEvents().then(() => {
-            eventsSubscribed = true;
-          });
+          if (!subscribePromise) {
+            subscribePromise = context.subscribeToEvents().catch((err) => {
+              subscribePromise = null;
+              throw err;
+            });
+          }
+          return subscribePromise;
         };
 
         lifecycleManager.initialize(Object.keys(readModels));
