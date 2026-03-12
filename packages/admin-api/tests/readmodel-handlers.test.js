@@ -478,6 +478,7 @@ describe('replayReadModelStatusHandler', () => {
       readModels: {},
       projectionHandler: {
         isReadModelReplaying: vi.fn(),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
       },
     };
     const handler = replayReadModelStatusHandler(context);
@@ -496,6 +497,7 @@ describe('replayReadModelStatusHandler', () => {
       },
       projectionHandler: {
         isReadModelReplaying: vi.fn().mockReturnValue(true),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
       },
     };
     const handler = replayReadModelStatusHandler(context);
@@ -518,6 +520,7 @@ describe('replayReadModelStatusHandler', () => {
       },
       projectionHandler: {
         isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
       },
     };
     const handler = replayReadModelStatusHandler(context);
@@ -538,6 +541,7 @@ describe('replayReadModelStatusHandler', () => {
       readModels: { items: {} },
       projectionHandler: {
         isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
       },
     };
     const handler = replayReadModelStatusHandler(context);
@@ -549,6 +553,75 @@ describe('replayReadModelStatusHandler', () => {
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({ lastProjectedEventTimestamp: 0 }),
     );
+  });
+
+  test('returns completed status after replay completes', () => {
+    const context = {
+      readModels: {
+        items: { lastProjectedEventTimestamp: 500 },
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue('completed'),
+      },
+    };
+    const handler = replayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'completed',
+      lastProjectedEventTimestamp: 500,
+    });
+  });
+
+  test('returns cancelled status after replay is cancelled', () => {
+    const context = {
+      readModels: {
+        items: { lastProjectedEventTimestamp: 500 },
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue('cancelled'),
+      },
+    };
+    const handler = replayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'cancelled',
+      lastProjectedEventTimestamp: 500,
+    });
+  });
+
+  test('in_progress takes precedence over terminal status', () => {
+    const context = {
+      readModels: {
+        items: { lastProjectedEventTimestamp: 500 },
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(true),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue('completed'),
+      },
+    };
+    const handler = replayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'in_progress',
+      lastProjectedEventTimestamp: 500,
+    });
   });
 });
 

@@ -3,51 +3,47 @@ import { nanoid } from 'nanoid';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export const createActivator = ({ eventBus, correlationConfig, token }) => {
+export const createActivator = ({
+  eventBus,
+  correlationConfig,
+  token,
+  readModelServiceUrl,
+}) => {
   const queryReadModelState = (readModelName) => {
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
-    const replyTopic = `__admin_reply/${nanoid()}`;
+    if (!readModelServiceUrl) {
+      return Promise.reject(
+        new Error('readModelServiceUrl is required for queryReadModelState'),
+      );
+    }
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(
-          new Error(
-            `Timed out waiting for query_state reply for '${readModelName}'`,
-          ),
-        );
-      }, 5000);
+    const url = `${readModelServiceUrl}/admin/readmodels`;
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
 
-      eventBus
-        .subscribeAdminReply(replyTopic, (payload) => {
-          clearTimeout(timeout);
-          const rm = readModelName
-            ? payload.readModels.find((r) => r.name === readModelName)
-            : payload.readModels[0];
-          if (!rm) {
-            reject(
-              new Error(
-                `Read model '${readModelName}' not found in query_state response`,
-              ),
-            );
-            return;
-          }
-          log.debug(
-            `Read model '${readModelName}' state: ${JSON.stringify(rm)}`,
+    return fetch(url, { headers })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} from ${url}`);
+        }
+        return response.json();
+      })
+      .then((readModels) => {
+        const rm = readModelName
+          ? readModels.find((r) => r.name === readModelName)
+          : readModels[0];
+        if (!rm) {
+          throw new Error(
+            `Read model '${readModelName}' not found in HTTP response`,
           );
-          resolve(rm);
-        })
-        .then(() => {
-          eventBus.publishAdminInstruction(correlationId)({
-            type: 'query_state',
-            targetReadModel: readModelName,
-            replyTopic,
-            ...(token && { token }),
-            correlationId,
-          });
-        });
-    });
+        }
+        log.debug(`Read model '${readModelName}' state: ${JSON.stringify(rm)}`);
+        return rm;
+      });
   };
 
   const activateReadModel = (readModelName) => {
@@ -70,8 +66,8 @@ export const createActivator = ({ eventBus, correlationConfig, token }) => {
     // Step 2: Wait briefly for RM to process activation
     return delay(200)
       .then(() => {
-        // Step 3: Query RM state via event bus
-        log.info(`Querying RM state via event bus for '${readModelName}'`);
+        // Step 3: Query RM state via HTTP
+        log.info(`Querying RM state via HTTP for '${readModelName}'`);
         return queryReadModelState(readModelName);
       })
       .then((rm) => {

@@ -231,4 +231,91 @@ describe('startAdmin', () => {
       );
     });
   });
+
+  test('sets terminal status to completed on REPLAY_EVENTS_DONE', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      context.projectionHandler.setReadModelReplayState('items', true);
+      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe('completed');
+    });
+  });
+
+  test('sets terminal status to cancelled on REPLAY_CANCELLED', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      context.projectionHandler.setReadModelReplayState('items', true);
+      systemHandler({ type: 'REPLAY_CANCELLED', readModel: 'items' });
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe('cancelled');
+    });
+  });
+
+  test('sets terminal status to completed on CATCHUP_EVENTS_DONE', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      systemHandler({ type: 'CATCHUP_EVENTS_DONE', readModel: 'items' });
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe('completed');
+    });
+  });
+
+  test('sets terminal status to cancelled on CATCHUP_CANCELLED', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      systemHandler({ type: 'CATCHUP_CANCELLED', readModel: 'items' });
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe('cancelled');
+    });
+  });
+
+  test('setReadModelReplayState clears terminal status', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      context.projectionHandler.setReadModelReplayState('items', true);
+      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe('completed');
+      context.projectionHandler.setReadModelReplayState('items', true);
+      expect(
+        context.projectionHandler.getReadModelTerminalStatus('items'),
+      ).toBe(null);
+    });
+  });
 });

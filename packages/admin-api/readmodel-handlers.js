@@ -273,10 +273,12 @@ export const replayReadModelStatusHandler = (context) => (req, res) => {
 
   const isReplaying =
     context.projectionHandler.isReadModelReplaying(readModelName);
+  const terminalStatus =
+    context.projectionHandler.getReadModelTerminalStatus(readModelName);
 
   res.json({
     readModel: readModelName,
-    status: isReplaying ? 'in_progress' : 'idle',
+    status: isReplaying ? 'in_progress' : terminalStatus || 'idle',
     lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
   });
 };

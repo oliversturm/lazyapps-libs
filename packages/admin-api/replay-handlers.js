@@ -28,9 +28,11 @@ export const startReplayHandler = (context) => (req, res) => {
 export const replayStatusHandler = (context) => (req, res) => {
   const { readModel } = req.params;
   const replayStates = context.projectionHandler.getReadModelReplayStates();
+  const terminalStatus =
+    context.projectionHandler.getReadModelTerminalStatus(readModel);
   res.json({
     readModel,
-    status: replayStates[readModel] ? 'in_progress' : 'idle',
+    status: replayStates[readModel] ? 'in_progress' : terminalStatus || 'idle',
   });
 };
 

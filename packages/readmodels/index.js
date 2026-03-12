@@ -224,43 +224,6 @@ const createAdminInstructionHandler =
         });
         break;
 
-      case 'query_state': {
-        const { replyTopic } = instruction;
-        if (!replyTopic) {
-          log.warn('query_state instruction missing replyTopic');
-          return;
-        }
-        const names = targetReadModel
-          ? [targetReadModel]
-          : Object.keys(context.readModels);
-        const replayStates =
-          context.projectionHandler.getReadModelReplayStates();
-        const result = names.map((name) => {
-          const rm = context.readModels[name];
-          const base = {
-            name,
-            lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
-            status: replayStates[name] ? 'replaying' : 'active',
-            collections: rm.collections || [name],
-          };
-          if (lm) {
-            base.state = lm.getState(name);
-          }
-          if (context.projectionHandler.getFifoQueueSize) {
-            base.fifoQueueSize =
-              context.projectionHandler.getFifoQueueSize(name);
-          }
-          return base;
-        });
-        log.info(
-          `Responding to query_state on ${replyTopic} with ${result.length} read model(s)`,
-        );
-        sendReply(context, replyTopic, correlationId, {
-          readModels: result,
-        });
-        break;
-      }
-
       case 'create_backup':
         handleCreateBackup(context, correlationId, instruction);
         break;

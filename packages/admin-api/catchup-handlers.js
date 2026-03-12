@@ -46,8 +46,12 @@ export const getCatchupStatusHandler = (context) => (req, res) => {
   // monitors __system messages for CATCHUP_EVENTS_DONE / CATCHUP_CANCELLED.
   // Return what we know from the projection handler.
   const replayStates = context.projectionHandler.getReadModelReplayStates();
+  const terminalStatus =
+    context.projectionHandler.getReadModelTerminalStatus(readModelName);
   res.json({
     readModel: readModelName,
-    status: replayStates[readModelName] ? 'in_progress' : 'idle',
+    status: replayStates[readModelName]
+      ? 'in_progress'
+      : terminalStatus || 'idle',
   });
 };

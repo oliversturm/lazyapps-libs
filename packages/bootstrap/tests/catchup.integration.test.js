@@ -270,6 +270,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
                   mqName: `${mqPrefix}-events`,
                 }),
                 readModels: env.readModels,
+                readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
                 ...(token && { token }),
               },
             );

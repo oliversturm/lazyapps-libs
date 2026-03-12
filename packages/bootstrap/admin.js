@@ -14,21 +14,34 @@ const log = getLogger('BS/Admin', 'INIT');
 
 const createAdminProjectionHandler = () => {
   const replayStates = {};
+  const terminalStates = {};
   return {
     getReadModelReplayStates: () => replayStates,
     isReadModelReplaying: (name) => !!replayStates[name],
     setReadModelReplayState: (name, state) => {
       replayStates[name] = state;
+      delete terminalStates[name];
     },
     clearReadModelReplayState: (name) => {
       delete replayStates[name];
+    },
+    getReadModelTerminalStatus: (name) => terminalStates[name] || null,
+    setReadModelTerminalStatus: (name, status) => {
+      terminalStates[name] = status;
     },
   };
 };
 
 export const startAdmin = (
   correlationConfig,
-  { port = 3005, eventBus, readModels, autoActivate, token },
+  {
+    port = 3005,
+    eventBus,
+    readModels,
+    autoActivate,
+    token,
+    readModelServiceUrl,
+  },
 ) => {
   log.info('Initializing admin service');
 
@@ -44,19 +57,37 @@ export const startAdmin = (
       if (eventBusInstance.subscribeSystemMessages) {
         return Promise.resolve(
           eventBusInstance.subscribeSystemMessages((msg) => {
-            if (
-              msg.type === 'REPLAY_EVENTS_DONE' ||
-              msg.type === 'REPLAY_CANCELLED'
-            ) {
+            if (msg.type === 'REPLAY_EVENTS_DONE') {
               context.projectionHandler.clearReadModelReplayState(
                 msg.readModel,
               );
+              context.projectionHandler.setReadModelTerminalStatus(
+                msg.readModel,
+                'completed',
+              );
             }
-            if (
-              msg.type === 'CATCHUP_EVENTS_DONE' ||
-              msg.type === 'CATCHUP_CANCELLED'
-            ) {
+            if (msg.type === 'REPLAY_CANCELLED') {
+              context.projectionHandler.clearReadModelReplayState(
+                msg.readModel,
+              );
+              context.projectionHandler.setReadModelTerminalStatus(
+                msg.readModel,
+                'cancelled',
+              );
+            }
+            if (msg.type === 'CATCHUP_EVENTS_DONE') {
               log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+              context.projectionHandler.setReadModelTerminalStatus(
+                msg.readModel,
+                'completed',
+              );
+            }
+            if (msg.type === 'CATCHUP_CANCELLED') {
+              log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+              context.projectionHandler.setReadModelTerminalStatus(
+                msg.readModel,
+                'cancelled',
+              );
             }
           }),
         ).then(() => ctx);
@@ -113,6 +144,7 @@ export const startAdmin = (
         eventBus: context.eventBus,
         correlationConfig,
         token,
+        readModelServiceUrl,
       });
 
       context.activator = activator;

@@ -264,6 +264,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
               topic: 'events',
             }),
             readModels,
+            readModelServiceUrl: `http://127.0.0.1:${rmAdminPort}`,
           },
         );
       })

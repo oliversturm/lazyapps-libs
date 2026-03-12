@@ -258,6 +258,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
               port: redisPort,
             }),
             readModels,
+            readModelServiceUrl: `http://127.0.0.1:${rmAdminPort}`,
           },
         );
       })

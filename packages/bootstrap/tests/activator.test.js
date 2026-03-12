@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -23,37 +23,50 @@ const createMockEventBus = () => ({
 
 describe('createActivator', () => {
   let eventBus;
+  let originalFetch;
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.restoreAllMocks();
     eventBus = createMockEventBus();
+    originalFetch = globalThis.fetch;
   });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const mockFetchResponse = (readModels) => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(readModels),
+    });
+  };
+
+  const mockFetchError = (status) => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+    });
+  };
 
   describe('activateReadModel', () => {
     test('publishes activate instruction on __admin topic', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      // subscribeAdminReply triggers the handler with mock state data
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [
-              {
-                name: 'customers',
-                lastProjectedEventTimestamp: 100,
-                state: 'catching-up',
-              },
-            ],
-          }),
-        );
-        return Promise.resolve();
-      });
+      mockFetchResponse([
+        {
+          name: 'customers',
+          lastProjectedEventTimestamp: 100,
+          state: 'catching-up',
+        },
+      ]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.activateReadModel('customers').then(() => {
@@ -71,19 +84,15 @@ describe('createActivator', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [{ name: 'customers', lastProjectedEventTimestamp: 0 }],
-          }),
-        );
-        return Promise.resolve();
-      });
+      mockFetchResponse([
+        { name: 'customers', lastProjectedEventTimestamp: 0 },
+      ]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
         token: 'secret-token',
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.activateReadModel('customers').then(() => {
@@ -96,16 +105,16 @@ describe('createActivator', () => {
       });
     });
 
-    test('rejects activation when query_state gets no reply', () => {
+    test('rejects activation when HTTP request fails', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      // subscribeAdminReply never calls handler → timeout
-      eventBus.subscribeAdminReply.mockResolvedValue(undefined);
+      mockFetchError(500);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.activateReadModel('unreachable').then(
@@ -113,36 +122,33 @@ describe('createActivator', () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('Timed out');
+          expect(err.message).toContain('HTTP 500');
         },
       );
-    }, 10000);
+    });
 
-    test('queries RM state via event bus and starts catch-up', () => {
+    test('queries RM state via HTTP and starts catch-up', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [{ name: 'orders', lastProjectedEventTimestamp: 500 }],
-          }),
-        );
-        return Promise.resolve();
-      });
+      mockFetchResponse([{ name: 'orders', lastProjectedEventTimestamp: 500 }]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.activateReadModel('orders').then(() => {
-        // Should have published query_state instruction
-        const queryStateCall = publishFn.mock.calls.find(
-          (c) => c[0].type === 'query_state',
+        // Should have fetched from RM service URL
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          'http://localhost:3002/admin/readmodels',
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              'Content-Type': 'application/json',
+            }),
+          }),
         );
-        expect(queryStateCall).toBeDefined();
-        expect(queryStateCall[0].replyTopic).toBeDefined();
 
         // Should have published start_catchup instruction
         const catchupCall = publishFn.mock.calls.find(
@@ -163,6 +169,7 @@ describe('createActivator', () => {
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       activator.stopReadModel('customers');
@@ -184,6 +191,7 @@ describe('createActivator', () => {
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.signalCpReady().then((result) => {
@@ -204,6 +212,7 @@ describe('createActivator', () => {
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
         token: 'my-token',
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.signalCpReady().then(() => {
@@ -218,46 +227,62 @@ describe('createActivator', () => {
   });
 
   describe('queryReadModelState', () => {
-    test('queries and returns specific read model state via event bus', () => {
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [
-              {
-                name: 'customers',
-                state: 'live',
-                lastProjectedEventTimestamp: 999,
-              },
-            ],
-          }),
-        );
-        return Promise.resolve();
-      });
+    test('queries and returns specific read model state via HTTP', () => {
+      mockFetchResponse([
+        {
+          name: 'customers',
+          state: 'live',
+          lastProjectedEventTimestamp: 999,
+        },
+      ]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.queryReadModelState('customers').then((rm) => {
         expect(rm.name).toBe('customers');
         expect(rm.state).toBe('live');
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          'http://localhost:3002/admin/readmodels',
+          expect.any(Object),
+        );
       });
     });
 
-    test('rejects when read model not found in response', () => {
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [{ name: 'other' }],
-          }),
-        );
-        return Promise.resolve();
-      });
+    test('includes Authorization header when token is configured', () => {
+      mockFetchResponse([
+        { name: 'customers', state: 'live', lastProjectedEventTimestamp: 0 },
+      ]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        token: 'secret-token',
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.queryReadModelState('customers').then(() => {
+        expect(globalThis.fetch).toHaveBeenCalledWith(
+          'http://localhost:3002/admin/readmodels',
+          expect.objectContaining({
+            headers: expect.objectContaining({
+              Authorization: 'Bearer secret-token',
+            }),
+          }),
+        );
+      });
+    });
+
+    test('rejects when read model not found in response', () => {
+      mockFetchResponse([{ name: 'other' }]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.queryReadModelState('missing').then(
@@ -270,13 +295,13 @@ describe('createActivator', () => {
       );
     });
 
-    test('rejects on timeout when no reply received', () => {
-      // subscribeAdminReply never calls handler → timeout
-      eventBus.subscribeAdminReply.mockResolvedValue(undefined);
+    test('rejects on HTTP error', () => {
+      mockFetchError(503);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.queryReadModelState('missing').then(
@@ -284,10 +309,26 @@ describe('createActivator', () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('Timed out');
+          expect(err.message).toContain('HTTP 503');
         },
       );
-    }, 10000);
+    });
+
+    test('rejects when readModelServiceUrl is not configured', () => {
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+      });
+
+      return activator.queryReadModelState('customers').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('readModelServiceUrl is required');
+        },
+      );
+    });
   });
 
   describe('restartReadModel', () => {
@@ -295,18 +336,14 @@ describe('createActivator', () => {
       const publishFn = vi.fn();
       eventBus.publishAdminInstruction.mockReturnValue(publishFn);
 
-      eventBus.subscribeAdminReply.mockImplementation((topic, handler) => {
-        setTimeout(() =>
-          handler({
-            readModels: [{ name: 'customers', lastProjectedEventTimestamp: 0 }],
-          }),
-        );
-        return Promise.resolve();
-      });
+      mockFetchResponse([
+        { name: 'customers', lastProjectedEventTimestamp: 0 },
+      ]);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
       });
 
       return activator.restartReadModel('customers').then(() => {

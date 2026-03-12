@@ -416,6 +416,48 @@ describe('createProjectionHandler', () => {
     });
   });
 
+  describe('terminal state management', () => {
+    test('getReadModelTerminalStatus returns null by default', () => {
+      const handler = createProjectionHandler(makeContext());
+      expect(handler.getReadModelTerminalStatus('items')).toBe(null);
+    });
+
+    test('setReadModelTerminalStatus and getReadModelTerminalStatus', () => {
+      const handler = createProjectionHandler(makeContext());
+
+      handler.setReadModelTerminalStatus('items', 'completed');
+      expect(handler.getReadModelTerminalStatus('items')).toBe('completed');
+    });
+
+    test('setReadModelTerminalStatus with cancelled', () => {
+      const handler = createProjectionHandler(makeContext());
+
+      handler.setReadModelTerminalStatus('items', 'cancelled');
+      expect(handler.getReadModelTerminalStatus('items')).toBe('cancelled');
+    });
+
+    test('setReadModelReplayState clears terminal status', () => {
+      const handler = createProjectionHandler(makeContext());
+
+      handler.setReadModelTerminalStatus('items', 'completed');
+      expect(handler.getReadModelTerminalStatus('items')).toBe('completed');
+
+      handler.setReadModelReplayState('items', true);
+      expect(handler.getReadModelTerminalStatus('items')).toBe(null);
+    });
+
+    test('terminal status persists after clearReadModelReplayState', () => {
+      const handler = createProjectionHandler(makeContext());
+
+      handler.setReadModelReplayState('items', true);
+      handler.clearReadModelReplayState('items');
+      handler.setReadModelTerminalStatus('items', 'completed');
+
+      expect(handler.isReadModelReplaying('items')).toBe(false);
+      expect(handler.getReadModelTerminalStatus('items')).toBe('completed');
+    });
+  });
+
   describe('projectEventForReadModel', () => {
     test('projects event for the targeted read model only', () => {
       const context = makeContext();

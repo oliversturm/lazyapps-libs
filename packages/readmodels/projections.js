@@ -154,6 +154,7 @@ const MAX_FIFO_SIZE = 100000;
 export const createProjectionHandler = (context) => {
   const eventQueue = createContextQueue(1, Infinity);
   const readModelReplayState = {};
+  const readModelTerminalState = {};
   const readModelCatchupState = {};
 
   const isReadModelReplaying = (rmName) =>
@@ -301,12 +302,18 @@ export const createProjectionHandler = (context) => {
     projectCatchupEventForReadModel,
     setReadModelReplayState: (rmName, state) => {
       readModelReplayState[rmName] = state;
+      delete readModelTerminalState[rmName];
     },
     clearReadModelReplayState: (rmName) => {
       delete readModelReplayState[rmName];
     },
     isReadModelReplaying,
     getReadModelReplayStates: () => ({ ...readModelReplayState }),
+    getReadModelTerminalStatus: (rmName) =>
+      readModelTerminalState[rmName] || null,
+    setReadModelTerminalStatus: (rmName, status) => {
+      readModelTerminalState[rmName] = status;
+    },
     setReadModelCatchingUp,
     isReadModelCatchingUp,
     queueLiveEvent,

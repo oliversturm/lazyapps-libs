@@ -166,6 +166,7 @@ describe('replayStatusHandler', () => {
       getReadModelReplayStates: vi.fn().mockReturnValue({
         items: true,
       }),
+      getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
     };
     const context = { projectionHandler };
     const handler = replayStatusHandler(context);
@@ -183,6 +184,7 @@ describe('replayStatusHandler', () => {
   test('returns idle status for unknown read model', () => {
     const projectionHandler = {
       getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
     };
     const context = { projectionHandler };
     const handler = replayStatusHandler(context);
@@ -194,6 +196,60 @@ describe('replayStatusHandler', () => {
     expect(res.json).toHaveBeenCalledWith({
       readModel: 'unknown',
       status: 'idle',
+    });
+  });
+
+  test('returns completed status after REPLAY_EVENTS_DONE', () => {
+    const projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      getReadModelTerminalStatus: vi.fn().mockReturnValue('completed'),
+    };
+    const context = { projectionHandler };
+    const handler = replayStatusHandler(context);
+    const req = mockReq({}, { readModel: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'completed',
+    });
+  });
+
+  test('returns cancelled status after REPLAY_CANCELLED', () => {
+    const projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      getReadModelTerminalStatus: vi.fn().mockReturnValue('cancelled'),
+    };
+    const context = { projectionHandler };
+    const handler = replayStatusHandler(context);
+    const req = mockReq({}, { readModel: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'cancelled',
+    });
+  });
+
+  test('in_progress takes precedence over terminal status', () => {
+    const projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({ items: true }),
+      getReadModelTerminalStatus: vi.fn().mockReturnValue('completed'),
+    };
+    const context = { projectionHandler };
+    const handler = replayStatusHandler(context);
+    const req = mockReq({}, { readModel: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'in_progress',
     });
   });
 });
