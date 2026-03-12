@@ -159,12 +159,18 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
   let rmAdminPort;
   let rmContext;
   let readModels;
+  let cpEventStore;
   let suppressErrors = false;
   let exchangeCounter = 0;
 
   const errorHandler = (err) => {
-    if (suppressErrors && err.message === 'Unexpected close') return;
+    if (suppressErrors) return;
     throw err;
+  };
+
+  const rejectionHandler = (reason) => {
+    if (suppressErrors) return;
+    throw reason;
   };
 
   const uniqueExchange = () =>
@@ -172,6 +178,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
 
   beforeAll(() => {
     process.on('uncaughtException', errorHandler);
+    process.on('unhandledRejection', rejectionHandler);
 
     readModels = createTestReadModels();
 
@@ -264,29 +271,38 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
         adminServer = server;
 
         // Set up CP-side catch-up handler using the admin's event bus and
-        // event store. In the real system, the CP handles start_catchup;
-        // here we simulate that by subscribing a second handler on the
-        // same RabbitMQ exchange.
+        // a separately initialized event store. In the real system, the CP
+        // handles start_catchup; here we simulate that by subscribing a
+        // second handler on the same RabbitMQ exchange.
         const ctx = server.__testing__.context;
-        const handler = createCatchupHandler(ctx.eventStore, ctx.eventBus);
-        return ctx.eventBus
-          .subscribeAdminMessages((correlationId, instruction) => {
-            switch (instruction.type) {
-              case 'start_catchup':
-                handler
-                  .startCatchup(
-                    correlationId,
-                    instruction.readModel,
-                    instruction.fromTimestamp || 0,
-                  )
-                  .catch(() => {});
-                break;
-              case 'cancel_catchup':
-                handler.cancelCatchup(correlationId, instruction.readModel);
-                break;
-            }
+        return eventStoreMongo({
+          url: connectionString,
+          database: 'rmq-events',
+        })()
+          .then((es) => {
+            cpEventStore = es;
+            return createCatchupHandler(es, ctx.eventBus);
           })
-          .then(() => delay(1000));
+          .then((handler) =>
+            ctx.eventBus
+              .subscribeAdminMessages((correlationId, instruction) => {
+                switch (instruction.type) {
+                  case 'start_catchup':
+                    handler
+                      .startCatchup(
+                        correlationId,
+                        instruction.readModel,
+                        instruction.fromTimestamp || 0,
+                      )
+                      .catch(() => {});
+                    break;
+                  case 'cancel_catchup':
+                    handler.cancelCatchup(correlationId, instruction.readModel);
+                    break;
+                }
+              })
+              .then(() => delay(1000)),
+          );
       });
   }, 120000);
 
@@ -299,13 +315,11 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
       .then(() =>
         adminServer ? new Promise((r) => adminServer.close(r)) : undefined,
       )
+      .then(() => (cpEventStore ? cpEventStore.close() : undefined))
       .then(() => (cleanupClient ? cleanupClient.close() : undefined))
       .then(() => (mongoContainer ? mongoContainer.stop() : undefined))
       .then(() => (rabbitContainer ? rabbitContainer.stop() : undefined))
-      .then(() => delay(500))
-      .then(() => {
-        process.removeListener('uncaughtException', errorHandler);
-      });
+      .then(() => delay(500));
   }, 60000);
 
   const fetchRM = (path, options = {}) =>

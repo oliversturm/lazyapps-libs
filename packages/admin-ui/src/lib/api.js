@@ -60,10 +60,13 @@ export const createAdminClient = (
   listBackups: (serviceUrl, readModel) =>
     jsonFetch(`${serviceUrl}/admin/backups/${readModel}`),
 
-  deleteBackup: (serviceUrl, backupId) =>
-    jsonFetch(`${serviceUrl}/admin/backup/${backupId}`, {
-      method: 'DELETE',
-    }),
+  deleteBackup: (serviceUrl, backupId, readModelName) =>
+    jsonFetch(
+      `${serviceUrl}/admin/backup/${backupId}?readModelName=${encodeURIComponent(readModelName)}`,
+      {
+        method: 'DELETE',
+      },
+    ),
 
   // Helpers
 

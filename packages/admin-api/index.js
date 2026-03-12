@@ -54,6 +54,15 @@ export const installCatchupAdminApi = (context) => (app) => {
   );
 };
 
+export const installReadModelStatusApi = (context) => (app) => {
+  app.get('/admin/status', statusHandler(context));
+  app.get('/admin/readmodels', readModelsHandler(context));
+  app.get(
+    '/admin/replay/:readModelName/status',
+    replayReadModelStatusHandler(context),
+  );
+};
+
 export const installReadModelAdminApi = (context) => (app) => {
   app.get('/admin/status', statusHandler(context));
   app.get('/admin/readmodels', readModelsHandler(context));

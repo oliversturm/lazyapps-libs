@@ -189,6 +189,8 @@ export const rabbitMq = (config) => (context) => {
                 if (context.adminInstructionHandler) {
                   context.adminInstructionHandler(correlationId, instruction);
                 }
+              } else if (msg.fields.routingKey.startsWith('__')) {
+                // Ignore other system messages (e.g. __admin_reply)
               } else if (eventsSubscribed) {
                 // must assume that this message
                 // was caught due to the pattern

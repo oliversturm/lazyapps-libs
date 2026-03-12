@@ -7,7 +7,6 @@
   let { data } = $props();
 
   const api = getContext('api');
-  const config = getContext('config');
 
   // UI state
   let step = $state('configure'); // configure | preparing | prepared | replaying | done | error
@@ -27,15 +26,9 @@
   let replayProgress = $state(null);
   let pollTimer = $state(null);
 
-  const serviceUrl = $derived(
-    data.service
-      ? config.readModelServices[data.service]
-      : Object.values(config.readModelServices)[0],
-  );
-
   const loadBackups = () => {
     api
-      .listBackups(serviceUrl, data.name)
+      .listBackups('', data.name)
       .then((result) => {
         backups = result;
       })
@@ -46,7 +39,7 @@
 
   const checkExistingReplay = () => {
     api
-      .getReplayReadModelStatus(serviceUrl, data.name)
+      .getReplayReadModelStatus('', data.name)
       .then((status) => {
         if (status && status.status === 'in_progress') {
           step = 'replaying';
@@ -57,10 +50,8 @@
   };
 
   $effect(() => {
-    if (serviceUrl) {
-      loadBackups();
-      checkExistingReplay();
-    }
+    loadBackups();
+    checkExistingReplay();
   });
 
   // Cleanup polling on unmount
@@ -78,7 +69,7 @@
     if (replayMode === 'fromBackup') options.backupId = selectedBackupId;
 
     api
-      .prepareReplay(serviceUrl, data.name, options)
+      .prepareReplay('', data.name, options)
       .then((result) => {
         prepareResult = result;
         fromTimestamp = result.fromTimestamp || 0;
@@ -137,7 +128,7 @@
   const pollStatus = () => {
     Promise.all([
       api.getReplayStatus(data.name).catch(() => null),
-      api.getReplayReadModelStatus(serviceUrl, data.name).catch(() => null),
+      api.getReplayReadModelStatus('', data.name).catch(() => null),
     ]).then(([cpStatus, rmStatus]) => {
       replayProgress = {
         eventsPublished: cpStatus?.eventsPublished || 0,

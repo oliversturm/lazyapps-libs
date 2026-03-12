@@ -23,18 +23,18 @@ let redisPort;
 let suppressErrors = false;
 
 const errorHandler = (err) => {
-  if (
-    suppressErrors &&
-    (err.code === 'ECONNRESET' ||
-      err.code === 'EPIPE' ||
-      err.code === 'ECONNREFUSED')
-  )
-    return;
+  if (suppressErrors) return;
   throw err;
+};
+
+const rejectionHandler = (reason) => {
+  if (suppressErrors) return;
+  throw reason;
 };
 
 beforeAll(async () => {
   process.on('uncaughtException', errorHandler);
+  process.on('unhandledRejection', rejectionHandler);
   container = await new RedisContainer('redis:7').start();
   redisHost = container.getHost();
   redisPort = container.getMappedPort(6379);
@@ -44,7 +44,6 @@ afterAll(async () => {
   suppressErrors = true;
   if (container) await container.stop();
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  process.removeListener('uncaughtException', errorHandler);
 });
 
 const { connect } = await import('../connect.js');

@@ -5,24 +5,17 @@
   let { data } = $props();
 
   const api = getContext('api');
-  const config = getContext('config');
 
   let backups = $state([]);
   let loading = $state(true);
   let creating = $state(false);
   let error = $state(null);
 
-  const serviceUrl = $derived(
-    data.service
-      ? config.readModelServices[data.service]
-      : Object.values(config.readModelServices)[0],
-  );
-
   const loadBackups = () => {
     loading = true;
     error = null;
     api
-      .listBackups(serviceUrl, data.name)
+      .listBackups('', data.name)
       .then((result) => {
         backups = result;
         loading = false;
@@ -34,14 +27,14 @@
   };
 
   $effect(() => {
-    if (serviceUrl) loadBackups();
+    loadBackups();
   });
 
   const handleCreate = () => {
     creating = true;
     error = null;
     api
-      .createBackup(serviceUrl, data.name)
+      .createBackup('', data.name)
       .then(() => {
         creating = false;
         loadBackups();
@@ -55,7 +48,7 @@
   const handleDelete = (backupId) => {
     error = null;
     api
-      .deleteBackup(serviceUrl, backupId)
+      .deleteBackup('', backupId, data.name)
       .then(() => {
         loadBackups();
       })

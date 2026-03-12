@@ -20,30 +20,33 @@ vi.mock('@lazyapps/logger', () => ({
 let container;
 let redisHost;
 let redisPort;
-// mqemitter-redis holds open connections that cannot be closed from
-// test code. Redis may reset idle connections at any time, so we
-// suppress these errors throughout the entire test run.
+let suppressErrors = false;
+
+// Suppress ECONNRESET/EPIPE/ECONNREFUSED errors during container teardown.
+// mqemitter-redis holds open connections that cannot be closed
+// from test code, so stopping the container triggers these.
 const errorHandler = (err) => {
-  if (
-    err.code === 'ECONNRESET' ||
-    err.code === 'EPIPE' ||
-    err.code === 'ECONNREFUSED'
-  )
-    return;
+  if (suppressErrors) return;
   throw err;
+};
+
+const rejectionHandler = (reason) => {
+  if (suppressErrors) return;
+  throw reason;
 };
 
 beforeAll(async () => {
   process.on('uncaughtException', errorHandler);
+  process.on('unhandledRejection', rejectionHandler);
   container = await new RedisContainer('redis:7').start();
   redisHost = container.getHost();
   redisPort = container.getMappedPort(6379);
 });
 
 afterAll(async () => {
+  suppressErrors = true;
   if (container) await container.stop();
   await new Promise((resolve) => setTimeout(resolve, 2000));
-  process.removeListener('uncaughtException', errorHandler);
 });
 
 const { mqEmitterRedis } = await import('../command-receiver/index.js');

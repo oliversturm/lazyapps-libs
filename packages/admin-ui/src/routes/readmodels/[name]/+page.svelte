@@ -23,7 +23,7 @@
       api
         .getReadModels(serviceUrl)
         .then((models) => models.find((m) => m.name === data.name) || null),
-      api.getReplayReadModelStatus(serviceUrl, data.name).catch(() => null),
+      api.getReplayReadModelStatus('', data.name).catch(() => null),
     ]).then(([rm, replay]) => {
       readModel = rm;
       replayStatus = replay;
