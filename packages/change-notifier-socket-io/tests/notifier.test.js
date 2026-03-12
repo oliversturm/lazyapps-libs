@@ -16,6 +16,7 @@ vi.mock('nanoid', () => ({
 }));
 
 const { initSockets, createNotifier } = await import('../notifier.js');
+const { defaultScopeMapper } = await import('../redaction.js');
 
 const createMockSocket = (overrides = {}) => {
   const socket = {
@@ -104,7 +105,9 @@ describe('initSockets', () => {
 
   test('extracts encryption scopes from decoded_token on connect', () => {
     const io = createMockIo();
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     const connectHandler = io.on.mock.calls[0][1];
     const socket = createMockSocket({
@@ -144,7 +147,9 @@ describe('initSockets', () => {
   test('on register: joins scoped rooms when ioAuthHandler authorizes', () => {
     const io = createMockIo();
     const ioAuthHandler = vi.fn().mockReturnValue(true);
-    initSockets({ serviceId: 'SVC' }, io, ioAuthHandler);
+    initSockets({ serviceId: 'SVC' }, io, ioAuthHandler, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     const connectHandler = io.on.mock.calls[0][1];
     const socket = createMockSocket({
@@ -171,9 +176,29 @@ describe('initSockets', () => {
     expect(socket.join).toHaveBeenCalledWith(['ep/rm/res:scopes=personal']);
   });
 
-  test('on register: joins scopes=none room when no scopes', () => {
+  test('on register: joins base room when no scopeMapper', () => {
     const io = createMockIo();
     initSockets({ serviceId: 'SVC' }, io, () => true);
+
+    const connectHandler = io.on.mock.calls[0][1];
+    const socket = createMockSocket();
+    connectHandler(socket);
+
+    const registerHandler = socket.on.mock.calls.find(
+      (c) => c[0] === 'register',
+    )[1];
+    registerHandler([
+      { endpointName: 'ep', readModelName: 'rm', resolverName: 'res' },
+    ]);
+
+    expect(socket.join).toHaveBeenCalledWith(['ep/rm/res']);
+  });
+
+  test('on register: joins scopes=none room when scopeMapper returns no scopes', () => {
+    const io = createMockIo();
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     const connectHandler = io.on.mock.calls[0][1];
     const socket = createMockSocket();
@@ -211,7 +236,9 @@ describe('initSockets', () => {
 
   test('on register: handles multiple resolvers with scoped rooms', () => {
     const io = createMockIo();
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     const connectHandler = io.on.mock.calls[0][1];
     const socket = createMockSocket({

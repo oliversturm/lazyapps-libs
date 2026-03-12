@@ -1,6 +1,6 @@
 import { getLogger } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
-import { defaultScopeMapper, getScopedRoomName } from './redaction.js';
+import { getScopedRoomName } from './redaction.js';
 
 const getBaseRoomName = (endpointName, readModelName, resolverName) =>
   `${endpointName}/${readModelName}/${resolverName}`;
@@ -11,7 +11,7 @@ export const initSockets = (
   correlationConfig,
   io,
   ioAuthHandler,
-  { scopeMapper = defaultScopeMapper } = {},
+  { scopeMapper } = {},
 ) => {
   ioInitLog.debug('Initializing sockets');
   io.on('connect', (socket) => {
@@ -21,8 +21,8 @@ export const initSockets = (
 
     const ioLog = getLogger('Changes/IO', socket.correlationId);
 
-    // Extract and store scopes from JWT at connection time
-    const scopes = scopeMapper(socket.decoded_token);
+    // Extract and store scopes from JWT at connection time (only with scopeMapper)
+    const scopes = scopeMapper ? scopeMapper(socket.decoded_token) : [];
     socket.encryptionScopes = scopes;
 
     ioLog.debug(
@@ -62,7 +62,7 @@ export const initSockets = (
               readModelName,
               resolverName,
             );
-            return getScopedRoomName(baseRoom, scopes);
+            return scopeMapper ? getScopedRoomName(baseRoom, scopes) : baseRoom;
           },
         );
         socket.join(roomNames);

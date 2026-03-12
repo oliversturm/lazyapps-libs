@@ -14,7 +14,8 @@ vi.mock('nanoid', () => ({
 }));
 
 const { initSockets, createNotifier } = await import('../notifier.js');
-const { createRedactionEngine } = await import('../redaction.js');
+const { createRedactionEngine, defaultScopeMapper } =
+  await import('../redaction.js');
 
 // Simulates the Socket.io adapter room tracking that happens
 // when sockets join rooms. This enables the notifier to discover
@@ -112,7 +113,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     // Client A: has 'admin' scope (sees personal data)
     connectAndRegister({ sub: 'admin-user', scopes: ['admin'] }, resolvers);
@@ -177,7 +180,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
     connectAndRegister(null, resolvers);
 
     const redactionEngine = createRedactionEngine({ schema, contexts });
@@ -216,7 +221,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
     connectAndRegister(
       { sub: 'superuser', scopes: ['admin', 'finance'] },
       resolvers,
@@ -251,7 +258,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     // Client with admin scope
     connectAndRegister({ sub: 'admin-user', scopes: ['admin'] }, resolvers);
@@ -306,7 +315,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
     connectAndRegister(null, resolvers);
     connectAndRegister({ sub: 'admin-user', scopes: ['admin'] }, resolvers);
 
@@ -347,7 +358,9 @@ describe('change notification integration flow', () => {
       createMockIoWithRoomTracking();
     const schema = createMockSchema();
 
-    initSockets({ serviceId: 'SVC' }, io, () => true);
+    initSockets({ serviceId: 'SVC' }, io, () => true, {
+      scopeMapper: defaultScopeMapper,
+    });
 
     // Two clients with identical scopes
     connectAndRegister({ sub: 'user-1', scopes: ['admin'] }, resolvers);
