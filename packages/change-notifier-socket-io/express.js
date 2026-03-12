@@ -40,6 +40,8 @@ const runExpress = (
     port = 3008,
     host = '0.0.0.0',
     jwtSecret,
+    jwtAlgorithms = ['HS256'],
+    jwksUri,
     authCookieName,
     credentialsRequired,
     ioAuthHandler,
@@ -68,7 +70,7 @@ const runExpress = (
       app.use(
         expressjwt({
           secret: jwtSecret,
-          algorithms: ['HS256'],
+          algorithms: jwtAlgorithms,
           credentialsRequired: credentialsRequired || false,
           getToken: (req) => {
             // check Authorization header first
@@ -95,7 +97,14 @@ const runExpress = (
     const io = new SocketIoServer(server, {
       cors: { origin: true },
     });
-    io.use(socketIoCookieJwt({ jwtSecret, cookieName: authCookieName }));
+    io.use(
+      socketIoCookieJwt({
+        jwtSecret,
+        jwtAlgorithms,
+        jwksUri,
+        cookieName: authCookieName,
+      }),
+    );
 
     const socketOpts = scopeMapper ? { scopeMapper } : {};
     initSockets(

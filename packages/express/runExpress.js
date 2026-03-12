@@ -33,6 +33,7 @@ export const runExpress =
     interfaceIp,
     installHandlers,
     jwtSecret,
+    jwtAlgorithms = ['HS256'],
     authCookieName,
     credentialsRequired,
     customizeExpress = () => {},
@@ -55,7 +56,7 @@ export const runExpress =
         app.use(
           expressjwt({
             secret: jwtSecret,
-            algorithms: ['HS256'],
+            algorithms: jwtAlgorithms,
             credentialsRequired: credentialsRequired || false,
             getToken: (req) => {
               const tokenLog = getLogger('Tokens/GetT', req.body.correlationId);
