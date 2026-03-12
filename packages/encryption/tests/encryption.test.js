@@ -18,29 +18,33 @@ const personalKEK = randomBytes(32);
 const financialKEK = randomBytes(32);
 
 const schema = defineEncryptionSchema({
-  CUSTOMER_CREATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
+  events: {
+    CUSTOMER_CREATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
     },
-  },
-  CUSTOMER_UPDATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
+    CUSTOMER_UPDATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
     },
   },
 });
 
 const multiContextSchema = defineEncryptionSchema({
-  CUSTOMER_CREATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
-    },
-    'payload.creditScore': {
-      context: 'financial',
-      subjectField: 'aggregateId',
+  events: {
+    CUSTOMER_CREATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
+      'payload.creditScore': {
+        context: 'financial',
+        subjectField: 'aggregateId',
+      },
     },
   },
 });
@@ -563,7 +567,10 @@ describe('createEncryption', () => {
               // Try to decrypt — should get fallback
               const decryptor = enc.createProjectionDecryptor('admin');
               return decryptor(published[0]).then((result) => {
-                expect(result.payload.name).toBe('[deleted]');
+                expect(result.payload.name).toEqual({
+                  forgotten: true,
+                  text: '[deleted]',
+                });
               });
             }),
         );
@@ -730,7 +737,10 @@ describe('createEncryption', () => {
             .then(() => {
               const decryptor = enc.createProjectionDecryptor('admin');
               return decryptor(publishedA[0]).then((resultA) => {
-                expect(resultA.payload.name).toBe('[deleted]');
+                expect(resultA.payload.name).toEqual({
+                  forgotten: true,
+                  text: '[deleted]',
+                });
                 return decryptor(publishedB[0]).then((resultB) => {
                   expect(resultB.payload.name).toBe('Bob');
                 });
@@ -978,9 +988,10 @@ describe('createEncryption', () => {
             .then(() => {
               expect(capturedProjectionEvents).toHaveLength(1);
               // Decryption should fail, fallback applied
-              expect(capturedProjectionEvents[0].payload.name).toBe(
-                '[deleted]',
-              );
+              expect(capturedProjectionEvents[0].payload.name).toEqual({
+                forgotten: true,
+                text: '[deleted]',
+              });
             });
         });
       }));

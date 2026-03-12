@@ -1,12 +1,18 @@
 import { getLogger } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
+import { defaultScopeMapper, getScopedRoomName } from './redaction.js';
 
-const getRoomName = (endpointName, readModelName, resolverName) =>
+const getBaseRoomName = (endpointName, readModelName, resolverName) =>
   `${endpointName}/${readModelName}/${resolverName}`;
 
 const ioInitLog = getLogger('Changes/IO', 'INIT');
 
-export const initSockets = (correlationConfig, io, ioAuthHandler) => {
+export const initSockets = (
+  correlationConfig,
+  io,
+  ioAuthHandler,
+  { scopeMapper = defaultScopeMapper } = {},
+) => {
   ioInitLog.debug('Initializing sockets');
   io.on('connect', (socket) => {
     const existingId = socket.handshake.query?.correlationId;
@@ -14,6 +20,11 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
       existingId || `${correlationConfig?.serviceId || 'UNK'}-${nanoid()}`;
 
     const ioLog = getLogger('Changes/IO', socket.correlationId);
+
+    // Extract and store scopes from JWT at connection time
+    const scopes = scopeMapper(socket.decoded_token);
+    socket.encryptionScopes = scopes;
+
     ioLog.debug(
       `Connection: ${socket.id} (handshake: ${JSON.stringify(
         socket.handshake,
@@ -21,7 +32,7 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
         socket.decoded_token
           ? ` (JWT: ${JSON.stringify(socket.decoded_token)})`
           : ' (no JWT)'
-      }`,
+      } (scopes: ${JSON.stringify(scopes)})`,
     );
 
     socket.on('disconnect', (reason) => {
@@ -44,12 +55,20 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
           socket.disconnect();
           return;
         }
-        socket.join(
-          resolvers.map(({ endpointName, readModelName, resolverName }) =>
-            getRoomName(endpointName, readModelName, resolverName),
-          ),
+        const roomNames = resolvers.map(
+          ({ endpointName, readModelName, resolverName }) => {
+            const baseRoom = getBaseRoomName(
+              endpointName,
+              readModelName,
+              resolverName,
+            );
+            return getScopedRoomName(baseRoom, scopes);
+          },
         );
-        ioLog.debug(`Registered ${socket.id} for ${JSON.stringify(resolvers)}`);
+        socket.join(roomNames);
+        ioLog.debug(
+          `Registered ${socket.id} for ${JSON.stringify(resolvers)} (rooms: ${JSON.stringify(roomNames)})`,
+        );
         if (typeof ack === 'function') ack();
       } catch (err) {
         ioLog.error(
@@ -63,7 +82,11 @@ export const initSockets = (correlationConfig, io, ioAuthHandler) => {
   });
 };
 
-export const createNotifier = (io, changeInfoAuthHandler) => {
+export const createNotifier = (
+  io,
+  changeInfoAuthHandler,
+  { redactionEngine } = {},
+) => {
   const handler = (req, res) => {
     const auth = req.auth;
     const rmLog = getLogger('Changes/RM', req.body.correlationId);
@@ -79,9 +102,44 @@ export const createNotifier = (io, changeInfoAuthHandler) => {
     const changeInfo = req.body;
     try {
       const { endpointName, readModelName, resolverName } = changeInfo;
-      const roomName = getRoomName(endpointName, readModelName, resolverName);
-      io.to(roomName).emit('change', changeInfo);
-      rmLog.debug(`Forwarded changeInfo ${JSON.stringify(changeInfo)}`);
+      const baseRoom = getBaseRoomName(
+        endpointName,
+        readModelName,
+        resolverName,
+      );
+
+      if (redactionEngine) {
+        // Collect all scoped sub-rooms for this base room
+        const rooms = io.sockets.adapter.rooms;
+        const prefix = `${baseRoom}:scopes=`;
+        const scopeGroups = new Map();
+
+        for (const roomName of rooms.keys()) {
+          if (roomName.startsWith(prefix)) {
+            const scopeStr = roomName.slice(prefix.length);
+            scopeGroups.set(
+              roomName,
+              scopeStr === 'none' ? [] : scopeStr.split(','),
+            );
+          }
+        }
+
+        if (scopeGroups.size > 0) {
+          for (const [roomName, scopes] of scopeGroups) {
+            const redactedPayload = redactionEngine.redact(changeInfo, scopes);
+            io.to(roomName).emit('change', redactedPayload);
+          }
+        }
+
+        rmLog.debug(
+          `Forwarded changeInfo to ${scopeGroups.size} scope group(s) for ${baseRoom}`,
+        );
+      } else {
+        // No redaction engine — broadcast to the base room (backwards-compatible)
+        io.to(baseRoom).emit('change', changeInfo);
+        rmLog.debug(`Forwarded changeInfo ${JSON.stringify(changeInfo)}`);
+      }
+
       res.sendStatus(200);
     } catch (err) {
       rmLog.error(

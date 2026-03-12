@@ -3,7 +3,16 @@ import { getLogger } from '@lazyapps/logger';
 export const defineEncryptionSchema = (schemaDef) => {
   const log = getLogger('Encryption/Schema', 'INIT');
 
-  for (const [eventType, fields] of Object.entries(schemaDef)) {
+  const defaults = {
+    forgottenText: '[deleted]',
+    unauthorizedText: '[restricted]',
+    ...(schemaDef.defaults || {}),
+  };
+
+  const contexts = schemaDef.contexts || {};
+  const events = schemaDef.events || {};
+
+  for (const [eventType, fields] of Object.entries(events)) {
     for (const [fieldPath, config] of Object.entries(fields)) {
       if (!config.context) {
         throw new Error(
@@ -18,9 +27,48 @@ export const defineEncryptionSchema = (schemaDef) => {
     }
   }
 
+  const result = {};
+  for (const [eventType, fields] of Object.entries(events)) {
+    result[eventType] = fields;
+  }
+
+  Object.defineProperty(result, 'getForgottenText', {
+    value: (fieldName, contextName) => {
+      const ctx = contexts[contextName];
+      if (ctx) {
+        const fieldConfig = ctx.fields && ctx.fields[fieldName];
+        if (fieldConfig && fieldConfig.forgottenText !== undefined) {
+          return fieldConfig.forgottenText;
+        }
+        if (ctx.forgottenText !== undefined) {
+          return ctx.forgottenText;
+        }
+      }
+      return defaults.forgottenText;
+    },
+    enumerable: false,
+  });
+
+  Object.defineProperty(result, 'getUnauthorizedText', {
+    value: (fieldName, contextName) => {
+      const ctx = contexts[contextName];
+      if (ctx) {
+        const fieldConfig = ctx.fields && ctx.fields[fieldName];
+        if (fieldConfig && fieldConfig.unauthorizedText !== undefined) {
+          return fieldConfig.unauthorizedText;
+        }
+        if (ctx.unauthorizedText !== undefined) {
+          return ctx.unauthorizedText;
+        }
+      }
+      return defaults.unauthorizedText;
+    },
+    enumerable: false,
+  });
+
   log.debug(
-    `Encryption schema defined for ${Object.keys(schemaDef).length} event types`,
+    `Encryption schema defined for ${Object.keys(events).length} event types`,
   );
 
-  return schemaDef;
+  return result;
 };

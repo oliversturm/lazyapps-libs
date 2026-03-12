@@ -128,4 +128,87 @@ describe('createApiHandler (query)', () => {
       expect(res.sendStatus).toHaveBeenCalledWith(500);
     });
   });
+
+  test('uses jwtScopeMapper when available in context', () => {
+    const mockDecrypt = vi.fn().mockResolvedValue({ id: 1, name: 'Alice' });
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const jwtScopeMapper = vi.fn().mockReturnValue({
+      roles: ['mapped-role'],
+      identity: 'mapped-identity',
+    });
+    const context = {
+      storage: { perRequest: mockPerRequest },
+      encryptionQueryDecryptor: { decrypt: mockDecrypt },
+      jwtScopeMapper,
+    };
+    const resolver = vi.fn().mockResolvedValue({ id: 1, name: 'encrypted' });
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const auth = { sub: 'user-1', roles: ['original-role'] };
+    const req = mockReq({ correlationId: 'corr-1' }, {}, auth);
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(jwtScopeMapper).toHaveBeenCalledWith(auth);
+      expect(mockDecrypt).toHaveBeenCalledWith(
+        { id: 1, name: 'encrypted' },
+        { roles: ['mapped-role'], identity: 'mapped-identity' },
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+  });
+
+  test('falls back to auth.roles and encryptionRole without jwtScopeMapper', () => {
+    const mockDecrypt = vi.fn().mockResolvedValue({ id: 1, name: 'Alice' });
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = {
+      storage: { perRequest: mockPerRequest },
+      encryptionQueryDecryptor: { decrypt: mockDecrypt },
+      encryptionRole: 'service',
+    };
+    const resolver = vi.fn().mockResolvedValue({ id: 1, name: 'encrypted' });
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const req = mockReq({ correlationId: 'corr-1' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(mockDecrypt).toHaveBeenCalledWith(
+        { id: 1, name: 'encrypted' },
+        { roles: ['service'], identity: undefined },
+      );
+    });
+  });
+
+  test('decrypts array results with jwtScopeMapper', () => {
+    const mockDecrypt = vi
+      .fn()
+      .mockResolvedValueOnce({ id: 1, name: 'Alice' })
+      .mockResolvedValueOnce({ id: 2, name: 'Bob' });
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const jwtScopeMapper = vi.fn().mockReturnValue({
+      roles: ['admin'],
+      identity: 'user-1',
+    });
+    const context = {
+      storage: { perRequest: mockPerRequest },
+      encryptionQueryDecryptor: { decrypt: mockDecrypt },
+      jwtScopeMapper,
+    };
+    const resolver = vi.fn().mockResolvedValue([
+      { id: 1, name: 'enc1' },
+      { id: 2, name: 'enc2' },
+    ]);
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const auth = { sub: 'user-1', roles: ['admin'] };
+    const req = mockReq({ correlationId: 'corr-1' }, {}, auth);
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(mockDecrypt).toHaveBeenCalledTimes(2);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith([
+        { id: 1, name: 'Alice' },
+        { id: 2, name: 'Bob' },
+      ]);
+    });
+  });
 });

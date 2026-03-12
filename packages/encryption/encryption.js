@@ -12,7 +12,6 @@ export const createEncryption = ({
   contexts,
   readModelEncryption,
   cache = { maxSize: 10000, ttlMs: 300000 },
-  fallbackValue = '[deleted]',
 }) => {
   const log = getLogger('Encryption', 'INIT');
 
@@ -22,7 +21,7 @@ export const createEncryption = ({
     .then((cachedKs) => {
       const envelope = createEnvelopeManager(cachedKs, contexts);
       const fieldEncryptor = createFieldEncryptor(envelope, schema);
-      const fallbackHandler = createFallbackHandler(schema, fallbackValue);
+      const fallbackHandler = createFallbackHandler(schema);
 
       const decryptEventSafe = (event) =>
         fieldEncryptor
@@ -147,7 +146,7 @@ export const createEncryption = ({
             ? createQueryDecryptorImpl(
                 readModelEncryption,
                 envelope,
-                fallbackValue,
+                schema,
                 contexts,
               )
             : null,

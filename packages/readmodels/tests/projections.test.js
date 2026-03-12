@@ -344,3 +344,156 @@ describe('projectEvent with encryptionDecryptor', () => {
     });
   });
 });
+
+describe('projectEvent SUBJECT_FORGOTTEN auto-detection', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test('calls encryptionForgetSubject when SUBJECT_FORGOTTEN event arrives', () => {
+    const encryptionForgetSubject = vi.fn().mockResolvedValue();
+    const projectionFn = vi.fn().mockResolvedValue();
+    const context = {
+      encryptionForgetSubject,
+      readModels: {
+        testRM: {
+          projections: { SUBJECT_FORGOTTEN: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const event = {
+      type: 'SUBJECT_FORGOTTEN',
+      timestamp: 1,
+      payload: { subjectId: 'cust-42' },
+    };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(event, false).then(() => {
+      expect(encryptionForgetSubject).toHaveBeenCalledWith('cust-42');
+      expect(projectionFn).toHaveBeenCalledWith(projCtx, event);
+    });
+  });
+
+  test('does not call encryptionForgetSubject for non-forget events', () => {
+    const encryptionForgetSubject = vi.fn().mockResolvedValue();
+    const projectionFn = vi.fn().mockResolvedValue();
+    const context = {
+      encryptionForgetSubject,
+      readModels: {
+        testRM: {
+          projections: { CUSTOMER_CREATED: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const event = {
+      type: 'CUSTOMER_CREATED',
+      timestamp: 1,
+      payload: { name: 'Alice' },
+    };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(event, false).then(() => {
+      expect(encryptionForgetSubject).not.toHaveBeenCalled();
+      expect(projectionFn).toHaveBeenCalledWith(projCtx, event);
+    });
+  });
+
+  test('skips shredding when encryptionForgetSubject is not configured', () => {
+    const projectionFn = vi.fn().mockResolvedValue();
+    const context = {
+      readModels: {
+        testRM: {
+          projections: { SUBJECT_FORGOTTEN: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const event = {
+      type: 'SUBJECT_FORGOTTEN',
+      timestamp: 1,
+      payload: { subjectId: 'cust-42' },
+    };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(event, false).then(() => {
+      expect(projectionFn).toHaveBeenCalledWith(projCtx, event);
+    });
+  });
+
+  test('calls forgetSubject before projection handler runs', () => {
+    const callOrder = [];
+    const encryptionForgetSubject = vi.fn().mockImplementation(() => {
+      callOrder.push('forgetSubject');
+      return Promise.resolve();
+    });
+    const projectionFn = vi.fn().mockImplementation(() => {
+      callOrder.push('projection');
+      return Promise.resolve();
+    });
+    const context = {
+      encryptionForgetSubject,
+      readModels: {
+        testRM: {
+          projections: { SUBJECT_FORGOTTEN: projectionFn },
+          lastProjectedEventTimestamp: 0,
+        },
+      },
+      storage: {
+        updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+      },
+    };
+
+    const eventQueue = { add: (fn) => fn() };
+    const projCtx = {};
+    const getProjectionContext = () => () => () => projCtx;
+
+    const event = {
+      type: 'SUBJECT_FORGOTTEN',
+      timestamp: 1,
+      payload: { subjectId: 'cust-42' },
+    };
+
+    return projectEvent(
+      context,
+      eventQueue,
+      getProjectionContext,
+    )('corr')(event, false).then(() => {
+      expect(callOrder).toEqual(['forgetSubject', 'projection']);
+    });
+  });
+});

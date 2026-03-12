@@ -55,22 +55,33 @@ const { createApiHandler } =
 const personalKEK = randomBytes(32);
 
 const schema = defineEncryptionSchema({
-  CUSTOMER_CREATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
+  events: {
+    CUSTOMER_CREATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
     },
-  },
-  CUSTOMER_UPDATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
+    CUSTOMER_UPDATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
     },
   },
 });
 
 const contexts = {
   personal: { roles: ['admin', 'support'] },
+};
+
+const isForgotten = (value) =>
+  value && typeof value === 'object' && value.forgotten === true;
+
+const validationError = (message) => {
+  const err = new Error(message);
+  err.name = 'ValidationError';
+  return err;
 };
 
 const customerAggregate = {
@@ -100,6 +111,24 @@ const customerAggregate = {
       forgotten: true,
       forgottenAt: event.timestamp,
     }),
+  },
+};
+
+const customerAggregateWithValidation = {
+  ...customerAggregate,
+  commands: {
+    ...customerAggregate.commands,
+    UPDATE: (aggregate, payload) => {
+      if (isForgotten(aggregate.name)) {
+        throw validationError(
+          "Cannot modify aggregate: field 'name' has been forgotten",
+        );
+      }
+      return {
+        type: 'CUSTOMER_UPDATED',
+        payload,
+      };
+    },
   },
 };
 
@@ -243,6 +272,117 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
           });
         });
     }));
+
+  test('command handler validates forgotten fields and returns 400 before encryption layer', () => {
+    const validatingAggregates = {
+      customer: customerAggregateWithValidation,
+      subjectLifecycle: subjectLifecycleAggregate,
+    };
+
+    return createEncryption({
+      schema,
+      keyStore: inMemoryKeyStore({ personal: personalKEK }),
+      contexts,
+      cache: { maxSize: 100, ttlMs: 60000 },
+    }).then((enc) => {
+      const aggregateStore = inmemoryAggregateStore()(validatingAggregates);
+      const wrappedEventStoreFactory = enc.wrapEventStore(eventStoreFactory);
+
+      return wrappedEventStoreFactory().then((wrappedEventStore) => {
+        if (
+          aggregateStore.setEventStoreRef &&
+          wrappedEventStore.getEventsForAggregate
+        ) {
+          aggregateStore.setEventStoreRef(
+            wrappedEventStore.getEventsForAggregate,
+          );
+        }
+
+        const apiHandler = createApiHandler({
+          aggregateStore,
+          eventStore: wrappedEventStore,
+          eventBus: mockEventBus(),
+          aggregates: validatingAggregates,
+          handleCommand,
+        });
+
+        // Step 1: CREATE
+        const createRes = mockRes();
+        return apiHandler(
+          mockReq({
+            command: 'CREATE',
+            aggregateName: 'customer',
+            aggregateId: 'cust-int-val-1',
+            payload: { name: 'ValidateMe' },
+            correlationId: 'corr-val-create',
+          }),
+          createRes,
+        )
+          .then(() => {
+            expect(createRes.sendStatus).toHaveBeenCalledWith(200);
+          })
+          .then(() => {
+            // Step 2: FORGET
+            const forgetRes = mockRes();
+            return apiHandler(
+              mockReq({
+                command: 'FORGET_SUBJECT',
+                aggregateName: 'subjectLifecycle',
+                aggregateId: 'cust-int-val-1',
+                payload: {
+                  subjectId: 'cust-int-val-1',
+                  subjectType: 'customer',
+                  reason: 'GDPR request',
+                  requestedBy: 'admin',
+                },
+                correlationId: 'corr-val-forget',
+              }),
+              forgetRes,
+            ).then(() => {
+              expect(forgetRes.sendStatus).toHaveBeenCalledWith(200);
+            });
+          })
+          .then(() => {
+            // Step 3: Simulate restart for on-demand reconstruction
+            const freshAggregateStore =
+              inmemoryAggregateStore()(validatingAggregates);
+            if (
+              freshAggregateStore.setEventStoreRef &&
+              wrappedEventStore.getEventsForAggregate
+            ) {
+              freshAggregateStore.setEventStoreRef(
+                wrappedEventStore.getEventsForAggregate,
+              );
+            }
+
+            const freshApiHandler = createApiHandler({
+              aggregateStore: freshAggregateStore,
+              eventStore: wrappedEventStore,
+              eventBus: mockEventBus(),
+              aggregates: validatingAggregates,
+              handleCommand,
+            });
+
+            // Step 4: UPDATE rejected at command handler level (400)
+            const updateRes = mockRes();
+            return freshApiHandler(
+              mockReq({
+                command: 'UPDATE',
+                aggregateName: 'customer',
+                aggregateId: 'cust-int-val-1',
+                payload: { name: 'NewName' },
+                correlationId: 'corr-val-update',
+              }),
+              updateRes,
+            ).then(() => {
+              // Command handler validation fires first, returns 400
+              // (not 409 from encryption layer)
+              expect(updateRes.sendStatus).toHaveBeenCalledWith(400);
+            });
+          });
+      });
+    });
+  });
 
   test('forget subject then restart (replay) then attempt UPDATE returns 409', () =>
     setupPipeline().then(

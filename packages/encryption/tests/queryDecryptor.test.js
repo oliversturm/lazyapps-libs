@@ -1,10 +1,20 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 import { randomBytes } from 'node:crypto';
+
+vi.mock('@lazyapps/logger', () => ({
+  getLogger: vi.fn().mockReturnValue({
+    debug: vi.fn(),
+    info: vi.fn(),
+    error: vi.fn(),
+    warn: vi.fn(),
+  }),
+}));
 
 const { createQueryDecryptor } = await import('../queryDecryptor.js');
 const { encryptValue } = await import('../fieldEncryption.js');
 const { inMemoryKeyStore } = await import('../keystores/inmemory.js');
 const { createEnvelopeManager } = await import('../envelopeEncryption.js');
+const { defineEncryptionSchema } = await import('../schema.js');
 
 const personalKEK = randomBytes(32);
 const contactKEK = randomBytes(32);
@@ -22,7 +32,7 @@ const readModelEncryption = {
   },
 };
 
-const fallbackValue = '[deleted]';
+const schema = defineEncryptionSchema({ events: {} });
 
 describe('createQueryDecryptor', () => {
   let envelope;
@@ -66,7 +76,7 @@ describe('createQueryDecryptor', () => {
         decryptor = createQueryDecryptor(
           readModelEncryption,
           envelope,
-          fallbackValue,
+          schema,
           contexts,
         );
       }),
@@ -96,7 +106,7 @@ describe('createQueryDecryptor', () => {
         }),
     ));
 
-  test('unauthorized role gets [restricted]', () =>
+  test('unauthorized role gets structured restricted placeholder', () =>
     makeEncryptedDoc({
       customerId: 'cust-1',
       name: {
@@ -113,7 +123,10 @@ describe('createQueryDecryptor', () => {
           subjectField: 'customerId',
         })
         .then((result) => {
-          expect(result.name).toBe('[restricted]');
+          expect(result.name).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
         }),
     ));
 
@@ -156,11 +169,14 @@ describe('createQueryDecryptor', () => {
         })
         .then((result) => {
           // contact context only has ['admin', 'support'], not 'self'
-          expect(result.email).toBe('[restricted]');
+          expect(result.email).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
         }),
     ));
 
-  test('shredded subject gets fallback value', () =>
+  test('shredded subject gets structured forgotten placeholder', () =>
     makeEncryptedDoc({
       customerId: 'cust-shred',
       name: {
@@ -186,7 +202,7 @@ describe('createQueryDecryptor', () => {
           const shreddedDecryptor = createQueryDecryptor(
             readModelEncryption,
             badEnvelope,
-            fallbackValue,
+            schema,
             contexts,
           );
           return shreddedDecryptor.decrypt(doc, {
@@ -196,7 +212,10 @@ describe('createQueryDecryptor', () => {
           });
         })
         .then((result) => {
-          expect(result.name).toBe('[deleted]');
+          expect(result.name).toEqual({
+            forgotten: true,
+            text: '[deleted]',
+          });
         }),
     ));
 
@@ -285,7 +304,10 @@ describe('createQueryDecryptor', () => {
           expect(result.name).toBe('Alice');
           expect(result.email).toBe('alice@example.com');
           // support not in financial.roles — restricted
-          expect(result.balance).toBe('[restricted]');
+          expect(result.balance).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
         });
     }));
 
@@ -358,7 +380,7 @@ describe('createQueryDecryptor', () => {
         expect(result).toBeNull();
       }));
 
-  test('returns fallback when __encrypted references unknown context', () => {
+  test('returns restricted when __encrypted references unknown context', () => {
     const doc = {
       customerId: 'cust-1',
       name: {
@@ -380,7 +402,10 @@ describe('createQueryDecryptor', () => {
       })
       .then((result) => {
         // Unknown context means no contextConfig match, so not authorized
-        expect(result.name).toBe('[restricted]');
+        expect(result.name).toEqual({
+          unauthorized: true,
+          text: '[restricted]',
+        });
       });
   });
 
@@ -403,7 +428,10 @@ describe('createQueryDecryptor', () => {
         .then((result) => {
           // Without identity, self role is not granted
           // customer is not in personal.roles, so restricted
-          expect(result.name).toBe('[restricted]');
+          expect(result.name).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
         }),
     ));
 
@@ -425,7 +453,91 @@ describe('createQueryDecryptor', () => {
         })
         .then((result) => {
           // customer is not in personal roles, and identity != customerId
-          expect(result.name).toBe('[restricted]');
+          expect(result.name).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
         }),
     ));
+
+  test('per-field self-access via kid when subjectField is omitted', () =>
+    makeEncryptedDoc({
+      customerId: 'cust-1',
+      name: {
+        __shouldEncrypt: true,
+        plaintext: 'Alice',
+        ctx: 'personal',
+        kid: 'cust-1',
+      },
+    }).then((doc) =>
+      decryptor
+        .decrypt(doc, {
+          roles: ['customer'],
+          identity: 'cust-1',
+        })
+        .then((result) => {
+          // No subjectField, but identity matches kid → self access
+          expect(result.name).toBe('Alice');
+        }),
+    ));
+
+  test('per-field self-access denied when identity does not match kid', () =>
+    makeEncryptedDoc({
+      customerId: 'cust-1',
+      name: {
+        __shouldEncrypt: true,
+        plaintext: 'Alice',
+        ctx: 'personal',
+        kid: 'cust-1',
+      },
+    }).then((doc) =>
+      decryptor
+        .decrypt(doc, {
+          roles: ['customer'],
+          identity: 'other-user',
+        })
+        .then((result) => {
+          expect(result.name).toEqual({
+            unauthorized: true,
+            text: '[restricted]',
+          });
+        }),
+    ));
+
+  test('per-field self-access checks each field independently', () =>
+    Promise.all([
+      makeEncryptedDoc({
+        customerId: 'cust-1',
+        name: {
+          __shouldEncrypt: true,
+          plaintext: 'Alice',
+          ctx: 'personal',
+          kid: 'cust-1',
+        },
+      }),
+    ]).then(([doc]) => {
+      // Add a second encrypted field with a different kid
+      return envelope.getDEK('cust-2', 'personal').then((dek) => {
+        doc.otherName = {
+          ...encryptValue(dek.key, 'Bob'),
+          ctx: 'personal',
+          kid: 'cust-2',
+          kv: dek.version,
+        };
+        return decryptor
+          .decrypt(doc, {
+            roles: ['customer'],
+            identity: 'cust-1',
+          })
+          .then((result) => {
+            // name has kid=cust-1 matching identity → self access
+            expect(result.name).toBe('Alice');
+            // otherName has kid=cust-2, not matching identity → restricted
+            expect(result.otherName).toEqual({
+              unauthorized: true,
+              text: '[restricted]',
+            });
+          });
+      });
+    }));
 });

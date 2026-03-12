@@ -6,3 +6,8 @@ export { vaultKeyStore, appRole } from './keystores/vault.js';
 export { subjectLifecycleAggregate } from './subjectLifecycle.js';
 export { createForgetSubjectEndpoints } from './forgetSubjectEndpoints.js';
 export { getNestedValue, setNestedValue } from './pathUtils.js';
+export {
+  directRoleMapper,
+  scopeClaimMapper,
+  customMapper,
+} from './jwtScopeMapper.js';

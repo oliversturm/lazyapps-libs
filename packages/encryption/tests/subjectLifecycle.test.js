@@ -50,6 +50,43 @@ describe('subjectLifecycleAggregate', () => {
     });
   });
 
+  describe('double-forget rejection', () => {
+    test('rejects second forget after projection marks aggregate as forgotten', () => {
+      const command = subjectLifecycleAggregate.commands.FORGET_SUBJECT;
+      const projection =
+        subjectLifecycleAggregate.projections.SUBJECT_FORGOTTEN;
+
+      const payload = {
+        subjectId: 'cust-42',
+        subjectType: 'customer',
+        reason: 'GDPR request',
+        requestedBy: 'admin',
+      };
+
+      // First forget succeeds
+      let aggregate = subjectLifecycleAggregate.initial();
+      const event = command(aggregate, payload);
+      expect(event.type).toBe('SUBJECT_FORGOTTEN');
+
+      // Apply projection to aggregate state
+      aggregate = projection(aggregate, {
+        ...event,
+        timestamp: Date.now(),
+      });
+      expect(aggregate.forgotten).toBe(true);
+
+      // Second forget is rejected
+      expect(() => command(aggregate, payload)).toThrow(
+        'already been forgotten',
+      );
+      try {
+        command(aggregate, payload);
+      } catch (err) {
+        expect(err.name).toBe('ValidationError');
+      }
+    });
+  });
+
   describe('projections.SUBJECT_FORGOTTEN', () => {
     const projection = subjectLifecycleAggregate.projections.SUBJECT_FORGOTTEN;
 

@@ -4,7 +4,7 @@ import { getLogger } from '@lazyapps/logger';
 export const createQueryDecryptor = (
   readModelEncryption,
   envelope,
-  fallbackValue,
+  schema,
   contexts,
 ) => {
   const log = getLogger('Encryption/Query', 'INIT');
@@ -15,9 +15,11 @@ export const createQueryDecryptor = (
     decrypt: (doc, { roles, identity, subjectField }) => {
       if (!doc) return Promise.resolve(doc);
 
-      const isSelf =
-        identity && doc[subjectField] && identity === doc[subjectField];
-      const effectiveRoles = isSelf ? [...roles, 'self'] : [...roles];
+      const docLevelSelf =
+        subjectField &&
+        identity &&
+        doc[subjectField] &&
+        identity === doc[subjectField];
 
       const encryptedFields = Object.entries(doc).filter(
         ([, value]) => value && value.__encrypted,
@@ -28,13 +30,25 @@ export const createQueryDecryptor = (
       return encryptedFields.reduce(
         (promise, [fieldName, fieldValue]) =>
           promise.then((d) => {
+            const isSelf =
+              docLevelSelf ||
+              (!subjectField &&
+                identity &&
+                fieldValue.kid &&
+                identity === fieldValue.kid);
+            const effectiveRoles = isSelf ? [...roles, 'self'] : [...roles];
+
             const contextConfig = contexts[fieldValue.ctx];
             const isAuthorized =
               contextConfig &&
               contextConfig.roles.some((r) => effectiveRoles.includes(r));
 
             if (!isAuthorized) {
-              return { ...d, [fieldName]: '[restricted]' };
+              const text = schema.getUnauthorizedText(
+                fieldName,
+                fieldValue.ctx,
+              );
+              return { ...d, [fieldName]: { unauthorized: true, text } };
             }
 
             return envelope
@@ -48,10 +62,10 @@ export const createQueryDecryptor = (
                 ...d,
                 [fieldName]: decryptValue(dek.key, fieldValue),
               }))
-              .catch(() => ({
-                ...d,
-                [fieldName]: fallbackValue,
-              }));
+              .catch(() => {
+                const text = schema.getForgottenText(fieldName, fieldValue.ctx);
+                return { ...d, [fieldName]: { forgotten: true, text } };
+              });
           }),
         Promise.resolve({ ...doc }),
       );

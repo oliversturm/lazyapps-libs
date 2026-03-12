@@ -16,6 +16,7 @@ export const createStorageEncryptor = (
         promise.then((t) => {
           const value = t[fieldName];
           if (value === undefined || value === null) return t;
+          if (value.forgotten === true || value.unauthorized === true) return t;
           const subjectId =
             t[fieldConfig.subjectField] ||
             (subjectIdContext && subjectIdContext[fieldConfig.subjectField]);

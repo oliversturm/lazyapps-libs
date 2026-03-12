@@ -11,6 +11,7 @@ import { nanoid } from 'nanoid';
 
 import { getLogger, getStream } from '@lazyapps/logger';
 import { initSockets, createNotifier } from './notifier.js';
+import { createRedactionEngine } from './redaction.js';
 
 const log = getLogger('Changes/HTTP', 'INIT');
 
@@ -43,6 +44,10 @@ const runExpress = (
     credentialsRequired,
     ioAuthHandler,
     changeInfoAuthHandler,
+    encryptionSchema,
+    encryptionContexts,
+    scopeMapper,
+    redactionHooks,
   },
 ) => {
   return new Promise((resolve, reject) => {
@@ -91,14 +96,28 @@ const runExpress = (
       cors: { origin: true },
     });
     io.use(socketIoCookieJwt({ jwtSecret, cookieName: authCookieName }));
+
+    const socketOpts = scopeMapper ? { scopeMapper } : {};
     initSockets(
       correlationConfig,
       io,
       jwtSecret && ioAuthHandler ? ioAuthHandler : () => true,
+      socketOpts,
     );
+
+    const redactionEngine =
+      encryptionSchema && encryptionContexts
+        ? createRedactionEngine({
+            schema: encryptionSchema,
+            contexts: encryptionContexts,
+            redactionHooks,
+          })
+        : undefined;
+
     const notifier = createNotifier(
       io,
       jwtSecret && changeInfoAuthHandler ? changeInfoAuthHandler : () => true,
+      redactionEngine ? { redactionEngine } : {},
     );
     app.post('/change', notifier);
 

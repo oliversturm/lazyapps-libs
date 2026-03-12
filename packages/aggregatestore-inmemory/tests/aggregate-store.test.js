@@ -400,7 +400,10 @@ describe('on-demand aggregate reconstruction', () => {
         aggregateName: 'customer',
         aggregateId: 'cust-1',
         type: 'CUSTOMER_CREATED',
-        payload: { name: '[deleted]', location: '[deleted]' },
+        payload: {
+          name: { forgotten: true, text: '[deleted]' },
+          location: { forgotten: true, text: '[deleted]' },
+        },
         timestamp: 100,
       },
     ];
@@ -413,8 +416,8 @@ describe('on-demand aggregate reconstruction', () => {
 
     return store.getAggregateState('customer', 'cust-1').then((state) => {
       expect(state).toEqual({
-        name: '[deleted]',
-        location: '[deleted]',
+        name: { forgotten: true, text: '[deleted]' },
+        location: { forgotten: true, text: '[deleted]' },
         creationTimestamp: 100,
       });
     });

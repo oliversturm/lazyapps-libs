@@ -1,14 +1,20 @@
 import { getLogger } from '@lazyapps/logger';
 
-const decryptResult = (queryDecryptor, result, auth, serviceRole) => {
+const decryptResult = (
+  queryDecryptor,
+  result,
+  auth,
+  jwtScopeMapper,
+  serviceRole,
+) => {
   if (!queryDecryptor) return Promise.resolve(result);
-  const roles =
-    auth && auth.roles ? auth.roles : serviceRole ? [serviceRole] : [];
-  const decryptOpts = {
-    roles,
-    identity: auth && auth.sub,
-    subjectField: 'id',
-  };
+  const decryptOpts = jwtScopeMapper
+    ? jwtScopeMapper(auth)
+    : {
+        roles:
+          auth && auth.roles ? auth.roles : serviceRole ? [serviceRole] : [],
+        identity: auth && auth.sub,
+      };
   if (Array.isArray(result)) {
     return result.reduce(
       (promise, doc) =>
@@ -46,6 +52,7 @@ export const createApiHandler =
           context.encryptionQueryDecryptor,
           result,
           req.auth,
+          context.jwtScopeMapper,
           context.encryptionRole,
         ),
       )

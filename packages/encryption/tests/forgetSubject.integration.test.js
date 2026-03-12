@@ -20,14 +20,16 @@ const { mongoKeyStore } = await import('../keystores/mongo.js');
 const personalKEK = randomBytes(32);
 
 const schema = defineEncryptionSchema({
-  CUSTOMER_CREATED: {
-    'payload.name': {
-      context: 'personal',
-      subjectField: 'aggregateId',
-    },
-    'payload.email': {
-      context: 'personal',
-      subjectField: 'aggregateId',
+  events: {
+    CUSTOMER_CREATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
+      'payload.email': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
     },
   },
 });
@@ -100,8 +102,14 @@ describe('forget-subject integration', { timeout: 60000 }, () => {
 
       // After forget, decryption returns fallback
       const afterForget = await decryptor(storedEvents[0]);
-      expect(afterForget.payload.name).toBe('[deleted]');
-      expect(afterForget.payload.email).toBe('[deleted]');
+      expect(afterForget.payload.name).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
+      expect(afterForget.payload.email).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
     });
   });
 
@@ -151,8 +159,14 @@ describe('forget-subject integration', { timeout: 60000 }, () => {
 
       // cust-A should be deleted
       const resultA = await decryptor(published[0]);
-      expect(resultA.payload.name).toBe('[deleted]');
-      expect(resultA.payload.email).toBe('[deleted]');
+      expect(resultA.payload.name).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
+      expect(resultA.payload.email).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
 
       // cust-B should still decrypt
       const resultB = await decryptor(published[1]);
@@ -221,8 +235,14 @@ describe('forget-subject integration', { timeout: 60000 }, () => {
       // Verify decryption returns fallback
       const decryptor = enc.createProjectionDecryptor('admin');
       const result = await decryptor(storedEvents[0]);
-      expect(result.payload.name).toBe('[deleted]');
-      expect(result.payload.email).toBe('[deleted]');
+      expect(result.payload.name).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
+      expect(result.payload.email).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
 
       await client.close();
     });
@@ -368,8 +388,14 @@ describe('forget-subject integration', { timeout: 60000 }, () => {
       // Verify DEKs are deleted — decryption should return fallback
       const decryptor = enc.createProjectionDecryptor('admin');
       const result = await decryptor(storedEvents[0]);
-      expect(result.payload.name).toBe('[deleted]');
-      expect(result.payload.email).toBe('[deleted]');
+      expect(result.payload.name).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
+      expect(result.payload.email).toEqual({
+        forgotten: true,
+        text: '[deleted]',
+      });
     });
   });
 });

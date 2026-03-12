@@ -14,6 +14,7 @@ export const initializeContext = (
     encryptionDecryptor,
     encryptionQueryDecryptor,
     encryptionForgetSubject,
+    jwtScopeMapper,
     role,
   },
 ) =>
@@ -25,6 +26,7 @@ export const initializeContext = (
       encryptionDecryptor,
       encryptionQueryDecryptor,
       encryptionForgetSubject,
+      jwtScopeMapper,
       encryptionRole: role,
     }))
     .then((context) =>
