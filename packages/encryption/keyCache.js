@@ -42,6 +42,14 @@ export const createKeyCache = (
       });
     },
 
+    deleteKeysForSubjectContext: (subjectId, contextName) => {
+      const prefix = `${subjectId}:${contextName}:`;
+      for (const key of cache.keys()) {
+        if (key.startsWith(prefix)) cache.delete(key);
+      }
+      return keyStore.deleteKeysForSubjectContext(subjectId, contextName);
+    },
+
     deleteKeysForSubject: (subjectId) => {
       for (const key of cache.keys()) {
         if (key.startsWith(`${subjectId}:`)) cache.delete(key);

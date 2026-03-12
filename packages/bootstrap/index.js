@@ -36,6 +36,66 @@ const handleSignals = (server) => {
   }
 };
 
+const MIXIN_COMMANDS = [
+  'FORGET_SUBJECT',
+  'FORGET_SUBJECT_CONTEXT',
+  'FORGET_RELATED_SUBJECT',
+];
+
+const MIXIN_PROJECTIONS = ['SUBJECT_FORGOTTEN', 'RELATED_SUBJECT_FORGOTTEN'];
+
+const checkConflicts = (aggregateName, aggregate) => {
+  const conflicts = [];
+  for (const cmd of MIXIN_COMMANDS) {
+    if (aggregate.commands && aggregate.commands[cmd]) {
+      conflicts.push(`command ${cmd}`);
+    }
+  }
+  for (const proj of MIXIN_PROJECTIONS) {
+    if (aggregate.projections && aggregate.projections[proj]) {
+      conflicts.push(`projection ${proj}`);
+    }
+  }
+  if (conflicts.length) {
+    throw new Error(
+      `Aggregate '${aggregateName}' already defines ` +
+        `${conflicts.join(', ')}. ` +
+        'Application-level override of framework-injected forget ' +
+        'handlers is not supported.',
+    );
+  }
+};
+
+const injectForgetMixin = (aggregates, subjects, mixin) => {
+  if (!subjects || !aggregates) return aggregates;
+
+  const result = { ...aggregates };
+  for (const aggregateName of Object.keys(subjects)) {
+    const aggregate = result[aggregateName];
+    if (!aggregate) {
+      log.warn(
+        `Encryption subjects config references aggregate ` +
+          `'${aggregateName}' but it is not registered`,
+      );
+      continue;
+    }
+    checkConflicts(aggregateName, aggregate);
+    result[aggregateName] = {
+      ...aggregate,
+      commands: {
+        ...aggregate.commands,
+        ...mixin.commands,
+      },
+      projections: {
+        ...aggregate.projections,
+        ...mixin.projections,
+      },
+    };
+    log.info(`Injected forget mixin into aggregate '${aggregateName}'`);
+  }
+  return result;
+};
+
 const startSubsystems = (
   correlationConfig,
   commands,
@@ -98,6 +158,14 @@ export function start({
       const effectiveCommands = commands
         ? {
             ...commands,
+            aggregates:
+              enc.getSubjects && enc.getSubjects() && commands.aggregates
+                ? injectForgetMixin(
+                    commands.aggregates,
+                    enc.getSubjects(),
+                    enc.createForgetMixin(),
+                  )
+                : commands.aggregates,
             eventStore: enc.wrapEventStore(commands.eventStore),
             eventBus: enc.wrapEventBus(commands.eventBus),
           }
@@ -111,6 +179,7 @@ export function start({
             storage: enc.wrapStorage(readModels.storage),
             encryptionQueryDecryptor: enc.createQueryDecryptor(),
             encryptionForgetSubject: enc.forgetSubject,
+            encryptionForgetSubjectContext: enc.forgetSubjectContext,
           }
         : readModels;
       startSubsystems(

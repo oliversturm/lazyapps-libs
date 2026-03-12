@@ -85,12 +85,18 @@ const projectEvent =
     const log = getLogger(`RM/ProjEv`, correlationId);
     const decrypt = context.encryptionDecryptor || ((e) => Promise.resolve(e));
 
-    const shredIfForget = (event) =>
-      event.type === 'SUBJECT_FORGOTTEN' && context.encryptionForgetSubject
-        ? context
-            .encryptionForgetSubject(event.payload.subjectId)
-            .then(() => event)
-        : Promise.resolve(event);
+    const shredIfForget = (event) => {
+      if (event.type !== 'SUBJECT_FORGOTTEN') return Promise.resolve(event);
+      const { subjectId, contexts: ctxs } = event.payload;
+      if (ctxs && ctxs.length && context.encryptionForgetSubjectContext) {
+        return Promise.all(
+          ctxs.map((ctx) =>
+            context.encryptionForgetSubjectContext(subjectId, ctx),
+          ),
+        ).then(() => event);
+      }
+      return Promise.resolve(event);
+    };
 
     return (event, inReplay) => {
       const startTime = Date.now();
@@ -153,6 +159,7 @@ export const createProjectionHandler = (context) => {
     encryption: {
       queryDecryptor: context.encryptionQueryDecryptor,
       forgetSubject: context.encryptionForgetSubject,
+      forgetSubjectContext: context.encryptionForgetSubjectContext,
     },
   });
 

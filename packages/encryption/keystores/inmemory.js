@@ -12,7 +12,7 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
       ]),
     );
     const deks = new Map();
-    const forgotten = new Set();
+    const forgotten = new Map();
 
     const wrapLocal = (kek, plainDEK) => {
       const iv = randomBytes(IV_LENGTH);
@@ -62,7 +62,11 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
             ),
 
       getDEK: (subjectId, contextName) => {
-        if (forgotten.has(subjectId))
+        const subjectForgotten = forgotten.get(subjectId);
+        if (
+          subjectForgotten &&
+          (subjectForgotten.has(contextName) || subjectForgotten.has('*'))
+        )
           return Promise.resolve({ forgotten: true });
         const key = `${subjectId}:${contextName}`;
         return Promise.resolve(deks.get(key) || null);
@@ -83,11 +87,23 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
             .map(([k, v]) => ({ subjectId: k.split(':')[0], ...v })),
         ),
 
+      deleteKeysForSubjectContext: (subjectId, contextName) => {
+        const key = `${subjectId}:${contextName}`;
+        deks.delete(key);
+        const existing = forgotten.get(subjectId);
+        if (existing) {
+          existing.add(contextName);
+        } else {
+          forgotten.set(subjectId, new Set([contextName]));
+        }
+        return Promise.resolve();
+      },
+
       deleteKeysForSubject: (subjectId) => {
         for (const key of deks.keys()) {
           if (key.startsWith(`${subjectId}:`)) deks.delete(key);
         }
-        forgotten.add(subjectId);
+        forgotten.set(subjectId, new Set(['*']));
         return Promise.resolve();
       },
 

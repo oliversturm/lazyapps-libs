@@ -70,7 +70,14 @@ export const mongoKeyStore = ({
         getDEK: (subjectId, contextName, version) =>
           db
             .collection(forgottenCollection)
-            .findOne({ subjectId })
+            .findOne({
+              subjectId,
+              $or: [
+                { context: contextName },
+                { context: '*' },
+                { context: { $exists: false } },
+              ],
+            })
             .then((forgotten) => {
               if (forgotten) return { forgotten: true };
               const filter = { subjectId, context: contextName };
@@ -116,14 +123,50 @@ export const mongoKeyStore = ({
               })),
             ),
 
+        deleteKeysForSubjectContext: (subjectId, contextName) => {
+          const ksLog = getLogger('Encryption/KS', 'ADMIN');
+          ksLog.info(
+            `Deleting keys for subject: ${subjectId}, context: ${contextName}`,
+          );
+          return db
+            .collection(forgottenCollection)
+            .updateOne(
+              { subjectId, context: contextName },
+              {
+                $set: {
+                  subjectId,
+                  context: contextName,
+                  deletedAt: Date.now(),
+                },
+              },
+              { upsert: true },
+            )
+            .then(() =>
+              db
+                .collection(dekCollection)
+                .deleteMany({ subjectId, context: contextName }),
+            )
+            .then((result) => {
+              ksLog.info(
+                `Deleted ${result.deletedCount} keys for ${subjectId}:${contextName}`,
+              );
+            });
+        },
+
         deleteKeysForSubject: (subjectId) => {
           const ksLog = getLogger('Encryption/KS', 'ADMIN');
           ksLog.info(`Deleting all keys for subject: ${subjectId}`);
           return db
             .collection(forgottenCollection)
             .updateOne(
-              { subjectId },
-              { $set: { subjectId, deletedAt: Date.now() } },
+              { subjectId, context: '*' },
+              {
+                $set: {
+                  subjectId,
+                  context: '*',
+                  deletedAt: Date.now(),
+                },
+              },
               { upsert: true },
             )
             .then(() => db.collection(dekCollection).deleteMany({ subjectId }))

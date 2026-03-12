@@ -67,9 +67,13 @@ export const createEnvelopeManager = (keyStore, contexts) => {
         });
     },
 
-    clearCachedDEKs: (subjectId) => {
-      for (const key of dekCache.keys()) {
-        if (key.startsWith(`${subjectId}:`)) dekCache.delete(key);
+    clearCachedDEKs: (subjectId, contextName) => {
+      if (contextName) {
+        dekCache.delete(cacheKey(subjectId, contextName));
+      } else {
+        for (const key of dekCache.keys()) {
+          if (key.startsWith(`${subjectId}:`)) dekCache.delete(key);
+        }
       }
     },
 

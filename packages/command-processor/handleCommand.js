@@ -78,7 +78,7 @@ export const handleCommand = (
             .then((event) =>
               event.type === 'SUBJECT_FORGOTTEN' && aggregateStore.forgetSubject
                 ? aggregateStore
-                    .forgetSubject(event.payload.subjectId)
+                    .forgetSubject(event.payload.subjectId || event.aggregateId)
                     .then(() => event)
                 : event,
             )

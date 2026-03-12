@@ -36,18 +36,15 @@ describe('index.js exports', () => {
     expect(encryption.appRole).toBeTypeOf('function');
   });
 
-  test('exports subjectLifecycleAggregate', () => {
-    expect(encryption.subjectLifecycleAggregate).toBeTypeOf('object');
-    expect(encryption.subjectLifecycleAggregate.commands).toHaveProperty(
-      'FORGET_SUBJECT',
-    );
-    expect(encryption.subjectLifecycleAggregate.projections).toHaveProperty(
-      'SUBJECT_FORGOTTEN',
-    );
-  });
-
-  test('exports createForgetSubjectEndpoints', () => {
-    expect(encryption.createForgetSubjectEndpoints).toBeTypeOf('function');
+  test('exports createForgetMixin', () => {
+    expect(encryption.createForgetMixin).toBeTypeOf('function');
+    const mixin = encryption.createForgetMixin({
+      personal: { roles: ['admin'], autoForget: true },
+    });
+    expect(mixin.commands).toHaveProperty('FORGET_SUBJECT');
+    expect(mixin.commands).toHaveProperty('FORGET_SUBJECT_CONTEXT');
+    expect(mixin.commands).toHaveProperty('FORGET_RELATED_SUBJECT');
+    expect(mixin.projections).toHaveProperty('SUBJECT_FORGOTTEN');
   });
 
   test('exports getNestedValue', () => {

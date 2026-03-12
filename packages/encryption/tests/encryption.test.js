@@ -46,14 +46,25 @@ const multiContextSchema = defineEncryptionSchema({
         subjectField: 'aggregateId',
       },
     },
+    CUSTOMER_UPDATED: {
+      'payload.name': {
+        context: 'personal',
+        subjectField: 'aggregateId',
+      },
+    },
   },
 });
 
 const contexts = {
-  personal: { roles: ['admin', 'support', 'self'] },
+  personal: { roles: ['admin', 'support', 'self'], autoForget: true },
 };
 
 const multiContexts = {
+  personal: { roles: ['admin', 'support', 'self'], autoForget: true },
+  financial: { roles: ['admin'] },
+};
+
+const noAutoForgetContexts = {
   personal: { roles: ['admin', 'support', 'self'] },
   financial: { roles: ['admin'] },
 };
@@ -104,10 +115,12 @@ describe('createEncryption', () => {
       expect(enc).toHaveProperty('createProjectionDecryptor');
       expect(enc).toHaveProperty('wrapStorage');
       expect(enc).toHaveProperty('createQueryDecryptor');
+      expect(enc).toHaveProperty('forgetSubjectContext');
       expect(enc).toHaveProperty('forgetSubject');
       expect(enc).toHaveProperty('rotateContextKey');
       expect(enc).toHaveProperty('getSchema');
       expect(enc).toHaveProperty('getContexts');
+      expect(enc).toHaveProperty('getSubjects');
     }));
 
   test('getSchema returns the schema', () =>
@@ -215,9 +228,12 @@ describe('createEncryption', () => {
               // Now forget the subject
               wrapped.addEvent('corr-2')({
                 type: 'SUBJECT_FORGOTTEN',
-                aggregateName: 'subjectLifecycle',
+                aggregateName: 'customer',
                 aggregateId: 'cust-99',
-                payload: { subjectId: 'cust-99' },
+                payload: {
+                  subjectId: 'cust-99',
+                  contexts: ['personal'],
+                },
                 timestamp: 2,
               }),
             )
@@ -846,14 +862,17 @@ describe('createEncryption', () => {
             .then(() =>
               // The SUBJECT_FORGOTTEN event is not in the encryption
               // schema, so it passes through encryption unchanged.
-              // The deleteKeysForSubject call happens after store.addEvent.
-              // We test that the overall pipeline works when forget
-              // events are processed.
+              // The deleteKeysForSubjectContext call happens after
+              // store.addEvent. We test that the overall pipeline
+              // works when forget events are processed.
               wrapped.addEvent('corr-2')({
                 type: 'SUBJECT_FORGOTTEN',
-                aggregateName: 'subjectLifecycle',
+                aggregateName: 'customer',
                 aggregateId: 'cust-err',
-                payload: { subjectId: 'cust-err' },
+                payload: {
+                  subjectId: 'cust-err',
+                  contexts: ['personal'],
+                },
                 timestamp: 2,
               }),
             )
@@ -1100,6 +1119,246 @@ describe('createEncryption', () => {
               expect(storedEvents[2].payload.name.__encrypted).toBe(true);
             }),
         );
+      }));
+  });
+
+  describe('forgetSubject returns list of forgotten context names', () => {
+    test('returns array of autoForget context names', () =>
+      makeEncryption().then((enc) => {
+        const mockStore = {
+          addEvent: () => (event) => Promise.resolve(event),
+          replay: vi.fn(),
+          close: vi.fn(),
+        };
+        const wrappedFactory = enc.wrapEventStore(() =>
+          Promise.resolve(mockStore),
+        );
+
+        return wrappedFactory().then((wrapped) =>
+          wrapped
+            .addEvent('corr-1')({
+              type: 'CUSTOMER_CREATED',
+              aggregateName: 'customer',
+              aggregateId: 'cust-ret',
+              payload: { name: 'Alice' },
+              timestamp: 1,
+            })
+            .then(() => enc.forgetSubject('cust-ret'))
+            .then((result) => {
+              expect(result).toEqual(['personal']);
+            }),
+        );
+      }));
+
+    test('returns multiple context names when several have autoForget', () =>
+      createEncryption({
+        schema: multiContextSchema,
+        keyStore: inMemoryKeyStore({
+          personal: personalKEK,
+          financial: financialKEK,
+        }),
+        contexts: {
+          personal: {
+            roles: ['admin', 'support', 'self'],
+            autoForget: true,
+          },
+          financial: { roles: ['admin'], autoForget: true },
+        },
+        cache: { maxSize: 100, ttlMs: 60000 },
+      }).then((enc) =>
+        enc.forgetSubject('cust-multi').then((result) => {
+          expect(result.sort()).toEqual(['financial', 'personal']);
+        }),
+      ));
+  });
+
+  describe('forgetSubject errors when no autoForget contexts', () => {
+    test('rejects when no contexts have autoForget: true', () =>
+      createEncryption({
+        schema,
+        keyStore: inMemoryKeyStore({ personal: personalKEK }),
+        contexts: noAutoForgetContexts,
+        cache: { maxSize: 100, ttlMs: 60000 },
+      }).then((enc) =>
+        enc.forgetSubject('cust-no-auto').then(
+          () => {
+            throw new Error('Should have rejected');
+          },
+          (err) => {
+            expect(err.code).toBe('NO_AUTO_FORGET_CONTEXTS');
+            expect(err.message).toMatch(/autoForget/);
+          },
+        ),
+      ));
+  });
+
+  describe('forgetSubjectContext', () => {
+    test('shreds single context only — keyStore reflects per-context status', () =>
+      makeMultiContextEncryption().then((enc) => {
+        const storedEvents = [];
+        const mockStore = {
+          addEvent: () => (event) => {
+            storedEvents.push(event);
+            return Promise.resolve(event);
+          },
+          replay: vi.fn(),
+          close: vi.fn(),
+        };
+        const wrappedFactory = enc.wrapEventStore(() =>
+          Promise.resolve(mockStore),
+        );
+
+        return wrappedFactory().then((wrapped) =>
+          wrapped
+            .addEvent('corr-1')({
+              type: 'CUSTOMER_CREATED',
+              aggregateName: 'customer',
+              aggregateId: 'cust-ctx',
+              payload: { name: 'Alice', creditScore: 750 },
+              timestamp: 1,
+            })
+            .then(() => enc.forgetSubjectContext('cust-ctx', 'personal'))
+            .then(() =>
+              // addEvent for an event touching ONLY the forgotten
+              // context should throw SubjectForgottenError
+              wrapped
+                .addEvent('corr-2')({
+                  type: 'CUSTOMER_UPDATED',
+                  aggregateName: 'customer',
+                  aggregateId: 'cust-ctx',
+                  payload: { name: 'Alice Smith' },
+                  timestamp: 2,
+                })
+                .then(() => {
+                  throw new Error('Should have thrown');
+                })
+                .catch((err) => {
+                  expect(err.code).toBe('SUBJECT_FORGOTTEN');
+                }),
+            ),
+        );
+      }));
+  });
+
+  describe('shredIfForget with contexts in payload', () => {
+    test('reads contexts from event payload and shreds per context', () =>
+      makeMultiContextEncryption().then((enc) => {
+        const storedEvents = [];
+        const mockStore = {
+          addEvent: () => (event) => {
+            storedEvents.push(event);
+            return Promise.resolve(event);
+          },
+          replay: vi.fn(),
+          close: vi.fn(),
+        };
+        const wrappedFactory = enc.wrapEventStore(() =>
+          Promise.resolve(mockStore),
+        );
+
+        return wrappedFactory().then((wrapped) =>
+          wrapped
+            .addEvent('corr-1')({
+              type: 'CUSTOMER_CREATED',
+              aggregateName: 'customer',
+              aggregateId: 'cust-shred-ctx',
+              payload: { name: 'Alice', creditScore: 750 },
+              timestamp: 1,
+            })
+            .then(() =>
+              wrapped.addEvent('corr-2')({
+                type: 'SUBJECT_FORGOTTEN',
+                aggregateName: 'customer',
+                aggregateId: 'cust-shred-ctx',
+                payload: {
+                  subjectId: 'cust-shred-ctx',
+                  contexts: ['personal'],
+                },
+                timestamp: 2,
+              }),
+            )
+            .then(() =>
+              // After per-context shred, encrypting for the forgotten
+              // context should fail with SubjectForgottenError
+              wrapped
+                .addEvent('corr-3')({
+                  type: 'CUSTOMER_UPDATED',
+                  aggregateName: 'customer',
+                  aggregateId: 'cust-shred-ctx',
+                  payload: { name: 'Alice Smith' },
+                  timestamp: 3,
+                })
+                .then(() => {
+                  throw new Error('Should have thrown');
+                })
+                .catch((err) => {
+                  expect(err.code).toBe('SUBJECT_FORGOTTEN');
+                }),
+            ),
+        );
+      }));
+
+    test('events without contexts do NOT trigger shredding', () =>
+      makeEncryption().then((enc) => {
+        const storedEvents = [];
+        const mockStore = {
+          addEvent: () => (event) => {
+            storedEvents.push(event);
+            return Promise.resolve(event);
+          },
+          replay: vi.fn(),
+          close: vi.fn(),
+        };
+        const wrappedFactory = enc.wrapEventStore(() =>
+          Promise.resolve(mockStore),
+        );
+
+        return wrappedFactory().then((wrapped) =>
+          wrapped
+            .addEvent('corr-1')({
+              type: 'CUSTOMER_CREATED',
+              aggregateName: 'customer',
+              aggregateId: 'cust-no-ctx',
+              payload: { name: 'Alice' },
+              timestamp: 1,
+            })
+            .then(() =>
+              wrapped.addEvent('corr-2')({
+                type: 'SUBJECT_FORGOTTEN',
+                aggregateName: 'customer',
+                aggregateId: 'cust-no-ctx',
+                payload: { subjectId: 'cust-no-ctx' },
+                timestamp: 2,
+              }),
+            )
+            .then(() => {
+              // DEKs should NOT be deleted since no contexts in payload
+              const decryptor = enc.createProjectionDecryptor('admin');
+              return decryptor(storedEvents[0]).then((result) => {
+                expect(result.payload.name).toBe('Alice');
+              });
+            }),
+        );
+      }));
+  });
+
+  describe('getSubjects', () => {
+    test('returns configured subjects', () =>
+      createEncryption({
+        schema,
+        keyStore: inMemoryKeyStore({ personal: personalKEK }),
+        contexts,
+        subjects: { customer: { contexts: ['personal'] } },
+        cache: { maxSize: 100, ttlMs: 60000 },
+      }).then((enc) => {
+        expect(enc.getSubjects()).toEqual({
+          customer: { contexts: ['personal'] },
+        });
+      }));
+
+    test('returns undefined when no subjects configured', () =>
+      makeEncryption().then((enc) => {
+        expect(enc.getSubjects()).toBeUndefined();
       }));
   });
 });

@@ -4,12 +4,14 @@ import { createKeyCache } from './keyCache.js';
 import { createFallbackHandler } from './fallback.js';
 import { createStorageEncryptor } from './storageEncryption.js';
 import { createQueryDecryptor as createQueryDecryptorImpl } from './queryDecryptor.js';
+import { createForgetMixin as createForgetMixinImpl } from './forgetMixin.js';
 import { getLogger } from '@lazyapps/logger';
 
 export const createEncryption = ({
   schema,
   keyStore,
   contexts,
+  subjects,
   readModelEncryption,
   cache = { maxSize: 10000, ttlMs: 300000 },
 }) => {
@@ -38,13 +40,22 @@ export const createEncryption = ({
               addEvent: (correlationId) => (event) => {
                 const encLog = getLogger('Encryption/Store', correlationId);
 
-                const shredIfForget = (evt) =>
-                  evt.type === 'SUBJECT_FORGOTTEN'
-                    ? (envelope.clearCachedDEKs(evt.payload.subjectId),
-                      cachedKs
-                        .deleteKeysForSubject(evt.payload.subjectId)
-                        .then(() => evt))
-                    : Promise.resolve(evt);
+                const shredIfForget = (evt) => {
+                  if (evt.type !== 'SUBJECT_FORGOTTEN')
+                    return Promise.resolve(evt);
+                  const { contexts: ctxs } = evt.payload;
+                  const subjectId = evt.payload.subjectId || evt.aggregateId;
+                  if (!ctxs || !ctxs.length) return Promise.resolve(evt);
+                  return Promise.all(
+                    ctxs.map((ctx) => {
+                      envelope.clearCachedDEKs(subjectId, ctx);
+                      return cachedKs.deleteKeysForSubjectContext(
+                        subjectId,
+                        ctx,
+                      );
+                    }),
+                  ).then(() => evt);
+                };
 
                 return fieldEncryptor
                   .encryptEvent(event)
@@ -151,10 +162,34 @@ export const createEncryption = ({
               )
             : null,
 
+        forgetSubjectContext: (subjectId, contextName) => {
+          log.info(`Forgetting subject context: ${subjectId}/${contextName}`);
+          envelope.clearCachedDEKs(subjectId, contextName);
+          return cachedKs.deleteKeysForSubjectContext(subjectId, contextName);
+        },
+
         forgetSubject: (subjectId) => {
           log.info(`Forgetting subject: ${subjectId}`);
-          envelope.clearCachedDEKs(subjectId);
-          return cachedKs.deleteKeysForSubject(subjectId);
+          const autoForgetContexts = Object.entries(contexts)
+            .filter(([, cfg]) => cfg.autoForget)
+            .map(([name]) => name);
+          if (!autoForgetContexts.length) {
+            return Promise.reject(
+              Object.assign(
+                new Error(
+                  'No contexts with autoForget enabled — ' +
+                    'use forgetSubjectContext for explicit context forgetting',
+                ),
+                { code: 'NO_AUTO_FORGET_CONTEXTS' },
+              ),
+            );
+          }
+          return Promise.all(
+            autoForgetContexts.map((ctx) => {
+              envelope.clearCachedDEKs(subjectId, ctx);
+              return cachedKs.deleteKeysForSubjectContext(subjectId, ctx);
+            }),
+          ).then(() => autoForgetContexts);
         },
 
         rotateContextKey: (contextName) => {
@@ -165,6 +200,10 @@ export const createEncryption = ({
         getSchema: () => schema,
 
         getContexts: () => contexts,
+
+        getSubjects: () => subjects,
+
+        createForgetMixin: () => createForgetMixinImpl(contexts),
       };
     });
 };

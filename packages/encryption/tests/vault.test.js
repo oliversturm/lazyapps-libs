@@ -111,6 +111,7 @@ describe('vaultKeyStore', () => {
       expect(ks).toHaveProperty('getDEK');
       expect(ks).toHaveProperty('storeDEK');
       expect(ks).toHaveProperty('getAllDEKsForContext');
+      expect(ks).toHaveProperty('deleteKeysForSubjectContext');
       expect(ks).toHaveProperty('deleteKeysForSubject');
       expect(ks).toHaveProperty('rotateKEK');
       expect(ks).toHaveProperty('close');
@@ -215,6 +216,29 @@ describe('vaultKeyStore', () => {
         ks.getAllDEKsForContext('nonexistent').then((results) => {
           expect(results).toEqual([]);
         }));
+
+      test('deleteKeysForSubjectContext removes only specified context', () =>
+        ks
+          .storeDEK('sub-1', 'personal', {
+            wrappedKey: 'ct-1',
+            version: 1,
+          })
+          .then(() =>
+            ks.storeDEK('sub-1', 'financial', {
+              wrappedKey: 'ct-2',
+              version: 1,
+            }),
+          )
+          .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+          .then(() => ks.getDEK('sub-1', 'personal'))
+          .then((result) => {
+            expect(result).toEqual({ forgotten: true });
+            return ks.getDEK('sub-1', 'financial');
+          })
+          .then((result) => {
+            expect(result).not.toBeNull();
+            expect(result.wrappedKey).toBe('ct-2');
+          }));
 
       test('deleteKeysForSubject removes all DEKs and marks subject as forgotten', () =>
         ks

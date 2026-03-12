@@ -39,10 +39,15 @@ const authenticateAppRole = (vaultUrl, roleId, secretId) =>
 
 const initDekInMemory = () => {
   const deks = new Map();
-  const forgotten = new Set();
+  const forgotten = new Map();
   return Promise.resolve({
     getDEK: (subjectId, contextName) => {
-      if (forgotten.has(subjectId)) return Promise.resolve({ forgotten: true });
+      const subjectForgotten = forgotten.get(subjectId);
+      if (
+        subjectForgotten &&
+        (subjectForgotten.has(contextName) || subjectForgotten.has('*'))
+      )
+        return Promise.resolve({ forgotten: true });
       const key = `${subjectId}:${contextName}`;
       return Promise.resolve(deks.get(key) || null);
     },
@@ -59,11 +64,22 @@ const initDekInMemory = () => {
           .filter(([k]) => k.endsWith(`:${contextName}`))
           .map(([k, v]) => ({ subjectId: k.split(':')[0], ...v })),
       ),
+    deleteKeysForSubjectContext: (subjectId, contextName) => {
+      const key = `${subjectId}:${contextName}`;
+      deks.delete(key);
+      const existing = forgotten.get(subjectId);
+      if (existing) {
+        existing.add(contextName);
+      } else {
+        forgotten.set(subjectId, new Set([contextName]));
+      }
+      return Promise.resolve();
+    },
     deleteKeysForSubject: (subjectId) => {
       for (const key of deks.keys()) {
         if (key.startsWith(`${subjectId}:`)) deks.delete(key);
       }
-      forgotten.add(subjectId);
+      forgotten.set(subjectId, new Set(['*']));
       return Promise.resolve();
     },
     close: () => Promise.resolve(),
@@ -78,19 +94,28 @@ const initDekMongo = ({ url, database, collection }) =>
       const forgottenColl = db.collection(`${collection}-forgotten`);
       return {
         getDEK: (subjectId, contextName) =>
-          forgottenColl.findOne({ subjectId }).then((forgotten) => {
-            if (forgotten) return { forgotten: true };
-            return coll
-              .findOne(
-                { subjectId, context: contextName },
-                { sort: { version: -1 } },
-              )
-              .then((doc) =>
-                doc
-                  ? { wrappedKey: doc.wrappedKey, version: doc.version }
-                  : null,
-              );
-          }),
+          forgottenColl
+            .findOne({
+              subjectId,
+              $or: [
+                { context: contextName },
+                { context: '*' },
+                { context: { $exists: false } },
+              ],
+            })
+            .then((forgotten) => {
+              if (forgotten) return { forgotten: true };
+              return coll
+                .findOne(
+                  { subjectId, context: contextName },
+                  { sort: { version: -1 } },
+                )
+                .then((doc) =>
+                  doc
+                    ? { wrappedKey: doc.wrappedKey, version: doc.version }
+                    : null,
+                );
+            }),
         storeDEK: (subjectId, contextName, dekInfo) =>
           coll.insertOne({
             subjectId,
@@ -110,11 +135,32 @@ const initDekMongo = ({ url, database, collection }) =>
                 version: d.version,
               })),
             ),
+        deleteKeysForSubjectContext: (subjectId, contextName) =>
+          forgottenColl
+            .updateOne(
+              { subjectId, context: contextName },
+              {
+                $set: {
+                  subjectId,
+                  context: contextName,
+                  deletedAt: Date.now(),
+                },
+              },
+              { upsert: true },
+            )
+            .then(() => coll.deleteMany({ subjectId, context: contextName }))
+            .then(() => {}),
         deleteKeysForSubject: (subjectId) =>
           forgottenColl
             .updateOne(
-              { subjectId },
-              { $set: { subjectId, deletedAt: Date.now() } },
+              { subjectId, context: '*' },
+              {
+                $set: {
+                  subjectId,
+                  context: '*',
+                  deletedAt: Date.now(),
+                },
+              },
               { upsert: true },
             )
             .then(() => coll.deleteMany({ subjectId }))
@@ -156,6 +202,7 @@ export const vaultKeyStore = ({ vaultUrl, token, authMethod, dekBackend }) => ({
         getDEK: deks.getDEK,
         storeDEK: deks.storeDEK,
         getAllDEKsForContext: deks.getAllDEKsForContext,
+        deleteKeysForSubjectContext: deks.deleteKeysForSubjectContext,
         deleteKeysForSubject: deks.deleteKeysForSubject,
 
         rotateKEK: (contextName) =>

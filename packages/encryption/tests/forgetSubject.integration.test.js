@@ -35,7 +35,7 @@ const schema = defineEncryptionSchema({
 });
 
 const contexts = {
-  personal: { roles: ['admin', 'support'] },
+  personal: { roles: ['admin', 'support'], autoForget: true },
 };
 
 describe('forget-subject integration', { timeout: 60000 }, () => {
@@ -379,9 +379,9 @@ describe('forget-subject integration', { timeout: 60000 }, () => {
       // Process SUBJECT_FORGOTTEN through the wrapped event store
       await wrapped.addEvent('corr-2')({
         type: 'SUBJECT_FORGOTTEN',
-        aggregateName: 'subjectLifecycle',
+        aggregateName: 'customer',
         aggregateId: 'cust-shred',
-        payload: { subjectId: 'cust-shred' },
+        payload: { subjectId: 'cust-shred', contexts: ['personal'] },
         timestamp: 2,
       });
 

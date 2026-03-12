@@ -13,6 +13,7 @@ describe('createKeyCache', () => {
       wrapDEK: vi.fn(),
       unwrapDEK: vi.fn(),
       storeDEK: vi.fn(),
+      deleteKeysForSubjectContext: vi.fn().mockResolvedValue(),
       deleteKeysForSubject: vi.fn().mockResolvedValue(),
       close: vi.fn(),
     };
@@ -150,6 +151,60 @@ describe('createKeyCache', () => {
           mockKeyStore.getDEK.mockClear();
           // cust-1 should still be cached (not evicted by deleting "cust")
           return cached.getDEK('cust-1', 'ctx');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).not.toHaveBeenCalled();
+        });
+    });
+  });
+
+  describe('deleteKeysForSubjectContext', () => {
+    test('evicts only matching context cache entries and delegates', () => {
+      const dek = { wrappedKey: 'w', version: 1 };
+      mockKeyStore.getDEK.mockResolvedValue(dek);
+
+      return cached
+        .getDEK('s1', 'personal')
+        .then(() => cached.getDEK('s1', 'financial'))
+        .then(() => cached.deleteKeysForSubjectContext('s1', 'personal'))
+        .then(() => {
+          expect(mockKeyStore.deleteKeysForSubjectContext).toHaveBeenCalledWith(
+            's1',
+            'personal',
+          );
+
+          mockKeyStore.getDEK.mockClear();
+          // personal should be evicted from cache
+          return cached.getDEK('s1', 'personal');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).toHaveBeenCalledOnce();
+
+          // financial should still be cached
+          mockKeyStore.getDEK.mockClear();
+          return cached.getDEK('s1', 'financial');
+        })
+        .then(() => {
+          expect(mockKeyStore.getDEK).not.toHaveBeenCalled();
+        });
+    });
+
+    test('does not evict entries for other subjects', () => {
+      mockKeyStore.getDEK.mockImplementation((subjectId) =>
+        Promise.resolve({
+          wrappedKey: `w-${subjectId}`,
+          version: 1,
+        }),
+      );
+
+      return cached
+        .getDEK('s1', 'personal')
+        .then(() => cached.getDEK('s2', 'personal'))
+        .then(() => cached.deleteKeysForSubjectContext('s1', 'personal'))
+        .then(() => {
+          mockKeyStore.getDEK.mockClear();
+          // s2:personal should still be cached
+          return cached.getDEK('s2', 'personal');
         })
         .then(() => {
           expect(mockKeyStore.getDEK).not.toHaveBeenCalled();

@@ -14,6 +14,7 @@ export const initializeContext = (
     encryptionDecryptor,
     encryptionQueryDecryptor,
     encryptionForgetSubject,
+    encryptionForgetSubjectContext,
     jwtScopeMapper,
     role,
   },
@@ -26,6 +27,7 @@ export const initializeContext = (
       encryptionDecryptor,
       encryptionQueryDecryptor,
       encryptionForgetSubject,
+      encryptionForgetSubjectContext,
       jwtScopeMapper,
       encryptionRole: role,
     }))

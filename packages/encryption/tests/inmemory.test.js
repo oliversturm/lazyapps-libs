@@ -22,6 +22,7 @@ describe('inMemoryKeyStore', () => {
       expect(ks).toHaveProperty('getDEK');
       expect(ks).toHaveProperty('storeDEK');
       expect(ks).toHaveProperty('getAllDEKsForContext');
+      expect(ks).toHaveProperty('deleteKeysForSubjectContext');
       expect(ks).toHaveProperty('deleteKeysForSubject');
       expect(ks).toHaveProperty('close');
     });
@@ -159,6 +160,83 @@ describe('inMemoryKeyStore', () => {
         .then(() => ks.getDEK('sub-2', 'personal'))
         .then((result) => {
           expect(result).not.toBeNull();
+        }));
+  });
+
+  describe('deleteKeysForSubjectContext', () => {
+    test('removes only DEKs for specified context', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-1', 'financial', {
+            wrappedKey: { iv: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-1', 'financial'))
+        .then((result) => {
+          expect(result).not.toBeNull();
+          expect(result.wrappedKey).toEqual({ iv: '2' });
+        }));
+
+    test('marks only specified context as forgotten', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-1', 'financial', {
+            wrappedKey: { iv: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-1', 'personal'))
+        .then((result) => {
+          expect(result).toEqual({ forgotten: true });
+        }));
+
+    test('getDEK for non-forgotten context succeeds after per-context delete', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-1', 'financial', {
+            wrappedKey: { iv: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-1', 'financial'))
+        .then((result) => {
+          expect(result.wrappedKey).toEqual({ iv: '2' });
+          expect(result.version).toBe(1);
+        }));
+
+    test('does not affect other subjects', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-2', 'personal', {
+            wrappedKey: { iv: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-2', 'personal'))
+        .then((result) => {
+          expect(result).not.toBeNull();
+          expect(result.wrappedKey).toEqual({ iv: '2' });
         }));
   });
 

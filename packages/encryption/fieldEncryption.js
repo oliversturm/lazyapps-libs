@@ -34,6 +34,12 @@ export const decryptValue = (key, envelope) => {
   );
 };
 
+const applyFieldFallback = (schema, evt, fieldPath, contextName) => {
+  const fieldName = fieldPath.split('.').pop();
+  const text = schema.getForgottenText(fieldName, contextName);
+  return setNestedValue(evt, fieldPath, { forgotten: true, text });
+};
+
 export const createFieldEncryptor = (envelope, schema) => ({
   encryptEvent: (event) => {
     const fieldDefs = schema[event.type];
@@ -90,9 +96,13 @@ export const createFieldEncryptor = (envelope, schema) => ({
           return envelope
             .getDEK(value.kid, value.ctx, value.kv, value.wk)
             .then((dek) => {
+              if (dek.forgotten) {
+                return applyFieldFallback(schema, evt, fieldPath, value.ctx);
+              }
               const plaintext = decryptValue(dek.key, value);
               return setNestedValue(evt, fieldPath, plaintext);
-            });
+            })
+            .catch(() => applyFieldFallback(schema, evt, fieldPath, value.ctx));
         }),
       Promise.resolve(decrypted),
     );

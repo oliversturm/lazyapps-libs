@@ -37,7 +37,13 @@ const createMockCollection = () => {
     })),
     deleteMany: vi.fn((filter) => {
       const before = docs.length;
-      const remaining = docs.filter((d) => d.subjectId !== filter.subjectId);
+      const remaining = docs.filter(
+        (d) =>
+          !(
+            d.subjectId === filter.subjectId &&
+            (filter.context === undefined || d.context === filter.context)
+          ),
+      );
       docs.length = 0;
       docs.push(...remaining);
       return Promise.resolve({ deletedCount: before - remaining.length });
@@ -50,11 +56,25 @@ const createForgottenCollection = () => {
   return {
     __docs: docs,
     findOne: vi.fn((filter) => {
-      const match = docs.find((d) => d.subjectId === filter.subjectId);
+      const match = docs.find((d) => {
+        if (d.subjectId !== filter.subjectId) return false;
+        if (filter.$or) {
+          return filter.$or.some((clause) => {
+            if (clause.context && typeof clause.context === 'string')
+              return d.context === clause.context;
+            if (clause.context && clause.context.$exists === false)
+              return d.context === undefined;
+            return false;
+          });
+        }
+        return true;
+      });
       return Promise.resolve(match || null);
     }),
     updateOne: vi.fn((filter, update, options) => {
-      const existing = docs.find((d) => d.subjectId === filter.subjectId);
+      const existing = docs.find(
+        (d) => d.subjectId === filter.subjectId && d.context === filter.context,
+      );
       if (!existing) {
         docs.push(update.$set);
       }
@@ -125,6 +145,7 @@ describe('mongoKeyStore', () => {
       expect(ks).toHaveProperty('getDEK');
       expect(ks).toHaveProperty('storeDEK');
       expect(ks).toHaveProperty('getAllDEKsForContext');
+      expect(ks).toHaveProperty('deleteKeysForSubjectContext');
       expect(ks).toHaveProperty('deleteKeysForSubject');
       expect(ks).toHaveProperty('close');
     });
@@ -395,6 +416,84 @@ describe('mongoKeyStore', () => {
           }),
         )
         .then(() => ks.deleteKeysForSubject('sub-1'))
+        .then(() => ks.getDEK('sub-2', 'personal'))
+        .then((result) => {
+          expect(result).not.toBeNull();
+        }));
+  });
+
+  describe('deleteKeysForSubjectContext', () => {
+    test('removes only DEKs for specified context', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1', data: '1', tag: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-1', 'financial', {
+            wrappedKey: { iv: '2', data: '2', tag: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-1', 'financial'))
+        .then((result) => {
+          expect(result).not.toBeNull();
+          expect(result.wrappedKey).toEqual({
+            iv: '2',
+            data: '2',
+            tag: '2',
+          });
+        }));
+
+    test('marks only specified context as forgotten', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1', data: '1', tag: '1' },
+          version: 1,
+        })
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
+        .then(() => ks.getDEK('sub-1', 'personal'))
+        .then((result) => {
+          expect(result).toEqual({ forgotten: true });
+        }));
+
+    test('calls deleteMany with subject and context filter', () =>
+      ks.deleteKeysForSubjectContext('sub-1', 'personal').then(() => {
+        expect(mockCollection.deleteMany).toHaveBeenCalledWith({
+          subjectId: 'sub-1',
+          context: 'personal',
+        });
+      }));
+
+    test('upserts forgotten marker with context', () =>
+      ks.deleteKeysForSubjectContext('sub-1', 'personal').then(() => {
+        expect(mockForgottenCollection.updateOne).toHaveBeenCalledWith(
+          { subjectId: 'sub-1', context: 'personal' },
+          expect.objectContaining({
+            $set: expect.objectContaining({
+              subjectId: 'sub-1',
+              context: 'personal',
+              deletedAt: expect.any(Number),
+            }),
+          }),
+          { upsert: true },
+        );
+      }));
+
+    test('does not affect other subjects', () =>
+      ks
+        .storeDEK('sub-1', 'personal', {
+          wrappedKey: { iv: '1', data: '1', tag: '1' },
+          version: 1,
+        })
+        .then(() =>
+          ks.storeDEK('sub-2', 'personal', {
+            wrappedKey: { iv: '2', data: '2', tag: '2' },
+            version: 1,
+          }),
+        )
+        .then(() => ks.deleteKeysForSubjectContext('sub-1', 'personal'))
         .then(() => ks.getDEK('sub-2', 'personal'))
         .then((result) => {
           expect(result).not.toBeNull();

@@ -42,7 +42,7 @@ vi.mock('@opentelemetry/api', () => {
 const { createEncryption } = await import('../encryption.js');
 const { defineEncryptionSchema } = await import('../schema.js');
 const { inMemoryKeyStore } = await import('../keystores/inmemory.js');
-const { subjectLifecycleAggregate } = await import('../subjectLifecycle.js');
+const { createForgetMixin } = await import('../forgetMixin.js');
 const { inmemory: inmemoryAggregateStore } =
   await import('../../aggregatestore-inmemory/index.js');
 const { mongodb: mongoEventStore } =
@@ -72,7 +72,7 @@ const schema = defineEncryptionSchema({
 });
 
 const contexts = {
-  personal: { roles: ['admin', 'support'] },
+  personal: { roles: ['admin', 'support'], autoForget: true },
 };
 
 const isForgotten = (value) =>
@@ -83,6 +83,8 @@ const validationError = (message) => {
   err.name = 'ValidationError';
   return err;
 };
+
+const forgetMixin = createForgetMixin(contexts);
 
 const customerAggregate = {
   initial: () => ({}),
@@ -106,11 +108,6 @@ const customerAggregate = {
       ...state,
       name: event.payload.name,
     }),
-    SUBJECT_FORGOTTEN: (state, event) => ({
-      ...state,
-      forgotten: true,
-      forgottenAt: event.timestamp,
-    }),
   },
 };
 
@@ -132,9 +129,33 @@ const customerAggregateWithValidation = {
   },
 };
 
+// Inject mixin into customer aggregate (simulates what bootstrap does)
+const customerWithMixin = {
+  ...customerAggregate,
+  commands: {
+    ...customerAggregate.commands,
+    ...forgetMixin.commands,
+  },
+  projections: {
+    ...customerAggregate.projections,
+    ...forgetMixin.projections,
+  },
+};
+
+const customerWithValidationAndMixin = {
+  ...customerAggregateWithValidation,
+  commands: {
+    ...customerAggregateWithValidation.commands,
+    ...forgetMixin.commands,
+  },
+  projections: {
+    ...customerAggregateWithValidation.projections,
+    ...forgetMixin.projections,
+  },
+};
+
 const aggregates = {
-  customer: customerAggregate,
-  subjectLifecycle: subjectLifecycleAggregate,
+  customer: customerWithMixin,
 };
 
 const mockEventBus = () => ({
@@ -158,7 +179,7 @@ const mockRes = () => {
   return res;
 };
 
-describe('forgotten aggregate integration', { timeout: 120000 }, () => {
+describe('forgotten aggregate integration (mixin)', { timeout: 120000 }, () => {
   let container;
   let connectionString;
   let eventStoreFactory;
@@ -169,7 +190,7 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
       container.getConnectionString() + '?directConnection=true';
     eventStoreFactory = mongoEventStore({
       url: connectionString,
-      database: 'test-forgotten-aggregate',
+      database: 'test-forgotten-aggregate-mixin',
       collection: 'events',
     });
   }, 120000);
@@ -178,19 +199,17 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
     if (container) await container.stop();
   }, 60000);
 
-  const setupPipeline = () =>
+  const setupPipeline = (aggDefs = aggregates) =>
     createEncryption({
       schema,
       keyStore: inMemoryKeyStore({ personal: personalKEK }),
       contexts,
       cache: { maxSize: 100, ttlMs: 60000 },
     }).then((enc) => {
-      const aggregateStore = inmemoryAggregateStore()(aggregates);
+      const aggregateStore = inmemoryAggregateStore()(aggDefs);
       const wrappedEventStoreFactory = enc.wrapEventStore(eventStoreFactory);
 
       return wrappedEventStoreFactory().then((wrappedEventStore) => {
-        // Wire the event store ref into aggregate store for on-demand
-        // reconstruction (same wiring as context.js)
         if (
           aggregateStore.setEventStoreRef &&
           wrappedEventStore.getEventsForAggregate
@@ -204,7 +223,7 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
           aggregateStore,
           eventStore: wrappedEventStore,
           eventBus: mockEventBus(),
-          aggregates,
+          aggregates: aggDefs,
           handleCommand,
         });
 
@@ -212,15 +231,14 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
       });
     });
 
-  test('forget subject then attempt UPDATE returns 409', () =>
+  test('FORGET_SUBJECT via mixin → SUBJECT_FORGOTTEN event with contexts → UPDATE returns 409', () =>
     setupPipeline().then(({ apiHandler }) => {
-      // Step 1: CREATE a customer
       const createRes = mockRes();
       return apiHandler(
         mockReq({
           command: 'CREATE',
           aggregateName: 'customer',
-          aggregateId: 'cust-int-1',
+          aggregateId: 'cust-mixin-1',
           payload: { name: 'Alice' },
           correlationId: 'corr-create',
         }),
@@ -230,16 +248,15 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
           expect(createRes.sendStatus).toHaveBeenCalledWith(200);
         })
         .then(() => {
-          // Step 2: FORGET the subject
+          // FORGET_SUBJECT sent to customer aggregate (handled by mixin)
           const forgetRes = mockRes();
           return apiHandler(
             mockReq({
               command: 'FORGET_SUBJECT',
-              aggregateName: 'subjectLifecycle',
-              aggregateId: 'cust-int-1',
+              aggregateName: 'customer',
+              aggregateId: 'cust-mixin-1',
               payload: {
-                subjectId: 'cust-int-1',
-                subjectType: 'customer',
+                subjectId: 'cust-mixin-1',
                 reason: 'GDPR request',
                 requestedBy: 'admin',
               },
@@ -251,13 +268,13 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
           });
         })
         .then(() => {
-          // Step 3: Attempt UPDATE on forgotten subject
+          // UPDATE on forgotten subject should return 409
           const updateRes = mockRes();
           return apiHandler(
             mockReq({
               command: 'UPDATE',
               aggregateName: 'customer',
-              aggregateId: 'cust-int-1',
+              aggregateId: 'cust-mixin-1',
               payload: { name: 'Alice Smith' },
               correlationId: 'corr-update',
             }),
@@ -273,46 +290,70 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
         });
     }));
 
-  test('command handler validates forgotten fields and returns 400 before encryption layer', () => {
+  test('FORGET_SUBJECT_CONTEXT via mixin → shreds single context', () =>
+    setupPipeline().then(({ apiHandler }) => {
+      const createRes = mockRes();
+      return apiHandler(
+        mockReq({
+          command: 'CREATE',
+          aggregateName: 'customer',
+          aggregateId: 'cust-mixin-ctx-1',
+          payload: { name: 'Bob' },
+          correlationId: 'corr-create-ctx',
+        }),
+        createRes,
+      )
+        .then(() => {
+          expect(createRes.sendStatus).toHaveBeenCalledWith(200);
+        })
+        .then(() => {
+          const forgetCtxRes = mockRes();
+          return apiHandler(
+            mockReq({
+              command: 'FORGET_SUBJECT_CONTEXT',
+              aggregateName: 'customer',
+              aggregateId: 'cust-mixin-ctx-1',
+              payload: {
+                contextName: 'personal',
+              },
+              correlationId: 'corr-forget-ctx',
+            }),
+            forgetCtxRes,
+          ).then(() => {
+            expect(forgetCtxRes.sendStatus).toHaveBeenCalledWith(200);
+          });
+        })
+        .then(() => {
+          // UPDATE should fail because personal context is forgotten
+          const updateRes = mockRes();
+          return apiHandler(
+            mockReq({
+              command: 'UPDATE',
+              aggregateName: 'customer',
+              aggregateId: 'cust-mixin-ctx-1',
+              payload: { name: 'Bob Jones' },
+              correlationId: 'corr-update-ctx',
+            }),
+            updateRes,
+          ).then(() => {
+            expect(updateRes.status).toHaveBeenCalledWith(409);
+          });
+        });
+    }));
+
+  test('command handler validates forgotten fields at 400 before encryption layer', () => {
     const validatingAggregates = {
-      customer: customerAggregateWithValidation,
-      subjectLifecycle: subjectLifecycleAggregate,
+      customer: customerWithValidationAndMixin,
     };
 
-    return createEncryption({
-      schema,
-      keyStore: inMemoryKeyStore({ personal: personalKEK }),
-      contexts,
-      cache: { maxSize: 100, ttlMs: 60000 },
-    }).then((enc) => {
-      const aggregateStore = inmemoryAggregateStore()(validatingAggregates);
-      const wrappedEventStoreFactory = enc.wrapEventStore(eventStoreFactory);
-
-      return wrappedEventStoreFactory().then((wrappedEventStore) => {
-        if (
-          aggregateStore.setEventStoreRef &&
-          wrappedEventStore.getEventsForAggregate
-        ) {
-          aggregateStore.setEventStoreRef(
-            wrappedEventStore.getEventsForAggregate,
-          );
-        }
-
-        const apiHandler = createApiHandler({
-          aggregateStore,
-          eventStore: wrappedEventStore,
-          eventBus: mockEventBus(),
-          aggregates: validatingAggregates,
-          handleCommand,
-        });
-
-        // Step 1: CREATE
+    return setupPipeline(validatingAggregates).then(
+      ({ apiHandler, wrappedEventStore }) => {
         const createRes = mockRes();
         return apiHandler(
           mockReq({
             command: 'CREATE',
             aggregateName: 'customer',
-            aggregateId: 'cust-int-val-1',
+            aggregateId: 'cust-mixin-val-1',
             payload: { name: 'ValidateMe' },
             correlationId: 'corr-val-create',
           }),
@@ -322,16 +363,14 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
             expect(createRes.sendStatus).toHaveBeenCalledWith(200);
           })
           .then(() => {
-            // Step 2: FORGET
             const forgetRes = mockRes();
             return apiHandler(
               mockReq({
                 command: 'FORGET_SUBJECT',
-                aggregateName: 'subjectLifecycle',
-                aggregateId: 'cust-int-val-1',
+                aggregateName: 'customer',
+                aggregateId: 'cust-mixin-val-1',
                 payload: {
-                  subjectId: 'cust-int-val-1',
-                  subjectType: 'customer',
+                  subjectId: 'cust-mixin-val-1',
                   reason: 'GDPR request',
                   requestedBy: 'admin',
                 },
@@ -343,7 +382,7 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
             });
           })
           .then(() => {
-            // Step 3: Simulate restart for on-demand reconstruction
+            // Fresh aggregate store — on-demand reconstruction
             const freshAggregateStore =
               inmemoryAggregateStore()(validatingAggregates);
             if (
@@ -363,109 +402,97 @@ describe('forgotten aggregate integration', { timeout: 120000 }, () => {
               handleCommand,
             });
 
-            // Step 4: UPDATE rejected at command handler level (400)
             const updateRes = mockRes();
             return freshApiHandler(
               mockReq({
                 command: 'UPDATE',
                 aggregateName: 'customer',
-                aggregateId: 'cust-int-val-1',
+                aggregateId: 'cust-mixin-val-1',
                 payload: { name: 'NewName' },
                 correlationId: 'corr-val-update',
               }),
               updateRes,
             ).then(() => {
-              // Command handler validation fires first, returns 400
-              // (not 409 from encryption layer)
               expect(updateRes.sendStatus).toHaveBeenCalledWith(400);
             });
           });
-      });
-    });
+      },
+    );
   });
 
-  test('forget subject then restart (replay) then attempt UPDATE returns 409', () =>
-    setupPipeline().then(
-      ({ apiHandler, aggregateStore, wrappedEventStore, enc }) => {
-        // Step 1: CREATE a customer
-        const createRes = mockRes();
-        return apiHandler(
-          mockReq({
-            command: 'CREATE',
-            aggregateName: 'customer',
-            aggregateId: 'cust-int-2',
-            payload: { name: 'Bob' },
-            correlationId: 'corr-create-2',
-          }),
-          createRes,
-        )
-          .then(() => {
-            expect(createRes.sendStatus).toHaveBeenCalledWith(200);
-          })
-          .then(() => {
-            // Step 2: FORGET the subject
-            const forgetRes = mockRes();
-            return apiHandler(
-              mockReq({
-                command: 'FORGET_SUBJECT',
-                aggregateName: 'subjectLifecycle',
-                aggregateId: 'cust-int-2',
-                payload: {
-                  subjectId: 'cust-int-2',
-                  subjectType: 'customer',
-                  reason: 'GDPR request',
-                  requestedBy: 'admin',
-                },
-                correlationId: 'corr-forget-2',
-              }),
-              forgetRes,
-            ).then(() => {
-              expect(forgetRes.sendStatus).toHaveBeenCalledWith(200);
-            });
-          })
-          .then(() => {
-            // Step 3: Simulate restart — fresh aggregate store with
-            // event store ref wired. No replay needed; on-demand
-            // reconstruction rebuilds aggregates when commands arrive.
-            const freshAggregateStore = inmemoryAggregateStore()(aggregates);
+  test('forget then restart (on-demand reconstruction) then UPDATE returns 409', () =>
+    setupPipeline().then(({ apiHandler, wrappedEventStore }) => {
+      const createRes = mockRes();
+      return apiHandler(
+        mockReq({
+          command: 'CREATE',
+          aggregateName: 'customer',
+          aggregateId: 'cust-mixin-2',
+          payload: { name: 'Charlie' },
+          correlationId: 'corr-create-2',
+        }),
+        createRes,
+      )
+        .then(() => {
+          expect(createRes.sendStatus).toHaveBeenCalledWith(200);
+        })
+        .then(() => {
+          const forgetRes = mockRes();
+          return apiHandler(
+            mockReq({
+              command: 'FORGET_SUBJECT',
+              aggregateName: 'customer',
+              aggregateId: 'cust-mixin-2',
+              payload: {
+                subjectId: 'cust-mixin-2',
+                reason: 'GDPR request',
+                requestedBy: 'admin',
+              },
+              correlationId: 'corr-forget-2',
+            }),
+            forgetRes,
+          ).then(() => {
+            expect(forgetRes.sendStatus).toHaveBeenCalledWith(200);
+          });
+        })
+        .then(() => {
+          // Fresh aggregate store — simulates restart
+          const freshAggregateStore = inmemoryAggregateStore()(aggregates);
+          if (
+            freshAggregateStore.setEventStoreRef &&
+            wrappedEventStore.getEventsForAggregate
+          ) {
+            freshAggregateStore.setEventStoreRef(
+              wrappedEventStore.getEventsForAggregate,
+            );
+          }
 
-            if (
-              freshAggregateStore.setEventStoreRef &&
-              wrappedEventStore.getEventsForAggregate
-            ) {
-              freshAggregateStore.setEventStoreRef(
-                wrappedEventStore.getEventsForAggregate,
-              );
-            }
+          const freshApiHandler = createApiHandler({
+            aggregateStore: freshAggregateStore,
+            eventStore: wrappedEventStore,
+            eventBus: mockEventBus(),
+            aggregates,
+            handleCommand,
+          });
 
-            const freshApiHandler = createApiHandler({
-              aggregateStore: freshAggregateStore,
-              eventStore: wrappedEventStore,
-              eventBus: mockEventBus(),
-              aggregates,
-              handleCommand,
-            });
-
-            // Step 4: Attempt UPDATE on forgotten subject after restart
-            const updateRes = mockRes();
-            return freshApiHandler(
-              mockReq({
-                command: 'UPDATE',
-                aggregateName: 'customer',
-                aggregateId: 'cust-int-2',
-                payload: { name: 'Bob Jones' },
-                correlationId: 'corr-update-2',
-              }),
-              updateRes,
-            ).then(() => {
-              expect(updateRes.status).toHaveBeenCalledWith(409);
-              expect(updateRes.json).toHaveBeenCalledWith({
-                error: 'SubjectForgotten',
-                message:
-                  'Cannot modify subject whose personal data has been forgotten',
-              });
+          const updateRes = mockRes();
+          return freshApiHandler(
+            mockReq({
+              command: 'UPDATE',
+              aggregateName: 'customer',
+              aggregateId: 'cust-mixin-2',
+              payload: { name: 'Charlie Brown' },
+              correlationId: 'corr-update-2',
+            }),
+            updateRes,
+          ).then(() => {
+            expect(updateRes.status).toHaveBeenCalledWith(409);
+            expect(updateRes.json).toHaveBeenCalledWith({
+              error: 'SubjectForgotten',
+              message:
+                'Cannot modify subject whose personal data has been forgotten',
             });
           });
-      },
-    ));
+        });
+    }));
 });
