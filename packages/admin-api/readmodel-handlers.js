@@ -1,24 +1,7 @@
 import { getLogger } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
 
-const detectSharedCollections = (readModels, targetName, targetCollections) => {
-  const warnings = [];
-  const targetSet = new Set(targetCollections);
-
-  Object.keys(readModels).forEach((rmName) => {
-    if (rmName === targetName) return;
-    const rm = readModels[rmName];
-    const rmCollections = rm.collections || [rmName];
-    const shared = rmCollections.filter((c) => targetSet.has(c));
-    if (shared.length) {
-      warnings.push(
-        `Read model '${rmName}' shares collections: ${shared.join(', ')}`,
-      );
-    }
-  });
-
-  return warnings;
-};
+// --- RM-service handlers (local data, no activator) ---
 
 export const statusHandler = (context) => {
   const startedAt = Date.now();
@@ -42,14 +25,14 @@ export const readModelsHandler = (context) => (req, res) => {
   const replayStates = context.projectionHandler.getReadModelReplayStates();
   const names = Object.keys(context.readModels);
 
-  const buildLocal = () =>
+  res.json(
     names.map((name) => {
       const rm = context.readModels[name];
       const base = {
         name,
+        serviceId: context.correlationConfig.serviceId,
         lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
         status: replayStates[name] ? 'replaying' : 'active',
-        collections: rm.collections || [name],
       };
       if (context.lifecycleManager) {
         base.state = context.lifecycleManager.getState(name);
@@ -58,41 +41,109 @@ export const readModelsHandler = (context) => (req, res) => {
         base.fifoQueueSize = context.projectionHandler.getFifoQueueSize(name);
       }
       return base;
-    });
+    }),
+  );
+};
 
-  // When the admin context has an activator but no lifecycle manager
-  // (i.e., admin service running separately or in monolith without
-  // sharedState), proxy state from the RM HTTP endpoints.
-  if (context.activator && !context.lifecycleManager) {
-    Promise.all(
-      names.map((name) =>
-        context.activator.queryReadModelState(name).catch(() => null),
-      ),
-    )
-      .then((rmStates) => {
-        const local = buildLocal();
-        local.forEach((entry, i) => {
-          const remote = rmStates[i];
-          if (remote) {
-            entry.state = remote.state;
-            entry.lastProjectedEventTimestamp =
-              remote.lastProjectedEventTimestamp ||
-              entry.lastProjectedEventTimestamp;
-            if (remote.fifoQueueSize !== undefined) {
-              entry.fifoQueueSize = remote.fifoQueueSize;
-            }
-          }
-        });
-        res.json(local);
-      })
-      .catch(() => {
-        res.json(buildLocal());
-      });
+export const replayReadModelStatusHandler = (context) => (req, res) => {
+  const { readModelName } = req.params;
+
+  const rm = context.readModels?.[readModelName];
+  if (!rm) {
+    res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
-  res.json(buildLocal());
+  const isReplaying =
+    context.projectionHandler.isReadModelReplaying(readModelName);
+  const terminalStatus =
+    context.projectionHandler.getReadModelTerminalStatus(readModelName);
+
+  res.json({
+    readModel: readModelName,
+    status: isReplaying ? 'in_progress' : terminalStatus || 'idle',
+    lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+  });
 };
+
+// --- Admin-service handlers (proxy through activator) ---
+
+export const adminStatusHandler = (context) => {
+  const startedAt = Date.now();
+  return (req, res) => {
+    const replayStates = context.projectionHandler.getReadModelReplayStates();
+
+    return context.activator
+      .fetchReadModels()
+      .then((readModels) => {
+        res.json({
+          service: context.correlationConfig.serviceId,
+          uptime: Date.now() - startedAt,
+          readModels: readModels.map((rm) => ({
+            name: rm.name,
+            lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+            replaying: !!replayStates[rm.name],
+          })),
+        });
+      })
+      .catch(() => {
+        res.json({
+          service: context.correlationConfig.serviceId,
+          uptime: Date.now() - startedAt,
+          readModels: [],
+        });
+      });
+  };
+};
+
+export const adminReadModelsHandler = (context) => (req, res) =>
+  context.activator
+    .fetchReadModels()
+    .then((readModels) => {
+      const replayStates = context.projectionHandler.getReadModelReplayStates();
+      res.json(
+        readModels.map((rm) => ({
+          ...rm,
+          status: replayStates[rm.name] ? 'replaying' : rm.status,
+        })),
+      );
+    })
+    .catch(() => {
+      res.status(503).json({ error: 'Failed to query read model services' });
+    });
+
+export const adminReplayReadModelStatusHandler = (context) => (req, res) => {
+  const { readModelName } = req.params;
+
+  const rm = context.activator.getDiscoveredReadModel(readModelName);
+  if (!rm) {
+    res.status(404).json({ error: `Read model ${readModelName} not found` });
+    return;
+  }
+
+  const isReplaying =
+    context.projectionHandler.isReadModelReplaying(readModelName);
+  const terminalStatus =
+    context.projectionHandler.getReadModelTerminalStatus(readModelName);
+
+  res.json({
+    readModel: readModelName,
+    status: isReplaying ? 'in_progress' : terminalStatus || 'idle',
+    lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+  });
+};
+
+// --- Handlers used by installReadModelAdminApi ---
+// These are mounted by installReadModelAdminApi which is used by both admin
+// services (with activator) and RM services (with local readModels and
+// lifecycleManager). They look up read models from whichever source is
+// available.
+
+const resolveReadModel = (context, readModelName) =>
+  context.readModels?.[readModelName] ||
+  (context.activator &&
+    context.activator.getDiscoveredReadModel(readModelName)) ||
+  undefined;
 
 const delegateToRm = (context, correlationId, instruction, timeoutMs) => {
   const replyTopic = `__admin_reply/${nanoid()}`;
@@ -130,7 +181,7 @@ export const createBackupHandler = (context) => (req, res) => {
   const log = getLogger('Admin/Backup', correlationId);
   const { readModelName } = req.params;
 
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -141,6 +192,7 @@ export const createBackupHandler = (context) => (req, res) => {
   return delegateToRm(context, correlationId, {
     type: 'create_backup',
     targetReadModel: readModelName,
+    ...(rm.serviceId && { targetServiceId: rm.serviceId }),
   })
     .then((result) => {
       res.json(result);
@@ -156,7 +208,7 @@ export const listBackupsHandler = (context) => (req, res) => {
   const correlationId = nanoid();
   const log = getLogger('Admin/Backup', correlationId);
 
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -165,6 +217,7 @@ export const listBackupsHandler = (context) => (req, res) => {
   return delegateToRm(context, correlationId, {
     type: 'list_backups',
     targetReadModel: readModelName,
+    ...(rm.serviceId && { targetServiceId: rm.serviceId }),
   })
     .then((result) => {
       res.json(result.backups);
@@ -190,10 +243,12 @@ export const deleteBackupHandler = (context) => (req, res) => {
 
   log.info(`Deleting backup ${backupId}`);
 
+  const rm = resolveReadModel(context, readModelName);
   return delegateToRm(context, correlationId, {
     type: 'delete_backup',
     targetReadModel: readModelName,
     backupId,
+    ...(rm?.serviceId && { targetServiceId: rm.serviceId }),
   })
     .then(() => {
       res.sendStatus(204);
@@ -210,7 +265,7 @@ export const prepareReplayHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
   const { backupId, fromScratch } = req.body;
 
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -222,13 +277,6 @@ export const prepareReplayHandler = (context) => (req, res) => {
     });
     return;
   }
-
-  const collectionNames = rm.collections || [readModelName];
-  const warnings = detectSharedCollections(
-    context.readModels,
-    readModelName,
-    collectionNames,
-  );
 
   log.info(`Preparing replay for ${readModelName}`);
 
@@ -242,6 +290,7 @@ export const prepareReplayHandler = (context) => (req, res) => {
       targetReadModel: readModelName,
       backupId,
       fromScratch,
+      ...(rm.serviceId && { targetServiceId: rm.serviceId }),
     },
     60000,
   )
@@ -251,8 +300,7 @@ export const prepareReplayHandler = (context) => (req, res) => {
         readModel: readModelName,
         fromTimestamp: result.fromTimestamp,
         preReplayBackupId: result.preReplayBackupId,
-        warnings,
-        serviceId: context.correlationConfig.serviceId,
+        serviceId: rm.serviceId || context.correlationConfig.serviceId,
       });
     })
     .catch((err) => {
@@ -262,31 +310,10 @@ export const prepareReplayHandler = (context) => (req, res) => {
     });
 };
 
-export const replayReadModelStatusHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
-
-  const rm = context.readModels[readModelName];
-  if (!rm) {
-    res.status(404).json({ error: `Read model ${readModelName} not found` });
-    return;
-  }
-
-  const isReplaying =
-    context.projectionHandler.isReadModelReplaying(readModelName);
-  const terminalStatus =
-    context.projectionHandler.getReadModelTerminalStatus(readModelName);
-
-  res.json({
-    readModel: readModelName,
-    status: isReplaying ? 'in_progress' : terminalStatus || 'idle',
-    lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
-  });
-};
-
 export const resetReplayStateHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
 
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -299,14 +326,13 @@ export const resetReplayStateHandler = (context) => (req, res) => {
 export const activateReadModelHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
   const correlationId = req.body?.correlationId || nanoid();
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
   if (context.activator) {
-    // Use the admin service's orchestration: message bus → query RM → CP catchup
     context.activator.activateReadModel(readModelName).catch((err) => {
       const log = getLogger('Admin/RM', correlationId);
       log.error(
@@ -340,8 +366,7 @@ export const activateReadModelHandler = (context) => (req, res) => {
 
 export const stopReadModelHandler = (context) => (req, res) => {
   const { readModelName } = req.params;
-  const correlationId = req.body?.correlationId || nanoid();
-  const rm = context.readModels[readModelName];
+  const rm = resolveReadModel(context, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -358,7 +383,7 @@ export const stopReadModelHandler = (context) => (req, res) => {
     return;
   }
 
-  context.lifecycleManager.stop(readModelName, correlationId);
+  context.lifecycleManager.stop(readModelName, nanoid());
   res.json({ status: 'stopped', readModel: readModelName });
 };
 
@@ -366,7 +391,8 @@ export const activateAllHandler = (context) => (req, res) => {
   const correlationId = req.body?.correlationId || nanoid();
 
   if (context.activator) {
-    const allNames = Object.keys(context.readModels);
+    const discovered = context.activator.getDiscoveredReadModels();
+    const allNames = Object.keys(discovered);
     allNames.forEach((name) => {
       context.activator.activateReadModel(name).catch((err) => {
         const log = getLogger('Admin/RM', correlationId);
@@ -395,5 +421,3 @@ export const activateAllHandler = (context) => (req, res) => {
 
   res.status(202).json({ status: 'activating', readModels: activated });
 };
-
-export const __testing__ = { detectSharedCollections };

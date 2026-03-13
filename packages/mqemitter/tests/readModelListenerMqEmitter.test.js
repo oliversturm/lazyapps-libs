@@ -194,6 +194,128 @@ describe('readModelListenerMqEmitter', () => {
     );
   });
 
+  test('subscribes to adminQuery topic', () => {
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        expect(mockEmitter.on).toHaveBeenCalledWith(
+          'adminQuery',
+          expect.any(Function),
+        );
+      },
+    );
+  });
+
+  test('adminQuery returns read model status data', () => {
+    context.projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      getFifoQueueSize: vi.fn().mockReturnValue(0),
+    };
+    context.lifecycleManager = {
+      getState: vi.fn().mockReturnValue('live'),
+    };
+    context.readModels.users.collections = ['users_table'];
+    context.readModels.users.lastProjectedEventTimestamp = 999;
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminQuery'](
+          {
+            payload: {
+              correlationId: 'corr-adm',
+              replyTopic: 'admin-reply-123',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'admin-reply-123',
+          payload: {
+            correlationId: 'corr-adm',
+            result: [
+              {
+                name: 'users',
+                lastProjectedEventTimestamp: 999,
+                status: 'active',
+                collections: ['users_table'],
+                state: 'live',
+                fifoQueueSize: 0,
+              },
+            ],
+          },
+        });
+      },
+    );
+  });
+
+  test('adminQuery marks replaying read models', () => {
+    context.projectionHandler = {
+      getReadModelReplayStates: vi.fn().mockReturnValue({ users: true }),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminQuery'](
+          {
+            payload: {
+              correlationId: 'corr-adm',
+              replyTopic: 'admin-reply-456',
+            },
+          },
+          cb,
+        );
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: expect.objectContaining({
+              result: expect.arrayContaining([
+                expect.objectContaining({
+                  name: 'users',
+                  status: 'replaying',
+                }),
+              ]),
+            }),
+          }),
+        );
+      },
+    );
+  });
+
+  test('adminQuery works without projectionHandler', () => {
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminQuery'](
+          {
+            payload: {
+              correlationId: 'corr-adm',
+              replyTopic: 'admin-reply-789',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        expect(mockEmitter.emit).toHaveBeenCalledWith(
+          expect.objectContaining({
+            topic: 'admin-reply-789',
+            payload: expect.objectContaining({
+              result: expect.arrayContaining([
+                expect.objectContaining({
+                  name: 'users',
+                  status: 'active',
+                }),
+              ]),
+            }),
+          }),
+        );
+      },
+    );
+  });
+
   test('resolver error is caught and logged', () => {
     mockResolver.mockRejectedValue(new Error('resolver failed'));
 

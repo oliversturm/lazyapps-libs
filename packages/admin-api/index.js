@@ -8,11 +8,14 @@ import {
 import {
   statusHandler,
   readModelsHandler,
+  replayReadModelStatusHandler,
+  adminStatusHandler,
+  adminReadModelsHandler,
+  adminReplayReadModelStatusHandler,
   createBackupHandler,
   listBackupsHandler,
   deleteBackupHandler,
   prepareReplayHandler,
-  replayReadModelStatusHandler,
   resetReplayStateHandler,
   activateReadModelHandler,
   stopReadModelHandler,
@@ -64,8 +67,21 @@ export const installReadModelStatusApi = (context) => (app) => {
 };
 
 export const installReadModelAdminApi = (context) => (app) => {
-  app.get('/admin/status', statusHandler(context));
-  app.get('/admin/readmodels', readModelsHandler(context));
+  // Use admin-specific (activator-proxying) handlers when an activator is
+  // available; fall back to the RM-service handlers otherwise (e.g. when
+  // installReadModelAdminApi is mounted on an RM service directly).
+  const status = context.activator
+    ? adminStatusHandler(context)
+    : statusHandler(context);
+  const readmodels = context.activator
+    ? adminReadModelsHandler(context)
+    : readModelsHandler(context);
+  const replayStatus = context.activator
+    ? adminReplayReadModelStatusHandler(context)
+    : replayReadModelStatusHandler(context);
+
+  app.get('/admin/status', status);
+  app.get('/admin/readmodels', readmodels);
 
   app.post('/admin/backup/:readModelName', createBackupHandler(context));
   app.get('/admin/backups/:readModelName', listBackupsHandler(context));
@@ -75,10 +91,7 @@ export const installReadModelAdminApi = (context) => (app) => {
     '/admin/replay/:readModelName/prepare',
     prepareReplayHandler(context),
   );
-  app.get(
-    '/admin/replay/:readModelName/status',
-    replayReadModelStatusHandler(context),
-  );
+  app.get('/admin/replay/:readModelName/status', replayStatus);
   app.delete(
     '/admin/replay/:readModelName/state',
     resetReplayStateHandler(context),

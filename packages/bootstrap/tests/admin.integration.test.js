@@ -262,7 +262,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(body).toHaveLength(2);
       const customers = body.find((rm) => rm.name === 'customers');
       expect(customers.status).toBe('active');
-      expect(customers.collections).toEqual(['customers_overview']);
+      expect(customers.serviceId).toBe('INTEGRATION-TEST');
     }));
 
   test.skipIf(!hasMongoTools)('POST /admin/backup/:name creates a backup', () =>

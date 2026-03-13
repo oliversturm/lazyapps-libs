@@ -15,13 +15,18 @@ vi.mock('nanoid', () => ({
 const {
   statusHandler,
   readModelsHandler,
+  replayReadModelStatusHandler,
+  adminStatusHandler,
+  adminReadModelsHandler,
+  adminReplayReadModelStatusHandler,
   createBackupHandler,
   listBackupsHandler,
   deleteBackupHandler,
   prepareReplayHandler,
-  replayReadModelStatusHandler,
   resetReplayStateHandler,
-  __testing__,
+  activateReadModelHandler,
+  stopReadModelHandler,
+  activateAllHandler,
 } = await import('../readmodel-handlers.js');
 
 const mockReq = (body = {}, params = {}, query = {}) => ({
@@ -54,52 +59,9 @@ const mockEventBus = (replyPayload) => {
   };
 };
 
-describe('detectSharedCollections', () => {
-  test('detects shared collections between read models', () => {
-    const readModels = {
-      items: { collections: ['items', 'tags'] },
-      orders: { collections: ['items', 'orderLines'] },
-      stats: { collections: ['stats'] },
-    };
+// --- RM-service handler tests ---
 
-    const warnings = __testing__.detectSharedCollections(readModels, 'items', [
-      'items',
-      'tags',
-    ]);
-
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/orders/);
-    expect(warnings[0]).toMatch(/items/);
-  });
-
-  test('returns empty array when no shared collections', () => {
-    const readModels = {
-      items: { collections: ['items'] },
-      orders: { collections: ['orders'] },
-    };
-
-    const warnings = __testing__.detectSharedCollections(readModels, 'items', [
-      'items',
-    ]);
-
-    expect(warnings).toEqual([]);
-  });
-
-  test('uses read model name as default collection', () => {
-    const readModels = {
-      items: {},
-      orders: {},
-    };
-
-    const warnings = __testing__.detectSharedCollections(readModels, 'items', [
-      'items',
-    ]);
-
-    expect(warnings).toEqual([]);
-  });
-});
-
-describe('statusHandler', () => {
+describe('statusHandler (RM service)', () => {
   test('returns service status with read model list', () => {
     const context = {
       correlationConfig: { serviceId: 'TEST' },
@@ -153,14 +115,12 @@ describe('statusHandler', () => {
   });
 });
 
-describe('readModelsHandler', () => {
-  test('returns read model details with status', () => {
+describe('readModelsHandler (RM service)', () => {
+  test('returns read model details with serviceId', () => {
     const context = {
+      correlationConfig: { serviceId: 'RM/CUS' },
       readModels: {
-        items: {
-          lastProjectedEventTimestamp: 100,
-          collections: ['items', 'itemTags'],
-        },
+        items: { lastProjectedEventTimestamp: 100 },
         orders: { lastProjectedEventTimestamp: 200 },
       },
       projectionHandler: {
@@ -176,303 +136,21 @@ describe('readModelsHandler', () => {
     expect(res.json).toHaveBeenCalledWith([
       {
         name: 'items',
+        serviceId: 'RM/CUS',
         lastProjectedEventTimestamp: 100,
         status: 'replaying',
-        collections: ['items', 'itemTags'],
       },
       {
         name: 'orders',
+        serviceId: 'RM/CUS',
         lastProjectedEventTimestamp: 200,
         status: 'active',
-        collections: ['orders'],
       },
     ]);
   });
 });
 
-describe('createBackupHandler', () => {
-  let context;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    context = {
-      readModels: {
-        items: { collections: ['items'] },
-      },
-      eventBus: mockEventBus({
-        correlationId: 'test-corr-id',
-        backupId: 'backup_123_items',
-        timestamp: 123,
-        eventTimestamp: 100,
-      }),
-    };
-  });
-
-  test('returns 404 for unknown read model', () => {
-    const handler = createBackupHandler(context);
-    const req = mockReq({}, { readModelName: 'unknown' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-  });
-
-  test('delegates to RM via event bus and returns result', () => {
-    const handler = createBackupHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
-        'test-corr-id',
-      );
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({
-          backupId: 'backup_123_items',
-          timestamp: 123,
-          eventTimestamp: 100,
-        }),
-      );
-    });
-  });
-
-  test('returns 500 on error reply', () => {
-    context.eventBus = mockEventBus({ error: 'disk full' });
-    const handler = createBackupHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-});
-
-describe('listBackupsHandler', () => {
-  test('returns 404 for unknown read model', () => {
-    const context = {
-      readModels: {},
-      eventBus: mockEventBus(),
-    };
-    const handler = listBackupsHandler(context);
-    const req = mockReq({}, { readModelName: 'unknown' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-  });
-
-  test('lists backups via event bus delegation', () => {
-    const backups = [
-      { backupId: 'b1', timestamp: 100, eventTimestamp: 90 },
-      { backupId: 'b2', timestamp: 200, eventTimestamp: 190 },
-    ];
-    const context = {
-      readModels: { items: {} },
-      eventBus: mockEventBus({
-        correlationId: 'test-corr-id',
-        backups,
-      }),
-    };
-    const handler = listBackupsHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.json).toHaveBeenCalledWith(backups);
-    });
-  });
-});
-
-describe('deleteBackupHandler', () => {
-  test('returns 400 if readModelName query param missing', () => {
-    const context = {
-      eventBus: mockEventBus({ deleted: true }),
-    };
-    const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' }, {});
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
-
-  test('deletes backup via event bus and returns 204', () => {
-    const context = {
-      eventBus: mockEventBus({
-        correlationId: 'test-corr-id',
-        deleted: true,
-      }),
-    };
-    const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.sendStatus).toHaveBeenCalledWith(204);
-    });
-  });
-
-  test('returns 500 on error reply', () => {
-    const context = {
-      eventBus: mockEventBus({ error: 'not found' }),
-    };
-    const handler = deleteBackupHandler(context);
-    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-});
-
-describe('prepareReplayHandler', () => {
-  let context;
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    context = {
-      readModels: {
-        items: {
-          collections: ['items'],
-          lastProjectedEventTimestamp: 500,
-        },
-      },
-      projectionHandler: {
-        isReadModelReplaying: vi.fn().mockReturnValue(false),
-        setReadModelReplayState: vi.fn(),
-        clearReadModelReplayState: vi.fn(),
-      },
-      eventBus: mockEventBus({
-        fromTimestamp: 500,
-        preReplayBackupId: 'backup_pre_items',
-      }),
-      correlationConfig: { serviceId: 'test-service' },
-    };
-  });
-
-  test('returns 404 for unknown read model', () => {
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'unknown' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-  });
-
-  test('returns 409 if already replaying', () => {
-    context.projectionHandler.isReadModelReplaying.mockReturnValue(true);
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-  });
-
-  test('delegates prepare_for_replay to RM service via event bus', () => {
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(
-        context.projectionHandler.setReadModelReplayState,
-      ).toHaveBeenCalledWith('items', true);
-      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
-        'test-corr-id',
-      );
-      expect(res.json).toHaveBeenCalledWith({
-        status: 'prepared',
-        readModel: 'items',
-        fromTimestamp: 500,
-        preReplayBackupId: 'backup_pre_items',
-        warnings: [],
-        serviceId: 'test-service',
-      });
-    });
-  });
-
-  test('delegates fromScratch to RM service', () => {
-    context.eventBus = mockEventBus({
-      fromTimestamp: 0,
-      preReplayBackupId: 'backup_pre_items',
-    });
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({ fromScratch: true }, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
-        'test-corr-id',
-      );
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ fromTimestamp: 0 }),
-      );
-    });
-  });
-
-  test('delegates backupId to RM service', () => {
-    context.eventBus = mockEventBus({
-      fromTimestamp: 300,
-      preReplayBackupId: 'backup_pre_items',
-    });
-    const handler = prepareReplayHandler(context);
-    const req = mockReq(
-      { backupId: 'backup_old_items' },
-      { readModelName: 'items' },
-    );
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
-        'test-corr-id',
-      );
-      expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ fromTimestamp: 300 }),
-      );
-    });
-  });
-
-  test('detects shared collections and includes warnings', () => {
-    context.readModels.orders = {
-      collections: ['items', 'orderLines'],
-      lastProjectedEventTimestamp: 400,
-    };
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      const response = res.json.mock.calls[0][0];
-      expect(response.warnings).toHaveLength(1);
-      expect(response.warnings[0]).toMatch(/orders/);
-      expect(response.warnings[0]).toMatch(/items/);
-    });
-  });
-
-  test('clears replay state on delegation error', () => {
-    context.eventBus = mockEventBus({ error: 'backup failed' });
-    const handler = prepareReplayHandler(context);
-    const req = mockReq({}, { readModelName: 'items' });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(
-        context.projectionHandler.clearReadModelReplayState,
-      ).toHaveBeenCalledWith('items');
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-});
-
-describe('replayReadModelStatusHandler', () => {
+describe('replayReadModelStatusHandler (RM service)', () => {
   test('returns 404 for unknown read model', () => {
     const context = {
       readModels: {},
@@ -625,6 +303,522 @@ describe('replayReadModelStatusHandler', () => {
   });
 });
 
+// --- Admin-service handler tests ---
+
+describe('adminStatusHandler (admin service)', () => {
+  test('proxies to RM services via activator', () => {
+    const context = {
+      correlationConfig: { serviceId: 'ADMIN' },
+      projectionHandler: {
+        getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      },
+      activator: {
+        fetchReadModels: vi.fn().mockResolvedValue([
+          { name: 'items', lastProjectedEventTimestamp: 100, serviceId: 'RM1' },
+          {
+            name: 'orders',
+            lastProjectedEventTimestamp: 200,
+            serviceId: 'RM2',
+          },
+        ]),
+      },
+    };
+    const handler = adminStatusHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      const response = res.json.mock.calls[0][0];
+      expect(response.service).toBe('ADMIN');
+      expect(response.readModels).toHaveLength(2);
+      expect(response.readModels[0].name).toBe('items');
+    });
+  });
+
+  test('returns empty readModels on fetch failure', () => {
+    const context = {
+      correlationConfig: { serviceId: 'ADMIN' },
+      projectionHandler: {
+        getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      },
+      activator: {
+        fetchReadModels: vi
+          .fn()
+          .mockRejectedValue(new Error('connection refused')),
+      },
+    };
+    const handler = adminStatusHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      const response = res.json.mock.calls[0][0];
+      expect(response.readModels).toEqual([]);
+    });
+  });
+});
+
+describe('adminReadModelsHandler (admin service)', () => {
+  test('proxies to RM services via activator', () => {
+    const context = {
+      correlationConfig: { serviceId: 'ADMIN' },
+      projectionHandler: {
+        getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      },
+      activator: {
+        fetchReadModels: vi.fn().mockResolvedValue([
+          {
+            name: 'overview',
+            serviceId: 'RM/CUS',
+            lastProjectedEventTimestamp: 100,
+            status: 'active',
+          },
+          {
+            name: 'editing',
+            serviceId: 'RM/CUS',
+            lastProjectedEventTimestamp: 200,
+            status: 'active',
+          },
+        ]),
+      },
+    };
+    const handler = adminReadModelsHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(context.activator.fetchReadModels).toHaveBeenCalled();
+      const response = res.json.mock.calls[0][0];
+      expect(response).toHaveLength(2);
+      expect(response[0].serviceId).toBe('RM/CUS');
+    });
+  });
+
+  test('returns 503 when activator proxy fails', () => {
+    const context = {
+      correlationConfig: { serviceId: 'ADMIN' },
+      projectionHandler: {
+        getReadModelReplayStates: vi.fn().mockReturnValue({}),
+      },
+      activator: {
+        fetchReadModels: vi
+          .fn()
+          .mockRejectedValue(new Error('connection refused')),
+      },
+    };
+    const handler = adminReadModelsHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+  });
+});
+
+describe('adminReplayReadModelStatusHandler (admin service)', () => {
+  test('returns 404 for unknown read model', () => {
+    const context = {
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue(undefined),
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn(),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
+      },
+    };
+    const handler = adminReplayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('finds read model via activator discovery', () => {
+    const context = {
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+          lastProjectedEventTimestamp: 500,
+        }),
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
+      },
+    };
+    const handler = adminReplayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.json).toHaveBeenCalledWith({
+      readModel: 'items',
+      status: 'idle',
+      lastProjectedEventTimestamp: 500,
+    });
+  });
+});
+
+// --- Shared admin handler tests (backup, replay, activate, stop) ---
+// These handlers are mounted by installReadModelAdminApi, which is used by
+// both admin services (with activator) and RM services (with local readModels).
+
+describe('createBackupHandler', () => {
+  let context;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    context = {
+      readModels: {
+        items: {},
+      },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        backupId: 'backup_123_items',
+        timestamp: 123,
+        eventTimestamp: 100,
+      }),
+    };
+  });
+
+  test('returns 404 for unknown read model', () => {
+    const handler = createBackupHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('delegates to RM via event bus and returns result', () => {
+    const handler = createBackupHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          backupId: 'backup_123_items',
+          timestamp: 123,
+          eventTimestamp: 100,
+        }),
+      );
+    });
+  });
+
+  test('returns 500 on error reply', () => {
+    context.eventBus = mockEventBus({ error: 'disk full' });
+    const handler = createBackupHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  test('finds read model via activator discovery cache', () => {
+    const ctx = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+        }),
+      },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        backupId: 'backup_123_items',
+      }),
+    };
+    const handler = createBackupHandler(ctx);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(ctx.activator.getDiscoveredReadModel).toHaveBeenCalledWith(
+        'items',
+      );
+      expect(res.json).toHaveBeenCalled();
+    });
+  });
+});
+
+describe('listBackupsHandler', () => {
+  test('returns 404 for unknown read model', () => {
+    const context = {
+      readModels: {},
+      eventBus: mockEventBus(),
+    };
+    const handler = listBackupsHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('lists backups via event bus delegation', () => {
+    const backups = [
+      { backupId: 'b1', timestamp: 100, eventTimestamp: 90 },
+      { backupId: 'b2', timestamp: 200, eventTimestamp: 190 },
+    ];
+    const context = {
+      readModels: { items: {} },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        backups,
+      }),
+    };
+    const handler = listBackupsHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.json).toHaveBeenCalledWith(backups);
+    });
+  });
+});
+
+describe('deleteBackupHandler', () => {
+  test('returns 400 if readModelName query param missing', () => {
+    const context = {
+      eventBus: mockEventBus({ deleted: true }),
+    };
+    const handler = deleteBackupHandler(context);
+    const req = mockReq({}, { backupId: 'b1' }, {});
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('deletes backup via event bus and returns 204', () => {
+    const context = {
+      readModels: { items: {} },
+      eventBus: mockEventBus({
+        correlationId: 'test-corr-id',
+        deleted: true,
+      }),
+    };
+    const handler = deleteBackupHandler(context);
+    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.sendStatus).toHaveBeenCalledWith(204);
+    });
+  });
+
+  test('returns 500 on error reply', () => {
+    const context = {
+      readModels: { items: {} },
+      eventBus: mockEventBus({ error: 'not found' }),
+    };
+    const handler = deleteBackupHandler(context);
+    const req = mockReq({}, { backupId: 'b1' }, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+});
+
+describe('prepareReplayHandler', () => {
+  let context;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    context = {
+      readModels: {
+        items: {
+          lastProjectedEventTimestamp: 500,
+        },
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        setReadModelReplayState: vi.fn(),
+        clearReadModelReplayState: vi.fn(),
+      },
+      eventBus: mockEventBus({
+        fromTimestamp: 500,
+        preReplayBackupId: 'backup_pre_items',
+      }),
+      correlationConfig: { serviceId: 'test-service' },
+    };
+  });
+
+  test('returns 404 for unknown read model', () => {
+    const handler = prepareReplayHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('returns 409 if already replaying', () => {
+    context.projectionHandler.isReadModelReplaying.mockReturnValue(true);
+    const handler = prepareReplayHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('delegates prepare_for_replay to RM service via event bus', () => {
+    const handler = prepareReplayHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(
+        context.projectionHandler.setReadModelReplayState,
+      ).toHaveBeenCalledWith('items', true);
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'prepared',
+        readModel: 'items',
+        fromTimestamp: 500,
+        preReplayBackupId: 'backup_pre_items',
+        serviceId: 'test-service',
+      });
+    });
+  });
+
+  test('delegates fromScratch to RM service', () => {
+    context.eventBus = mockEventBus({
+      fromTimestamp: 0,
+      preReplayBackupId: 'backup_pre_items',
+    });
+    const handler = prepareReplayHandler(context);
+    const req = mockReq({ fromScratch: true }, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ fromTimestamp: 0 }),
+      );
+    });
+  });
+
+  test('delegates backupId to RM service', () => {
+    context.eventBus = mockEventBus({
+      fromTimestamp: 300,
+      preReplayBackupId: 'backup_pre_items',
+    });
+    const handler = prepareReplayHandler(context);
+    const req = mockReq(
+      { backupId: 'backup_old_items' },
+      { readModelName: 'items' },
+    );
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(context.eventBus.publishAdminInstruction).toHaveBeenCalledWith(
+        'test-corr-id',
+      );
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ fromTimestamp: 300 }),
+      );
+    });
+  });
+
+  test('uses serviceId from activator discovery cache', () => {
+    const ctx = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+          lastProjectedEventTimestamp: 500,
+        }),
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        setReadModelReplayState: vi.fn(),
+        clearReadModelReplayState: vi.fn(),
+      },
+      eventBus: mockEventBus({
+        fromTimestamp: 500,
+        preReplayBackupId: 'backup_pre_items',
+      }),
+      correlationConfig: { serviceId: 'ADMIN' },
+    };
+    const handler = prepareReplayHandler(ctx);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ serviceId: 'RM/CUS' }),
+      );
+    });
+  });
+
+  test('clears replay state on delegation error', () => {
+    context.eventBus = mockEventBus({ error: 'backup failed' });
+    const handler = prepareReplayHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(
+        context.projectionHandler.clearReadModelReplayState,
+      ).toHaveBeenCalledWith('items');
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+});
+
+describe('replayReadModelStatusHandler (via resolveReadModel)', () => {
+  test('finds read model via activator discovery', () => {
+    const context = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+          lastProjectedEventTimestamp: 500,
+        }),
+      },
+      projectionHandler: {
+        isReadModelReplaying: vi.fn().mockReturnValue(false),
+        getReadModelTerminalStatus: vi.fn().mockReturnValue(null),
+      },
+    };
+    const handler = replayReadModelStatusHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    // RM-service handler only checks context.readModels, so unknown
+    // read models from activator will 404
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+});
+
 describe('resetReplayStateHandler', () => {
   test('returns 404 for unknown read model', () => {
     const context = {
@@ -686,5 +880,259 @@ describe('resetReplayStateHandler', () => {
     expect(
       context.projectionHandler.clearReadModelReplayState,
     ).toHaveBeenCalledWith('orders');
+  });
+
+  test('finds read model via activator when not in local readModels', () => {
+    const context = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+        }),
+      },
+      projectionHandler: {
+        clearReadModelReplayState: vi.fn(),
+      },
+    };
+    const handler = resetReplayStateHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.activator.getDiscoveredReadModel).toHaveBeenCalledWith(
+      'items',
+    );
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'reset',
+      readModel: 'items',
+    });
+  });
+});
+
+describe('activateReadModelHandler', () => {
+  test('returns 404 for unknown read model', () => {
+    const context = {
+      readModels: {},
+    };
+    const handler = activateReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('activates via activator and returns 202', () => {
+    const context = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+        }),
+        activateReadModel: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const handler = activateReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.activator.activateReadModel).toHaveBeenCalledWith('items');
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'activating',
+      readModel: 'items',
+    });
+  });
+
+  test('activates via lifecycle manager when no activator', () => {
+    const context = {
+      readModels: { items: {} },
+      lifecycleManager: {
+        getState: vi.fn().mockReturnValue('waiting'),
+        activate: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const handler = activateReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.lifecycleManager.activate).toHaveBeenCalledWith(
+      'items',
+      'test-corr-id',
+    );
+    expect(res.status).toHaveBeenCalledWith(202);
+  });
+
+  test('returns 409 when lifecycle state prevents activation', () => {
+    const context = {
+      readModels: { items: {} },
+      lifecycleManager: {
+        getState: vi.fn().mockReturnValue('live'),
+      },
+    };
+    const handler = activateReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('returns 501 when no activator or lifecycle manager', () => {
+    const context = {
+      readModels: { items: {} },
+    };
+    const handler = activateReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(501);
+  });
+});
+
+describe('stopReadModelHandler', () => {
+  test('returns 404 for unknown read model', () => {
+    const context = {
+      readModels: {},
+    };
+    const handler = stopReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'unknown' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('stops via activator', () => {
+    const context = {
+      readModels: {},
+      activator: {
+        getDiscoveredReadModel: vi.fn().mockReturnValue({
+          name: 'items',
+          serviceId: 'RM/CUS',
+        }),
+        stopReadModel: vi.fn(),
+      },
+    };
+    const handler = stopReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.activator.stopReadModel).toHaveBeenCalledWith('items');
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'stopped',
+      readModel: 'items',
+    });
+  });
+
+  test('stops via lifecycle manager when no activator', () => {
+    const context = {
+      readModels: { items: {} },
+      lifecycleManager: {
+        stop: vi.fn(),
+      },
+    };
+    const handler = stopReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.lifecycleManager.stop).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'stopped',
+      readModel: 'items',
+    });
+  });
+
+  test('returns 501 when no activator or lifecycle manager', () => {
+    const context = {
+      readModels: { items: {} },
+    };
+    const handler = stopReadModelHandler(context);
+    const req = mockReq({}, { readModelName: 'items' });
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(501);
+  });
+});
+
+describe('activateAllHandler', () => {
+  test('activates all discovered read models via activator', () => {
+    const context = {
+      activator: {
+        getDiscoveredReadModels: vi.fn().mockReturnValue({
+          items: { name: 'items', serviceId: 'RM/CUS' },
+          orders: { name: 'orders', serviceId: 'RM/CUS' },
+        }),
+        activateReadModel: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const handler = activateAllHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.activator.activateReadModel).toHaveBeenCalledWith('items');
+    expect(context.activator.activateReadModel).toHaveBeenCalledWith('orders');
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(res.json).toHaveBeenCalledWith({
+      status: 'activating',
+      readModels: ['items', 'orders'],
+    });
+  });
+
+  test('activates via lifecycle manager when no activator', () => {
+    const context = {
+      readModels: {
+        items: {},
+        orders: {},
+      },
+      lifecycleManager: {
+        getState: vi
+          .fn()
+          .mockReturnValueOnce('waiting')
+          .mockReturnValueOnce('stopped'),
+        activate: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+    const handler = activateAllHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(context.lifecycleManager.activate).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(202);
+  });
+
+  test('returns 501 when no activator or lifecycle manager', () => {
+    const context = {
+      readModels: { items: {} },
+    };
+    const handler = activateAllHandler(context);
+    const req = mockReq();
+    const res = mockRes();
+
+    handler(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(501);
   });
 });

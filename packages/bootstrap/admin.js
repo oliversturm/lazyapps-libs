@@ -47,7 +47,7 @@ export const startAdmin = (
 
   const context = {
     correlationConfig,
-    readModels,
+    readModels: readModels || {},
     projectionHandler: createAdminProjectionHandler(),
   };
 
@@ -139,15 +139,20 @@ export const startAdmin = (
       return ctx;
     })
     .then((context) => {
-      // Create activator for orchestration via event bus
-      const activator = createActivator({
-        eventBus: context.eventBus,
-        correlationConfig,
-        token,
-        readModelServiceUrl,
-      });
+      // Create activator for orchestration via event bus (requires
+      // readModelServiceUrl to know which RM services to query)
+      const activator = readModelServiceUrl
+        ? createActivator({
+            eventBus: context.eventBus,
+            correlationConfig,
+            token,
+            readModelServiceUrl,
+          })
+        : null;
 
-      context.activator = activator;
+      if (activator) {
+        context.activator = activator;
+      }
 
       const app = expressApp();
       app.use(cors());
@@ -184,18 +189,34 @@ export const startAdmin = (
                 server.__testing__ = { context };
 
                 // Auto-activate read models after server is listening
-                if (autoActivate) {
-                  const rmNames =
-                    autoActivate === true
-                      ? Object.keys(readModels)
-                      : Array.isArray(autoActivate)
-                        ? autoActivate
-                        : Object.keys(readModels);
+                if (autoActivate && activator) {
+                  const explicitNames = Array.isArray(autoActivate)
+                    ? autoActivate
+                    : null;
 
-                  log.info(
-                    `Auto-activation configured for: ${rmNames.join(', ')}`,
-                  );
-                  activator.autoActivateAll(rmNames);
+                  if (explicitNames) {
+                    log.info(
+                      `Auto-activation configured for: ${explicitNames.join(', ')}`,
+                    );
+                    activator.autoActivateAll(explicitNames);
+                  } else {
+                    // Discover read models from RM services, then activate
+                    log.info(
+                      'Auto-activation: discovering read models from services',
+                    );
+                    activator
+                      .fetchReadModels()
+                      .then((rms) => {
+                        const names = rms.map((rm) => rm.name);
+                        log.info(`Discovered read models: ${names.join(', ')}`);
+                        return activator.autoActivateAll(names);
+                      })
+                      .catch((err) => {
+                        log.error(
+                          `Failed to discover read models for auto-activation: ${err.message}`,
+                        );
+                      });
+                  }
                 }
 
                 resolve(server);

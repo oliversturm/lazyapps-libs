@@ -115,6 +115,7 @@ describe('createActivator', () => {
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
         readModelServiceUrl: 'http://localhost:3002',
+        queryRetries: 0,
       });
 
       return activator.activateReadModel('unreachable').then(
@@ -122,7 +123,7 @@ describe('createActivator', () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('HTTP 500');
+          expect(err.message).toContain('not found');
         },
       );
     });
@@ -283,6 +284,7 @@ describe('createActivator', () => {
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
         readModelServiceUrl: 'http://localhost:3002',
+        queryRetries: 0,
       });
 
       return activator.queryReadModelState('missing').then(
@@ -295,13 +297,14 @@ describe('createActivator', () => {
       );
     });
 
-    test('rejects on HTTP error', () => {
+    test('rejects when all URLs fail', () => {
       mockFetchError(503);
 
       const activator = createActivator({
         eventBus,
         correlationConfig: { serviceId: 'TEST' },
         readModelServiceUrl: 'http://localhost:3002',
+        queryRetries: 0,
       });
 
       return activator.queryReadModelState('missing').then(
@@ -309,7 +312,135 @@ describe('createActivator', () => {
           throw new Error('should not resolve');
         },
         (err) => {
-          expect(err.message).toContain('HTTP 503');
+          expect(err.message).toContain('not found');
+        },
+      );
+    });
+
+    test('queries all unique URLs when readModelServiceUrl is a map', () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation((url) => {
+        callCount++;
+        if (url.includes('rm-customers')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                {
+                  name: 'overview',
+                  state: 'live',
+                  lastProjectedEventTimestamp: 100,
+                },
+              ]),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              {
+                name: 'orders',
+                state: 'live',
+                lastProjectedEventTimestamp: 200,
+              },
+            ]),
+        });
+      });
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: {
+          'rm-customers': 'http://rm-customers:3002',
+          'rm-orders': 'http://rm-orders:3003',
+        },
+      });
+
+      return activator.queryReadModelState('orders').then((rm) => {
+        expect(rm.name).toBe('orders');
+        expect(rm.state).toBe('live');
+        expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    test('deduplicates URLs in map', () => {
+      mockFetchResponse([
+        { name: 'overview', state: 'live', lastProjectedEventTimestamp: 0 },
+        {
+          name: 'customersOverview',
+          state: 'live',
+          lastProjectedEventTimestamp: 0,
+        },
+      ]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: {
+          svc1: 'http://same-host:3002',
+          svc2: 'http://same-host:3002',
+        },
+      });
+
+      return activator.queryReadModelState('overview').then((rm) => {
+        expect(rm.name).toBe('overview');
+        // Same URL should only be fetched once
+        expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    test('retries when read model not found initially', () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount <= 1) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve([]),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve([
+              {
+                name: 'customers',
+                state: 'live',
+                lastProjectedEventTimestamp: 100,
+              },
+            ]),
+        });
+      });
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.queryReadModelState('customers', 3, 10).then((rm) => {
+        expect(rm.name).toBe('customers');
+        expect(callCount).toBe(2);
+      });
+    });
+
+    test('rejects after exhausting retries', () => {
+      mockFetchResponse([]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.queryReadModelState('missing', 2, 10).then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('not found');
+          // Initial attempt + 2 retries = 3 calls
+          expect(globalThis.fetch).toHaveBeenCalledTimes(3);
         },
       );
     });
@@ -357,6 +488,138 @@ describe('createActivator', () => {
           (c) => c[0].type === 'activate',
         );
         expect(activateCall).toBeDefined();
+      });
+    });
+  });
+
+  describe('discovery cache', () => {
+    test('caches discovered read models after fetchReadModels', () => {
+      mockFetchResponse([
+        {
+          name: 'overview',
+          serviceId: 'RM/CUS',
+          lastProjectedEventTimestamp: 100,
+        },
+        {
+          name: 'editing',
+          serviceId: 'RM/CUS',
+          lastProjectedEventTimestamp: 200,
+        },
+      ]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.fetchReadModels().then(() => {
+        const rm = activator.getDiscoveredReadModel('overview');
+        expect(rm).toBeDefined();
+        expect(rm.serviceId).toBe('RM/CUS');
+        expect(rm.lastProjectedEventTimestamp).toBe(100);
+      });
+    });
+
+    test('returns undefined for unknown read model', () => {
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      expect(activator.getDiscoveredReadModel('nonexistent')).toBeUndefined();
+    });
+
+    test('getDiscoveredReadModels returns all cached entries', () => {
+      mockFetchResponse([
+        { name: 'overview', serviceId: 'RM/CUS' },
+        { name: 'orders', serviceId: 'RM/ORD' },
+      ]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.fetchReadModels().then(() => {
+        const all = activator.getDiscoveredReadModels();
+        expect(Object.keys(all)).toEqual(['overview', 'orders']);
+        expect(all.overview.serviceId).toBe('RM/CUS');
+        expect(all.orders.serviceId).toBe('RM/ORD');
+      });
+    });
+
+    test('updates cache on subsequent fetches', () => {
+      let callCount = 0;
+      globalThis.fetch = vi.fn().mockImplementation(() => {
+        callCount++;
+        const data =
+          callCount === 1
+            ? [
+                {
+                  name: 'overview',
+                  serviceId: 'RM/CUS',
+                  lastProjectedEventTimestamp: 100,
+                },
+              ]
+            : [
+                {
+                  name: 'overview',
+                  serviceId: 'RM/CUS',
+                  lastProjectedEventTimestamp: 500,
+                },
+              ];
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve(data),
+        });
+      });
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator
+        .fetchReadModels()
+        .then(() => {
+          expect(
+            activator.getDiscoveredReadModel('overview')
+              .lastProjectedEventTimestamp,
+          ).toBe(100);
+          return activator.fetchReadModels();
+        })
+        .then(() => {
+          expect(
+            activator.getDiscoveredReadModel('overview')
+              .lastProjectedEventTimestamp,
+          ).toBe(500);
+        });
+    });
+
+    test('populates cache during queryReadModelState', () => {
+      mockFetchResponse([
+        {
+          name: 'customers',
+          serviceId: 'RM/CUS',
+          state: 'live',
+          lastProjectedEventTimestamp: 100,
+        },
+      ]);
+
+      const activator = createActivator({
+        eventBus,
+        correlationConfig: { serviceId: 'TEST' },
+        readModelServiceUrl: 'http://localhost:3002',
+      });
+
+      return activator.queryReadModelState('customers').then(() => {
+        const rm = activator.getDiscoveredReadModel('customers');
+        expect(rm).toBeDefined();
+        expect(rm.serviceId).toBe('RM/CUS');
       });
     });
   });

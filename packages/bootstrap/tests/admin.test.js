@@ -170,13 +170,22 @@ describe('startAdmin', () => {
     );
   });
 
-  test('context includes activator for orchestration', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+  test('context includes activator when readModelServiceUrl is provided', () =>
+    startAdmin(
+      { serviceId: 'TEST' },
+      { ...config, readModelServiceUrl: 'http://localhost:3002' },
+    ).then(() => {
       const context = mockInstallReadModelAdminApi.mock.calls[0][0];
       expect(context.activator).toBeDefined();
       expect(context.activator.activateReadModel).toBeInstanceOf(Function);
       expect(context.activator.stopReadModel).toBeInstanceOf(Function);
       expect(context.activator.signalCpReady).toBeInstanceOf(Function);
+    }));
+
+  test('context has no activator when readModelServiceUrl is not provided', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      expect(context.activator).toBeUndefined();
     }));
 
   test('subscribes to system messages when available', () => {

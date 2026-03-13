@@ -8,34 +8,83 @@ export const createActivator = ({
   correlationConfig,
   token,
   readModelServiceUrl,
+  queryRetries = 5,
+  queryRetryDelayMs = 2000,
 }) => {
-  const queryReadModelState = (readModelName) => {
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
+  const discoveredReadModels = {};
 
-    if (!readModelServiceUrl) {
+  const getServiceUrls = () => {
+    if (typeof readModelServiceUrl === 'string') {
+      return [readModelServiceUrl];
+    }
+    if (typeof readModelServiceUrl === 'object' && readModelServiceUrl) {
+      return [...new Set(Object.values(readModelServiceUrl))];
+    }
+    return [];
+  };
+
+  const fetchReadModels = (log) => {
+    const urls = getServiceUrls();
+    if (urls.length === 0) {
       return Promise.reject(
         new Error('readModelServiceUrl is required for queryReadModelState'),
       );
     }
 
-    const url = `${readModelServiceUrl}/admin/readmodels`;
     const headers = { 'Content-Type': 'application/json' };
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    return fetch(url, { headers })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status} from ${url}`);
+    return Promise.all(
+      urls.map((baseUrl) => {
+        const url = `${baseUrl}/admin/readmodels`;
+        return fetch(url, { headers })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`HTTP ${response.status} from ${url}`);
+            }
+            return response.json();
+          })
+          .catch((err) => {
+            log.warn(`Failed to query ${url}: ${err.message}`);
+            return [];
+          });
+      }),
+    ).then((results) => {
+      const flat = results.flat();
+      flat.forEach((rm) => {
+        if (rm.name) {
+          discoveredReadModels[rm.name] = rm;
         }
-        return response.json();
-      })
-      .then((readModels) => {
+      });
+      return flat;
+    });
+  };
+
+  const getDiscoveredReadModel = (name) => discoveredReadModels[name];
+
+  const getDiscoveredReadModels = () => ({ ...discoveredReadModels });
+
+  const queryReadModelState = (
+    readModelName,
+    retries = queryRetries,
+    retryDelayMs = queryRetryDelayMs,
+  ) => {
+    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
+    const log = getLogger('Admin/Activator', correlationId);
+
+    const attempt = (attemptsLeft) =>
+      fetchReadModels(log).then((readModels) => {
         const rm = readModelName
           ? readModels.find((r) => r.name === readModelName)
           : readModels[0];
+        if (!rm && attemptsLeft > 0) {
+          log.warn(
+            `Read model '${readModelName}' not found, retrying (${attemptsLeft} left)`,
+          );
+          return delay(retryDelayMs).then(() => attempt(attemptsLeft - 1));
+        }
         if (!rm) {
           throw new Error(
             `Read model '${readModelName}' not found in HTTP response`,
@@ -44,6 +93,8 @@ export const createActivator = ({
         log.debug(`Read model '${readModelName}' state: ${JSON.stringify(rm)}`);
         return rm;
       });
+
+    return attempt(retries);
   };
 
   const activateReadModel = (readModelName) => {
@@ -237,5 +288,9 @@ export const createActivator = ({
     queryReadModelState,
     signalCpReady,
     autoActivateAll,
+    getDiscoveredReadModel,
+    getDiscoveredReadModels,
+    fetchReadModels: () =>
+      fetchReadModels(getLogger('Admin/Activator', 'DISCOVER')),
   };
 };

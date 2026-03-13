@@ -85,6 +85,40 @@ export const readModelListenerMqEmitter =
 
           cb();
         });
+
+        mq.on('adminQuery', ({ payload }, cb) => {
+          let { correlationId, replyTopic } = payload;
+          if (!correlationId) {
+            correlationId = `${
+              context.correlationConfig?.serviceId || 'UNK'
+            }-${nanoid()}`;
+          }
+
+          const log = getLogger('RM/LS', correlationId);
+          log.debug(`Admin query received (reply ${replyTopic})`);
+
+          const replayStates =
+            context.projectionHandler?.getReadModelReplayStates() || {};
+
+          const result = Object.entries(context.readModels).map(
+            ([name, rm]) => ({
+              name,
+              lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+              status: replayStates[name] ? 'replaying' : 'active',
+              collections: rm.collections || [name],
+              state: context.lifecycleManager?.getState(name),
+              fifoQueueSize:
+                context.projectionHandler?.getFifoQueueSize?.(name),
+            }),
+          );
+
+          mq.emit({
+            topic: replyTopic,
+            payload: { correlationId, result },
+          });
+
+          cb();
+        });
       })
       .then((res) => {
         initLog.debug(`Read model listener active`);
