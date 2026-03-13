@@ -22,13 +22,13 @@
 
   // Replay state
   let prepareResult = $state(null);
-  let targetServiceId = $state(null);
+  let targetEndpointName = $state(data.endpointName || null);
   let replayProgress = $state(null);
   let pollTimer = $state(null);
 
   const loadBackups = () => {
     api
-      .listBackups('', data.name)
+      .listBackups('', targetEndpointName, data.name)
       .then((result) => {
         backups = result;
       })
@@ -39,7 +39,7 @@
 
   const checkExistingReplay = () => {
     api
-      .getReplayReadModelStatus('', data.name)
+      .getReplayReadModelStatus('', targetEndpointName, data.name)
       .then((status) => {
         if (status && status.status === 'in_progress') {
           step = 'replaying';
@@ -69,11 +69,11 @@
     if (replayMode === 'fromBackup') options.backupId = selectedBackupId;
 
     api
-      .prepareReplay('', data.name, options)
+      .prepareReplay('', targetEndpointName, data.name, options)
       .then((result) => {
         prepareResult = result;
         fromTimestamp = result.fromTimestamp || 0;
-        targetServiceId = result.serviceId || null;
+        targetEndpointName = result.endpointName || targetEndpointName;
         warnings = result.warnings || [];
         step = 'prepared';
       })
@@ -87,7 +87,7 @@
     error = null;
 
     api
-      .startReplay(data.name, fromTimestamp, toTimestamp, targetServiceId)
+      .startReplay(data.name, fromTimestamp, toTimestamp, targetEndpointName)
       .then(() => {
         step = 'replaying';
         startPolling();
@@ -127,8 +127,9 @@
 
   const pollStatus = () => {
     Promise.all([
-      api.getReplayStatus(data.name).catch(() => null),
-      api.getReplayReadModelStatus('', data.name).catch(() => null),
+      api.getReplayStatus(targetEndpointName, data.name).catch(() => null),
+      api.getReplayReadModelStatus('', targetEndpointName, data.name)
+        .catch(() => null),
     ]).then(([cpStatus, rmStatus]) => {
       replayProgress = {
         eventsPublished: cpStatus?.eventsPublished || 0,
@@ -152,7 +153,7 @@
     error = null;
     warnings = [];
     prepareResult = null;
-    targetServiceId = null;
+    targetEndpointName = data.endpointName || null;
     replayProgress = null;
     selectedBackupId = null;
     replayMode = 'current';

@@ -71,7 +71,7 @@ export const mqEmitterRedis =
           return state;
         },
         publishReplayEvent:
-          (correlationId) => (targetReadModel, event, targetServiceId) => {
+          (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/Redis', correlationId);
             log.debug(`Publishing replay event for ${targetReadModel}`);
             mq.emit({
@@ -80,12 +80,12 @@ export const mqEmitterRedis =
                 correlationId,
                 targetReadModel,
                 event,
-                ...(targetServiceId && { targetServiceId }),
+                ...(targetEndpointName && { targetEndpointName }),
               },
             });
           },
         publishCatchupEvent:
-          (correlationId) => (targetReadModel, event, targetServiceId) => {
+          (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/Redis', correlationId);
             log.debug(`Publishing catch-up event for ${targetReadModel}`);
             mq.emit({
@@ -94,7 +94,7 @@ export const mqEmitterRedis =
                 correlationId,
                 targetReadModel,
                 event,
-                ...(targetServiceId && { targetServiceId }),
+                ...(targetEndpointName && { targetEndpointName }),
               },
             });
           },

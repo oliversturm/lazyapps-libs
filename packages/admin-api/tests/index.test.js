@@ -33,7 +33,7 @@ describe('installReplayAdminApi', () => {
       expect.any(Function),
     );
     expect(app.get).toHaveBeenCalledWith(
-      '/api/admin/replayStatus/:readModel',
+      '/api/admin/replayStatus/:endpointName/:readModel',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
@@ -66,11 +66,11 @@ describe('installReadModelAdminApi', () => {
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/backup/:readModelName',
+      '/admin/backup/:endpointName/:readModelName',
       expect.any(Function),
     );
     expect(app.get).toHaveBeenCalledWith(
-      '/admin/backups/:readModelName',
+      '/admin/backups/:endpointName/:readModelName',
       expect.any(Function),
     );
     expect(app.delete).toHaveBeenCalledWith(
@@ -78,23 +78,23 @@ describe('installReadModelAdminApi', () => {
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/replay/:readModelName/prepare',
+      '/admin/replay/:endpointName/:readModelName/prepare',
       expect.any(Function),
     );
     expect(app.get).toHaveBeenCalledWith(
-      '/admin/replay/:readModelName/status',
+      '/admin/replay/:endpointName/:readModelName/status',
       expect.any(Function),
     );
     expect(app.delete).toHaveBeenCalledWith(
-      '/admin/replay/:readModelName/state',
+      '/admin/replay/:endpointName/:readModelName/state',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/readmodels/:readModelName/activate',
+      '/admin/readmodels/:endpointName/:readModelName/activate',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/readmodels/:readModelName/stop',
+      '/admin/readmodels/:endpointName/:readModelName/stop',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
@@ -118,15 +118,15 @@ describe('installCatchupAdminApi', () => {
     installCatchupAdminApi(context)(app);
 
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/catchup/:readModelName/start',
+      '/admin/catchup/:endpointName/:readModelName/start',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledWith(
-      '/admin/catchup/:readModelName/cancel',
+      '/admin/catchup/:endpointName/:readModelName/cancel',
       expect.any(Function),
     );
     expect(app.get).toHaveBeenCalledWith(
-      '/admin/catchup/:readModelName/status',
+      '/admin/catchup/:endpointName/:readModelName/status',
       expect.any(Function),
     );
     expect(app.post).toHaveBeenCalledTimes(2);

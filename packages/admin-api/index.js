@@ -37,7 +37,10 @@ export const installReadyAdminApi = (context) => (app) => {
 
 export const installReplayAdminApi = (context) => (app) => {
   app.post('/api/admin/startReplay', startReplayHandler(context));
-  app.get('/api/admin/replayStatus/:readModel', replayStatusHandler(context));
+  app.get(
+    '/api/admin/replayStatus/:endpointName/:readModel',
+    replayStatusHandler(context),
+  );
   app.post('/api/admin/cancelReplay', cancelReplayHandler(context));
   app.post(
     '/api/admin/commandReplayState',
@@ -46,13 +49,16 @@ export const installReplayAdminApi = (context) => (app) => {
 };
 
 export const installCatchupAdminApi = (context) => (app) => {
-  app.post('/admin/catchup/:readModelName/start', startCatchupHandler(context));
   app.post(
-    '/admin/catchup/:readModelName/cancel',
+    '/admin/catchup/:endpointName/:readModelName/start',
+    startCatchupHandler(context),
+  );
+  app.post(
+    '/admin/catchup/:endpointName/:readModelName/cancel',
     cancelCatchupHandler(context),
   );
   app.get(
-    '/admin/catchup/:readModelName/status',
+    '/admin/catchup/:endpointName/:readModelName/status',
     getCatchupStatusHandler(context),
   );
 };
@@ -61,7 +67,7 @@ export const installReadModelStatusApi = (context) => (app) => {
   app.get('/admin/status', statusHandler(context));
   app.get('/admin/readmodels', readModelsHandler(context));
   app.get(
-    '/admin/replay/:readModelName/status',
+    '/admin/replay/:endpointName/:readModelName/status',
     replayReadModelStatusHandler(context),
   );
 };
@@ -83,27 +89,34 @@ export const installReadModelAdminApi = (context) => (app) => {
   app.get('/admin/status', status);
   app.get('/admin/readmodels', readmodels);
 
-  app.post('/admin/backup/:readModelName', createBackupHandler(context));
-  app.get('/admin/backups/:readModelName', listBackupsHandler(context));
+  app.post(
+    '/admin/backup/:endpointName/:readModelName',
+    createBackupHandler(context),
+  );
+  app.get(
+    '/admin/backups/:endpointName/:readModelName',
+    listBackupsHandler(context),
+  );
   app.delete('/admin/backup/:backupId', deleteBackupHandler(context));
 
   app.post(
-    '/admin/replay/:readModelName/prepare',
+    '/admin/replay/:endpointName/:readModelName/prepare',
     prepareReplayHandler(context),
   );
-  app.get('/admin/replay/:readModelName/status', replayStatus);
+  app.get('/admin/replay/:endpointName/:readModelName/status', replayStatus);
   app.delete(
-    '/admin/replay/:readModelName/state',
+    '/admin/replay/:endpointName/:readModelName/state',
     resetReplayStateHandler(context),
   );
 
+  // activate-all MUST be before parameterized routes
+  app.post('/admin/readmodels/activate-all', activateAllHandler(context));
   app.post(
-    '/admin/readmodels/:readModelName/activate',
+    '/admin/readmodels/:endpointName/:readModelName/activate',
     activateReadModelHandler(context),
   );
   app.post(
-    '/admin/readmodels/:readModelName/stop',
+    '/admin/readmodels/:endpointName/:readModelName/stop',
     stopReadModelHandler(context),
   );
-  app.post('/admin/readmodels/activate-all', activateAllHandler(context));
 };

@@ -130,6 +130,7 @@ const createInlineAdminInstructionHandler = (context) => {
           const rm = context.readModels[name];
           return {
             name,
+            endpointName: context.endpointName,
             lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
             state: lm.getState(name),
             collections: rm.collections || [name],
@@ -206,6 +207,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
           { serviceId: 'RMQ-RM' },
           {
             readModels,
+            endpointName: 'rm',
             storage: readModelStorageMongo({
               url: connectionString,
               database: 'rmq-rm',
@@ -359,7 +361,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
       )
       // Activate via admin server (orchestrator uses RabbitMQ)
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -401,7 +403,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
 
   test('catch-up after gap via RabbitMQ', () =>
     // Stop items RM
-    fetchAdmin('/admin/readmodels/items/stop', {
+    fetchAdmin('/admin/readmodels/rm/items/stop', {
       method: 'POST',
       body: '{}',
     })
@@ -426,7 +428,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
       )
       // Re-activate
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -490,7 +492,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
       }));
 
   test('admin stop instruction via RabbitMQ', () =>
-    fetchAdmin('/admin/readmodels/items/stop', {
+    fetchAdmin('/admin/readmodels/rm/items/stop', {
       method: 'POST',
       body: '{}',
     }).then(() =>

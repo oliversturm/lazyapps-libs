@@ -497,12 +497,12 @@ describe('createActivator', () => {
       mockFetchResponse([
         {
           name: 'overview',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           lastProjectedEventTimestamp: 100,
         },
         {
           name: 'editing',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           lastProjectedEventTimestamp: 200,
         },
       ]);
@@ -514,9 +514,9 @@ describe('createActivator', () => {
       });
 
       return activator.fetchReadModels().then(() => {
-        const rm = activator.getDiscoveredReadModel('overview');
+        const rm = activator.getDiscoveredReadModel('RM/CUS/overview');
         expect(rm).toBeDefined();
-        expect(rm.serviceId).toBe('RM/CUS');
+        expect(rm.endpointName).toBe('RM/CUS');
         expect(rm.lastProjectedEventTimestamp).toBe(100);
       });
     });
@@ -533,8 +533,8 @@ describe('createActivator', () => {
 
     test('getDiscoveredReadModels returns all cached entries', () => {
       mockFetchResponse([
-        { name: 'overview', serviceId: 'RM/CUS' },
-        { name: 'orders', serviceId: 'RM/ORD' },
+        { name: 'overview', endpointName: 'RM/CUS' },
+        { name: 'orders', endpointName: 'RM/ORD' },
       ]);
 
       const activator = createActivator({
@@ -545,9 +545,9 @@ describe('createActivator', () => {
 
       return activator.fetchReadModels().then(() => {
         const all = activator.getDiscoveredReadModels();
-        expect(Object.keys(all)).toEqual(['overview', 'orders']);
-        expect(all.overview.serviceId).toBe('RM/CUS');
-        expect(all.orders.serviceId).toBe('RM/ORD');
+        expect(Object.keys(all)).toEqual(['RM/CUS/overview', 'RM/ORD/orders']);
+        expect(all['RM/CUS/overview'].endpointName).toBe('RM/CUS');
+        expect(all['RM/ORD/orders'].endpointName).toBe('RM/ORD');
       });
     });
 
@@ -560,14 +560,14 @@ describe('createActivator', () => {
             ? [
                 {
                   name: 'overview',
-                  serviceId: 'RM/CUS',
+                  endpointName: 'RM/CUS',
                   lastProjectedEventTimestamp: 100,
                 },
               ]
             : [
                 {
                   name: 'overview',
-                  serviceId: 'RM/CUS',
+                  endpointName: 'RM/CUS',
                   lastProjectedEventTimestamp: 500,
                 },
               ];
@@ -587,14 +587,14 @@ describe('createActivator', () => {
         .fetchReadModels()
         .then(() => {
           expect(
-            activator.getDiscoveredReadModel('overview')
+            activator.getDiscoveredReadModel('RM/CUS/overview')
               .lastProjectedEventTimestamp,
           ).toBe(100);
           return activator.fetchReadModels();
         })
         .then(() => {
           expect(
-            activator.getDiscoveredReadModel('overview')
+            activator.getDiscoveredReadModel('RM/CUS/overview')
               .lastProjectedEventTimestamp,
           ).toBe(500);
         });
@@ -604,7 +604,7 @@ describe('createActivator', () => {
       mockFetchResponse([
         {
           name: 'customers',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           state: 'live',
           lastProjectedEventTimestamp: 100,
         },
@@ -617,9 +617,9 @@ describe('createActivator', () => {
       });
 
       return activator.queryReadModelState('customers').then(() => {
-        const rm = activator.getDiscoveredReadModel('customers');
+        const rm = activator.getDiscoveredReadModel('RM/CUS/customers');
         expect(rm).toBeDefined();
-        expect(rm.serviceId).toBe('RM/CUS');
+        expect(rm.endpointName).toBe('RM/CUS');
       });
     });
   });

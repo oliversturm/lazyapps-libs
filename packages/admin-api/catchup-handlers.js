@@ -2,8 +2,8 @@ import { getLogger } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
 
 export const startCatchupHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
-  const { fromTimestamp, serviceId } = req.body;
+  const { endpointName, readModelName } = req.params;
+  const { fromTimestamp, targetEndpointName } = req.body;
   const correlationId = nanoid();
   const log = getLogger('Admin/CatchUp', correlationId);
 
@@ -13,7 +13,7 @@ export const startCatchupHandler = (context) => (req, res) => {
     type: 'start_catchup',
     readModel: readModelName,
     fromTimestamp: fromTimestamp || 0,
-    serviceId,
+    targetEndpointName: targetEndpointName || endpointName,
     correlationId,
   });
 
@@ -25,7 +25,7 @@ export const startCatchupHandler = (context) => (req, res) => {
 };
 
 export const cancelCatchupHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
   const correlationId = nanoid();
   const log = getLogger('Admin/CatchUp', correlationId);
 
@@ -41,17 +41,16 @@ export const cancelCatchupHandler = (context) => (req, res) => {
 };
 
 export const getCatchupStatusHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
+  const key = endpointName ? `${endpointName}/${readModelName}` : readModelName;
   // Catch-up status is tracked on the CP side; the admin service
   // monitors __system messages for CATCHUP_EVENTS_DONE / CATCHUP_CANCELLED.
   // Return what we know from the projection handler.
   const replayStates = context.projectionHandler.getReadModelReplayStates();
   const terminalStatus =
-    context.projectionHandler.getReadModelTerminalStatus(readModelName);
+    context.projectionHandler.getReadModelTerminalStatus(key);
   res.json({
     readModel: readModelName,
-    status: replayStates[readModelName]
-      ? 'in_progress'
-      : terminalStatus || 'idle',
+    status: replayStates[key] ? 'in_progress' : terminalStatus || 'idle',
   });
 };

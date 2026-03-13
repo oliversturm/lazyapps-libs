@@ -3,6 +3,17 @@ import { nanoid } from 'nanoid';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const parseIdentifier = (identifier) => {
+  const slashIndex = identifier.indexOf('/');
+  if (slashIndex === -1) {
+    return { endpointName: null, readModelName: identifier };
+  }
+  return {
+    endpointName: identifier.substring(0, slashIndex),
+    readModelName: identifier.substring(slashIndex + 1),
+  };
+};
+
 export const createActivator = ({
   eventBus,
   correlationConfig,
@@ -55,7 +66,10 @@ export const createActivator = ({
       const flat = results.flat();
       flat.forEach((rm) => {
         if (rm.name) {
-          discoveredReadModels[rm.name] = rm;
+          const key = rm.endpointName
+            ? `${rm.endpointName}/${rm.name}`
+            : rm.name;
+          discoveredReadModels[key] = rm;
         }
       });
       return flat;
@@ -67,78 +81,86 @@ export const createActivator = ({
   const getDiscoveredReadModels = () => ({ ...discoveredReadModels });
 
   const queryReadModelState = (
-    readModelName,
+    identifier,
     retries = queryRetries,
     retryDelayMs = queryRetryDelayMs,
   ) => {
+    const { endpointName, readModelName } = parseIdentifier(identifier);
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
+    const matchesRm = (r) => {
+      if (endpointName) {
+        return r.name === readModelName && r.endpointName === endpointName;
+      }
+      return r.name === readModelName;
+    };
+
     const attempt = (attemptsLeft) =>
       fetchReadModels(log).then((readModels) => {
-        const rm = readModelName
-          ? readModels.find((r) => r.name === readModelName)
-          : readModels[0];
+        const rm = identifier ? readModels.find(matchesRm) : readModels[0];
         if (!rm && attemptsLeft > 0) {
           log.warn(
-            `Read model '${readModelName}' not found, retrying (${attemptsLeft} left)`,
+            `Read model '${identifier}' not found, retrying (${attemptsLeft} left)`,
           );
           return delay(retryDelayMs).then(() => attempt(attemptsLeft - 1));
         }
         if (!rm) {
           throw new Error(
-            `Read model '${readModelName}' not found in HTTP response`,
+            `Read model '${identifier}' not found in HTTP response`,
           );
         }
-        log.debug(`Read model '${readModelName}' state: ${JSON.stringify(rm)}`);
+        log.debug(`Read model '${identifier}' state: ${JSON.stringify(rm)}`);
         return rm;
       });
 
     return attempt(retries);
   };
 
-  const activateReadModel = (readModelName) => {
+  const activateReadModel = (identifier) => {
+    const { endpointName, readModelName } = parseIdentifier(identifier);
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
-    log.info(`Starting activation orchestration for '${readModelName}'`);
+    log.info(`Starting activation orchestration for '${identifier}'`);
 
     // Step 1: Publish "activate" instruction via message bus __admin topic
     eventBus.publishAdminInstruction(correlationId)({
       type: 'activate',
       targetReadModel: readModelName,
+      ...(endpointName && { targetEndpointName: endpointName }),
       ...(token && { token }),
       correlationId,
     });
     log.info(
-      `Published activate instruction for '${readModelName}' on __admin topic`,
+      `Published activate instruction for '${identifier}' on __admin topic`,
     );
 
     // Step 2: Wait briefly for RM to process activation
     return delay(200)
       .then(() => {
         // Step 3: Query RM state via HTTP
-        log.info(`Querying RM state via HTTP for '${readModelName}'`);
-        return queryReadModelState(readModelName);
+        log.info(`Querying RM state via HTTP for '${identifier}'`);
+        return queryReadModelState(identifier);
       })
       .then((rm) => {
         const fromTimestamp = rm.lastProjectedEventTimestamp || 0;
         log.info(
-          `Read model '${readModelName}' fromTimestamp: ${fromTimestamp}, state: ${rm.state || 'unknown'}`,
+          `Read model '${identifier}' fromTimestamp: ${fromTimestamp}, ` +
+            `state: ${rm.state || 'unknown'}`,
         );
-        return fromTimestamp;
+        return { fromTimestamp, rmEndpointName: rm.endpointName };
       })
-      .then((fromTimestamp) => {
+      .then(({ fromTimestamp, rmEndpointName }) => {
         // Step 4: Start catch-up via event bus
         const catchupCorrelationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-        log.info(
-          `Starting catch-up for '${readModelName}' from ${fromTimestamp}`,
-        );
+        log.info(`Starting catch-up for '${identifier}' from ${fromTimestamp}`);
+        const ep = rmEndpointName || endpointName;
         eventBus.publishAdminInstruction(catchupCorrelationId)({
           type: 'start_catchup',
           readModel: readModelName,
           fromTimestamp,
-          serviceId: correlationConfig?.serviceId,
+          ...(ep && { targetEndpointName: ep }),
           ...(token && { token }),
           correlationId: catchupCorrelationId,
         });
@@ -150,46 +172,50 @@ export const createActivator = ({
       })
       .then((result) => {
         log.info(
-          `Catch-up started for '${readModelName}': ${JSON.stringify(result)}`,
+          `Catch-up started for '${identifier}': ` + JSON.stringify(result),
         );
         return result;
       })
       .catch((err) => {
         log.error(
-          `Activation orchestration failed for '${readModelName}': ${err.message}`,
+          `Activation orchestration failed for '${identifier}': ` + err.message,
         );
         throw err;
       });
   };
 
-  const stopReadModel = (readModelName) => {
+  const stopReadModel = (identifier) => {
+    const { endpointName, readModelName } = parseIdentifier(identifier);
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
-    log.info(`Publishing stop instruction for '${readModelName}'`);
+    log.info(`Publishing stop instruction for '${identifier}'`);
     eventBus.publishAdminInstruction(correlationId)({
       type: 'stop',
       targetReadModel: readModelName,
+      ...(endpointName && { targetEndpointName: endpointName }),
       ...(token && { token }),
       correlationId,
     });
   };
 
-  const restartReadModel = (readModelName) => {
+  const restartReadModel = (identifier) => {
+    const { endpointName, readModelName } = parseIdentifier(identifier);
     const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
     const log = getLogger('Admin/Activator', correlationId);
 
-    log.info(`Publishing restart instruction for '${readModelName}'`);
+    log.info(`Publishing restart instruction for '${identifier}'`);
     eventBus.publishAdminInstruction(correlationId)({
       type: 'restart',
       targetReadModel: readModelName,
+      ...(endpointName && { targetEndpointName: endpointName }),
       ...(token && { token }),
       correlationId,
     });
 
     // After restart, the RM will re-enter waiting → activating → catching-up.
     // We need to re-orchestrate catch-up after a brief delay.
-    return delay(500).then(() => activateReadModel(readModelName));
+    return delay(500).then(() => activateReadModel(identifier));
   };
 
   const signalCpReady = () => {

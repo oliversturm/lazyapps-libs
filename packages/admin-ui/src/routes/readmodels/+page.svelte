@@ -81,7 +81,7 @@
           <tr>
             <td class="px-6 py-4 text-sm font-medium text-gray-900">
               <a
-                href="/readmodels/{rm.name}?service={rm.serviceName}"
+                href="/readmodels/{rm.name}?service={rm.serviceName}&endpointName={rm.endpointName}"
                 class="text-blue-600 hover:underline">{rm.name}</a
               >
             </td>
@@ -96,12 +96,12 @@
             </td>
             <td class="px-6 py-4 text-right space-x-3">
               <a
-                href="/readmodels/{rm.name}/backups?service={rm.serviceName}"
+                href="/readmodels/{rm.name}/backups?service={rm.serviceName}&endpointName={rm.endpointName}"
                 class="text-sm text-gray-600 hover:text-gray-900"
                 >Backups</a
               >
               <a
-                href="/readmodels/{rm.name}/replay?service={rm.serviceName}"
+                href="/readmodels/{rm.name}/replay?service={rm.serviceName}&endpointName={rm.endpointName}"
                 class="text-sm text-blue-600 hover:text-blue-800"
                 >Replay</a
               >

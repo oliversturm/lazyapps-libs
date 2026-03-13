@@ -147,7 +147,7 @@ describe('commandProcessorEventBusMqEmitter', () => {
     );
   });
 
-  test('publishReplayEvent includes targetServiceId when provided', () => {
+  test('publishReplayEvent includes targetEndpointName when provided', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         const event = { type: 'ITEM_CREATED', timestamp: 12345 };
@@ -159,14 +159,14 @@ describe('commandProcessorEventBusMqEmitter', () => {
             correlationId: 'corr-1',
             targetReadModel: 'items',
             event,
-            targetServiceId: 'orders-service',
+            targetEndpointName: 'orders-service',
           },
         });
       },
     );
   });
 
-  test('publishReplayEvent omits targetServiceId when not provided', () => {
+  test('publishReplayEvent omits targetEndpointName when not provided', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         const event = { type: 'ITEM_CREATED', timestamp: 12345 };

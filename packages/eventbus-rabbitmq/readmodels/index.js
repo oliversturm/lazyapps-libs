@@ -106,13 +106,13 @@ export const rabbitMq = (config) => (context) => {
                   correlationId,
                   targetReadModel,
                   event,
-                  targetServiceId,
+                  targetEndpointName,
                 } = JSON.parse(msg.content.toString());
                 const log = getLogger('RM/EB/Rabbit/Replay', correlationId);
                 if (
-                  targetServiceId &&
-                  context.correlationConfig &&
-                  targetServiceId !== context.correlationConfig.serviceId
+                  targetEndpointName &&
+                  context.endpointName &&
+                  targetEndpointName !== context.endpointName
                 ) {
                   return;
                 }
@@ -130,13 +130,13 @@ export const rabbitMq = (config) => (context) => {
                   correlationId,
                   targetReadModel,
                   event,
-                  targetServiceId,
+                  targetEndpointName,
                 } = JSON.parse(msg.content.toString());
                 const log = getLogger('RM/EB/Rabbit/CatchUp', correlationId);
                 if (
-                  targetServiceId &&
-                  context.correlationConfig &&
-                  targetServiceId !== context.correlationConfig.serviceId
+                  targetEndpointName &&
+                  context.endpointName &&
+                  targetEndpointName !== context.endpointName
                 ) {
                   return;
                 }
@@ -164,13 +164,12 @@ export const rabbitMq = (config) => (context) => {
                   return;
                 }
                 if (
-                  instruction.targetServiceId &&
-                  context.correlationConfig &&
-                  instruction.targetServiceId !==
-                    context.correlationConfig.serviceId
+                  instruction.targetEndpointName &&
+                  context.endpointName &&
+                  instruction.targetEndpointName !== context.endpointName
                 ) {
                   log.debug(
-                    `Ignoring admin instruction for service '${instruction.targetServiceId}'`,
+                    `Ignoring admin instruction for endpoint '${instruction.targetEndpointName}'`,
                   );
                   return;
                 }

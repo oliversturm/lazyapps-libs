@@ -5,6 +5,7 @@ import { createCommandHandler } from './commands.js';
 import { createReadModelReplayHandler } from './replayHandler.js';
 import { createLifecycleManager } from './lifecycleManager.js';
 import { createCatchupHandler } from './catchupHandler.js';
+import { getLogger } from '@lazyapps/logger';
 
 export const initializeContext = (
   correlationConfig,
@@ -16,10 +17,23 @@ export const initializeContext = (
     commandSender,
     backup,
     lifecycle,
+    endpointName,
   },
-) =>
-  storage()
-    .then((storage) => ({ storage, readModels, correlationConfig }))
+) => {
+  if (!endpointName) {
+    const log = getLogger('RM/Context', 'INIT');
+    log.warn(
+      'No endpointName configured — replay/catchup filtering ' +
+        'will not be scoped to this service instance',
+    );
+  }
+  return storage()
+    .then((storage) => ({
+      storage,
+      readModels,
+      correlationConfig,
+      ...(endpointName && { endpointName }),
+    }))
     .then((context) =>
       context.storage
         .readLastProjectedEventTimestamps(readModels)
@@ -98,3 +112,4 @@ export const initializeContext = (
       }
       return eventBus(context).then(() => context);
     });
+};

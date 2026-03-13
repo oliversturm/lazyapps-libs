@@ -116,9 +116,10 @@ describe('statusHandler (RM service)', () => {
 });
 
 describe('readModelsHandler (RM service)', () => {
-  test('returns read model details with serviceId', () => {
+  test('returns read model details with endpointName', () => {
     const context = {
       correlationConfig: { serviceId: 'RM/CUS' },
+      endpointName: 'RM/CUS',
       readModels: {
         items: { lastProjectedEventTimestamp: 100 },
         orders: { lastProjectedEventTimestamp: 200 },
@@ -136,13 +137,13 @@ describe('readModelsHandler (RM service)', () => {
     expect(res.json).toHaveBeenCalledWith([
       {
         name: 'items',
-        serviceId: 'RM/CUS',
+        endpointName: 'RM/CUS',
         lastProjectedEventTimestamp: 100,
         status: 'replaying',
       },
       {
         name: 'orders',
-        serviceId: 'RM/CUS',
+        endpointName: 'RM/CUS',
         lastProjectedEventTimestamp: 200,
         status: 'active',
       },
@@ -314,11 +315,15 @@ describe('adminStatusHandler (admin service)', () => {
       },
       activator: {
         fetchReadModels: vi.fn().mockResolvedValue([
-          { name: 'items', lastProjectedEventTimestamp: 100, serviceId: 'RM1' },
+          {
+            name: 'items',
+            lastProjectedEventTimestamp: 100,
+            endpointName: 'RM1',
+          },
           {
             name: 'orders',
             lastProjectedEventTimestamp: 200,
-            serviceId: 'RM2',
+            endpointName: 'RM2',
           },
         ]),
       },
@@ -369,13 +374,13 @@ describe('adminReadModelsHandler (admin service)', () => {
         fetchReadModels: vi.fn().mockResolvedValue([
           {
             name: 'overview',
-            serviceId: 'RM/CUS',
+            endpointName: 'RM/CUS',
             lastProjectedEventTimestamp: 100,
             status: 'active',
           },
           {
             name: 'editing',
-            serviceId: 'RM/CUS',
+            endpointName: 'RM/CUS',
             lastProjectedEventTimestamp: 200,
             status: 'active',
           },
@@ -390,7 +395,7 @@ describe('adminReadModelsHandler (admin service)', () => {
       expect(context.activator.fetchReadModels).toHaveBeenCalled();
       const response = res.json.mock.calls[0][0];
       expect(response).toHaveLength(2);
-      expect(response[0].serviceId).toBe('RM/CUS');
+      expect(response[0].endpointName).toBe('RM/CUS');
     });
   });
 
@@ -441,7 +446,7 @@ describe('adminReplayReadModelStatusHandler (admin service)', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           lastProjectedEventTimestamp: 500,
         }),
       },
@@ -532,7 +537,7 @@ describe('createBackupHandler', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
         }),
       },
       eventBus: mockEventBus({
@@ -657,6 +662,7 @@ describe('prepareReplayHandler', () => {
         preReplayBackupId: 'backup_pre_items',
       }),
       correlationConfig: { serviceId: 'test-service' },
+      endpointName: 'test-service',
     };
   });
 
@@ -698,7 +704,7 @@ describe('prepareReplayHandler', () => {
         readModel: 'items',
         fromTimestamp: 500,
         preReplayBackupId: 'backup_pre_items',
-        serviceId: 'test-service',
+        endpointName: 'test-service',
       });
     });
   });
@@ -744,13 +750,13 @@ describe('prepareReplayHandler', () => {
     });
   });
 
-  test('uses serviceId from activator discovery cache', () => {
+  test('uses endpointName from activator discovery cache', () => {
     const ctx = {
       readModels: {},
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           lastProjectedEventTimestamp: 500,
         }),
       },
@@ -771,7 +777,7 @@ describe('prepareReplayHandler', () => {
 
     return handler(req, res).then(() => {
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ serviceId: 'RM/CUS' }),
+        expect.objectContaining({ endpointName: 'RM/CUS' }),
       );
     });
   });
@@ -798,7 +804,7 @@ describe('replayReadModelStatusHandler (via resolveReadModel)', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
           lastProjectedEventTimestamp: 500,
         }),
       },
@@ -888,7 +894,7 @@ describe('resetReplayStateHandler', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
         }),
       },
       projectionHandler: {
@@ -931,7 +937,7 @@ describe('activateReadModelHandler', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
         }),
         activateReadModel: vi.fn().mockResolvedValue(undefined),
       },
@@ -1021,7 +1027,7 @@ describe('stopReadModelHandler', () => {
       activator: {
         getDiscoveredReadModel: vi.fn().mockReturnValue({
           name: 'items',
-          serviceId: 'RM/CUS',
+          endpointName: 'RM/CUS',
         }),
         stopReadModel: vi.fn(),
       },
@@ -1078,8 +1084,8 @@ describe('activateAllHandler', () => {
     const context = {
       activator: {
         getDiscoveredReadModels: vi.fn().mockReturnValue({
-          items: { name: 'items', serviceId: 'RM/CUS' },
-          orders: { name: 'orders', serviceId: 'RM/CUS' },
+          items: { name: 'items', endpointName: 'RM/CUS' },
+          orders: { name: 'orders', endpointName: 'RM/CUS' },
         }),
         activateReadModel: vi.fn().mockResolvedValue(undefined),
       },

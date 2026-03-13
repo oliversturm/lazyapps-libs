@@ -130,6 +130,7 @@ const createInlineAdminInstructionHandler = (context) => {
           const rm = context.readModels[name];
           return {
             name,
+            endpointName: context.endpointName,
             lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
             state: lm.getState(name),
             collections: rm.collections || [name],
@@ -202,6 +203,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
           { serviceId: 'REDIS-RM' },
           {
             readModels,
+            endpointName: 'rm',
             storage: readModelStorageMongo({
               url: connectionString,
               database: 'redis-rm',
@@ -353,7 +355,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
       )
       // Activate via admin server (orchestrator uses Redis)
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -395,7 +397,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
 
   test('catch-up after gap via Redis', () =>
     // Stop items RM
-    fetchAdmin('/admin/readmodels/items/stop', {
+    fetchAdmin('/admin/readmodels/rm/items/stop', {
       method: 'POST',
       body: '{}',
     })
@@ -420,7 +422,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
       )
       // Re-activate
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -484,7 +486,7 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
       }));
 
   test('admin stop instruction via Redis', () =>
-    fetchAdmin('/admin/readmodels/items/stop', {
+    fetchAdmin('/admin/readmodels/rm/items/stop', {
       method: 'POST',
       body: '{}',
     }).then(() =>

@@ -30,7 +30,7 @@ export const readModelsHandler = (context) => (req, res) => {
       const rm = context.readModels[name];
       const base = {
         name,
-        serviceId: context.correlationConfig.serviceId,
+        endpointName: context.endpointName,
         lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
         status: replayStates[name] ? 'replaying' : 'active',
       };
@@ -46,7 +46,7 @@ export const readModelsHandler = (context) => (req, res) => {
 };
 
 export const replayReadModelStatusHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
 
   const rm = context.readModels?.[readModelName];
   if (!rm) {
@@ -79,11 +79,16 @@ export const adminStatusHandler = (context) => {
         res.json({
           service: context.correlationConfig.serviceId,
           uptime: Date.now() - startedAt,
-          readModels: readModels.map((rm) => ({
-            name: rm.name,
-            lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
-            replaying: !!replayStates[rm.name],
-          })),
+          readModels: readModels.map((rm) => {
+            const key = rm.endpointName
+              ? `${rm.endpointName}/${rm.name}`
+              : rm.name;
+            return {
+              name: rm.name,
+              lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+              replaying: !!replayStates[key],
+            };
+          }),
         });
       })
       .catch(() => {
@@ -102,10 +107,15 @@ export const adminReadModelsHandler = (context) => (req, res) =>
     .then((readModels) => {
       const replayStates = context.projectionHandler.getReadModelReplayStates();
       res.json(
-        readModels.map((rm) => ({
-          ...rm,
-          status: replayStates[rm.name] ? 'replaying' : rm.status,
-        })),
+        readModels.map((rm) => {
+          const key = rm.endpointName
+            ? `${rm.endpointName}/${rm.name}`
+            : rm.name;
+          return {
+            ...rm,
+            status: replayStates[key] ? 'replaying' : rm.status,
+          };
+        }),
       );
     })
     .catch(() => {
@@ -113,18 +123,18 @@ export const adminReadModelsHandler = (context) => (req, res) =>
     });
 
 export const adminReplayReadModelStatusHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
+  const key = endpointName ? `${endpointName}/${readModelName}` : readModelName;
 
-  const rm = context.activator.getDiscoveredReadModel(readModelName);
+  const rm = context.activator.getDiscoveredReadModel(key);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
-  const isReplaying =
-    context.projectionHandler.isReadModelReplaying(readModelName);
+  const isReplaying = context.projectionHandler.isReadModelReplaying(key);
   const terminalStatus =
-    context.projectionHandler.getReadModelTerminalStatus(readModelName);
+    context.projectionHandler.getReadModelTerminalStatus(key);
 
   res.json({
     readModel: readModelName,
@@ -139,11 +149,18 @@ export const adminReplayReadModelStatusHandler = (context) => (req, res) => {
 // lifecycleManager). They look up read models from whichever source is
 // available.
 
-const resolveReadModel = (context, readModelName) =>
-  context.readModels?.[readModelName] ||
-  (context.activator &&
-    context.activator.getDiscoveredReadModel(readModelName)) ||
-  undefined;
+const resolveReadModel = (context, endpointName, readModelName) => {
+  if (context.readModels?.[readModelName]) {
+    return context.readModels[readModelName];
+  }
+  if (context.activator) {
+    const key = endpointName
+      ? `${endpointName}/${readModelName}`
+      : readModelName;
+    return context.activator.getDiscoveredReadModel(key) || undefined;
+  }
+  return undefined;
+};
 
 const delegateToRm = (context, correlationId, instruction, timeoutMs) => {
   const replyTopic = `__admin_reply/${nanoid()}`;
@@ -179,9 +196,9 @@ const delegateToRm = (context, correlationId, instruction, timeoutMs) => {
 export const createBackupHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Backup', correlationId);
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
 
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -192,7 +209,7 @@ export const createBackupHandler = (context) => (req, res) => {
   return delegateToRm(context, correlationId, {
     type: 'create_backup',
     targetReadModel: readModelName,
-    ...(rm.serviceId && { targetServiceId: rm.serviceId }),
+    ...(rm.endpointName && { targetEndpointName: rm.endpointName }),
   })
     .then((result) => {
       res.json(result);
@@ -204,11 +221,11 @@ export const createBackupHandler = (context) => (req, res) => {
 };
 
 export const listBackupsHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
   const correlationId = nanoid();
   const log = getLogger('Admin/Backup', correlationId);
 
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
@@ -217,7 +234,7 @@ export const listBackupsHandler = (context) => (req, res) => {
   return delegateToRm(context, correlationId, {
     type: 'list_backups',
     targetReadModel: readModelName,
-    ...(rm.serviceId && { targetServiceId: rm.serviceId }),
+    ...(rm.endpointName && { targetEndpointName: rm.endpointName }),
   })
     .then((result) => {
       res.json(result.backups);
@@ -232,7 +249,7 @@ export const deleteBackupHandler = (context) => (req, res) => {
   const correlationId = nanoid();
   const log = getLogger('Admin/Backup', correlationId);
   const { backupId } = req.params;
-  const { readModelName } = req.query;
+  const { readModelName, endpointName } = req.query;
 
   if (!readModelName) {
     res
@@ -243,12 +260,12 @@ export const deleteBackupHandler = (context) => (req, res) => {
 
   log.info(`Deleting backup ${backupId}`);
 
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   return delegateToRm(context, correlationId, {
     type: 'delete_backup',
     targetReadModel: readModelName,
     backupId,
-    ...(rm?.serviceId && { targetServiceId: rm.serviceId }),
+    ...(rm?.endpointName && { targetEndpointName: rm.endpointName }),
   })
     .then(() => {
       res.sendStatus(204);
@@ -262,16 +279,20 @@ export const deleteBackupHandler = (context) => (req, res) => {
 export const prepareReplayHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Prepare', correlationId);
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
   const { backupId, fromScratch } = req.body;
 
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
-  if (context.projectionHandler.isReadModelReplaying(readModelName)) {
+  const stateKey = endpointName
+    ? `${endpointName}/${readModelName}`
+    : readModelName;
+
+  if (context.projectionHandler.isReadModelReplaying(stateKey)) {
     res.status(409).json({
       error: `Replay already in progress for ${readModelName}`,
     });
@@ -280,7 +301,7 @@ export const prepareReplayHandler = (context) => (req, res) => {
 
   log.info(`Preparing replay for ${readModelName}`);
 
-  context.projectionHandler.setReadModelReplayState(readModelName, true);
+  context.projectionHandler.setReadModelReplayState(stateKey, true);
 
   return delegateToRm(
     context,
@@ -290,7 +311,9 @@ export const prepareReplayHandler = (context) => (req, res) => {
       targetReadModel: readModelName,
       backupId,
       fromScratch,
-      ...(rm.serviceId && { targetServiceId: rm.serviceId }),
+      ...(rm.endpointName && {
+        targetEndpointName: rm.endpointName,
+      }),
     },
     60000,
   )
@@ -300,43 +323,49 @@ export const prepareReplayHandler = (context) => (req, res) => {
         readModel: readModelName,
         fromTimestamp: result.fromTimestamp,
         preReplayBackupId: result.preReplayBackupId,
-        serviceId: rm.serviceId || context.correlationConfig.serviceId,
+        endpointName: rm.endpointName || context.endpointName,
       });
     })
     .catch((err) => {
       log.error(`Failed to prepare replay: ${err}`);
-      context.projectionHandler.clearReadModelReplayState(readModelName);
+      context.projectionHandler.clearReadModelReplayState(stateKey);
       res.status(500).json({ error: String(err) });
     });
 };
 
 export const resetReplayStateHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
 
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
-  context.projectionHandler.clearReadModelReplayState(readModelName);
+  const stateKey = endpointName
+    ? `${endpointName}/${readModelName}`
+    : readModelName;
+  context.projectionHandler.clearReadModelReplayState(stateKey);
   res.json({ status: 'reset', readModel: readModelName });
 };
 
 export const activateReadModelHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
+  const { endpointName, readModelName } = req.params;
   const correlationId = req.body?.correlationId || nanoid();
-  const rm = resolveReadModel(context, readModelName);
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
   if (context.activator) {
-    context.activator.activateReadModel(readModelName).catch((err) => {
+    const identifier = endpointName
+      ? `${endpointName}/${readModelName}`
+      : readModelName;
+    context.activator.activateReadModel(identifier).catch((err) => {
       const log = getLogger('Admin/RM', correlationId);
       log.error(
-        `Activation orchestration failed for '${readModelName}': ${err.message}`,
+        `Activation orchestration failed for '${identifier}': ${err.message}`,
       );
     });
     res.status(202).json({ status: 'activating', readModel: readModelName });
@@ -365,15 +394,18 @@ export const activateReadModelHandler = (context) => (req, res) => {
 };
 
 export const stopReadModelHandler = (context) => (req, res) => {
-  const { readModelName } = req.params;
-  const rm = resolveReadModel(context, readModelName);
+  const { endpointName, readModelName } = req.params;
+  const rm = resolveReadModel(context, endpointName, readModelName);
   if (!rm) {
     res.status(404).json({ error: `Read model ${readModelName} not found` });
     return;
   }
 
   if (context.activator) {
-    context.activator.stopReadModel(readModelName);
+    const identifier = endpointName
+      ? `${endpointName}/${readModelName}`
+      : readModelName;
+    context.activator.stopReadModel(identifier);
     res.json({ status: 'stopped', readModel: readModelName });
     return;
   }

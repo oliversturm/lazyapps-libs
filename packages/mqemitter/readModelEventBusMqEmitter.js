@@ -92,13 +92,13 @@ export const readModelEventBusMqEmitter =
           cb();
         });
         mq.on('__replay', ({ payload }, cb) => {
-          const { correlationId, targetReadModel, event, targetServiceId } =
+          const { correlationId, targetReadModel, event, targetEndpointName } =
             payload;
           const log = getLogger('RM/EB/Replay', correlationId);
           if (
-            targetServiceId &&
-            context.correlationConfig &&
-            targetServiceId !== context.correlationConfig.serviceId
+            targetEndpointName &&
+            context.endpointName &&
+            targetEndpointName !== context.endpointName
           ) {
             cb();
             return;
@@ -113,13 +113,13 @@ export const readModelEventBusMqEmitter =
           cb();
         });
         mq.on('__catchup', ({ payload }, cb) => {
-          const { correlationId, targetReadModel, event, targetServiceId } =
+          const { correlationId, targetReadModel, event, targetEndpointName } =
             payload;
           const log = getLogger('RM/EB/CatchUp', correlationId);
           if (
-            targetServiceId &&
-            context.correlationConfig &&
-            targetServiceId !== context.correlationConfig.serviceId
+            targetEndpointName &&
+            context.endpointName &&
+            targetEndpointName !== context.endpointName
           ) {
             cb();
             return;
@@ -147,12 +147,12 @@ export const readModelEventBusMqEmitter =
             return;
           }
           if (
-            instruction.targetServiceId &&
-            context.correlationConfig &&
-            instruction.targetServiceId !== context.correlationConfig.serviceId
+            instruction.targetEndpointName &&
+            context.endpointName &&
+            instruction.targetEndpointName !== context.endpointName
           ) {
             log.debug(
-              `Ignoring admin instruction for service '${instruction.targetServiceId}'`,
+              `Ignoring admin instruction for endpoint '${instruction.targetEndpointName}'`,
             );
             cb();
             return;

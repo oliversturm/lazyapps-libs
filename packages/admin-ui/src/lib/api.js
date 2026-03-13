@@ -16,19 +16,22 @@ export const createAdminClient = (
 ) => ({
   // Command processor endpoints
 
-  startReplay: (readModel, fromTimestamp, toTimestamp, targetServiceId) =>
+  startReplay: (readModel, fromTimestamp, toTimestamp, targetEndpointName) =>
     jsonFetch(`${commandProcessorUrl}/api/admin/startReplay`, {
       method: 'POST',
       body: JSON.stringify({
         readModel,
         fromTimestamp,
         toTimestamp,
-        ...(targetServiceId && { targetServiceId }),
+        ...(targetEndpointName && { targetEndpointName }),
       }),
     }),
 
-  getReplayStatus: (readModel) =>
-    jsonFetch(`${commandProcessorUrl}/api/admin/replayStatus/${readModel}`),
+  getReplayStatus: (endpointName, readModel) =>
+    jsonFetch(
+      `${commandProcessorUrl}/api/admin/replayStatus` +
+        `/${endpointName}/${readModel}`,
+    ),
 
   cancelReplay: (readModel) =>
     jsonFetch(`${commandProcessorUrl}/api/admin/cancelReplay`, {
@@ -42,27 +45,32 @@ export const createAdminClient = (
 
   getReadModels: (serviceUrl) => jsonFetch(`${serviceUrl}/admin/readmodels`),
 
-  prepareReplay: (serviceUrl, readModel, options) =>
-    jsonFetch(`${serviceUrl}/admin/replay/${readModel}/prepare`, {
-      method: 'POST',
-      body: JSON.stringify(options),
-    }),
+  prepareReplay: (serviceUrl, endpointName, readModel, options) =>
+    jsonFetch(
+      `${serviceUrl}/admin/replay/${endpointName}/${readModel}/prepare`,
+      {
+        method: 'POST',
+        body: JSON.stringify(options),
+      },
+    ),
 
-  getReplayReadModelStatus: (serviceUrl, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/replay/${readModel}/status`),
+  getReplayReadModelStatus: (serviceUrl, endpointName, readModel) =>
+    jsonFetch(`${serviceUrl}/admin/replay/${endpointName}/${readModel}/status`),
 
-  createBackup: (serviceUrl, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/backup/${readModel}`, {
+  createBackup: (serviceUrl, endpointName, readModel) =>
+    jsonFetch(`${serviceUrl}/admin/backup/${endpointName}/${readModel}`, {
       method: 'POST',
       body: '{}',
     }),
 
-  listBackups: (serviceUrl, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/backups/${readModel}`),
+  listBackups: (serviceUrl, endpointName, readModel) =>
+    jsonFetch(`${serviceUrl}/admin/backups/${endpointName}/${readModel}`),
 
-  deleteBackup: (serviceUrl, backupId, readModelName) =>
+  deleteBackup: (serviceUrl, backupId, endpointName, readModelName) =>
     jsonFetch(
-      `${serviceUrl}/admin/backup/${backupId}?readModelName=${encodeURIComponent(readModelName)}`,
+      `${serviceUrl}/admin/backup/${backupId}` +
+        `?readModelName=${encodeURIComponent(readModelName)}` +
+        `&endpointName=${encodeURIComponent(endpointName)}`,
       {
         method: 'DELETE',
       },
@@ -78,9 +86,12 @@ export const createAdminClient = (
     Promise.all(
       Object.entries(readModelServiceUrls).map(([name, url]) =>
         jsonFetch(`${url}/admin/readmodels`)
-          .then((models) =>
-            models.find((m) => m.name === readModelName) ? { name, url } : null,
-          )
+          .then((models) => {
+            const found = models.find((m) => m.name === readModelName);
+            return found
+              ? { name, url, endpointName: found.endpointName }
+              : null;
+          })
           .catch(() => null),
       ),
     ).then((results) => results.find((r) => r !== null) || null),

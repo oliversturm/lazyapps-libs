@@ -76,7 +76,7 @@ describe('startReplayHandler', () => {
       readModel: 'items',
       fromTimestamp: 100,
       toTimestamp: null,
-      targetServiceId: undefined,
+      targetEndpointName: undefined,
       correlationId: 'test-corr-id',
     });
     expect(res.json).toHaveBeenCalledWith({
@@ -142,11 +142,11 @@ describe('startReplayHandler', () => {
     );
   });
 
-  test('passes targetServiceId when provided', () => {
+  test('passes targetEndpointName when provided', () => {
     const handler = startReplayHandler(context);
     const req = mockReq({
       readModel: 'items',
-      targetServiceId: 'orders-service',
+      targetEndpointName: 'orders-service',
     });
     const res = mockRes();
 
@@ -154,7 +154,7 @@ describe('startReplayHandler', () => {
 
     expect(publishFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        targetServiceId: 'orders-service',
+        targetEndpointName: 'orders-service',
       }),
     );
   });

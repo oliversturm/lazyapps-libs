@@ -56,6 +56,7 @@ describe('readModelListenerMqEmitter', () => {
         perRequest: mockPerRequest,
       },
       correlationConfig: { serviceId: 'TEST' },
+      endpointName: 'TEST',
     };
   });
 
@@ -236,7 +237,7 @@ describe('readModelListenerMqEmitter', () => {
             result: [
               {
                 name: 'users',
-                serviceId: 'TEST',
+                endpointName: 'TEST',
                 lastProjectedEventTimestamp: 999,
                 status: 'active',
                 state: 'live',

@@ -3,7 +3,12 @@ import { getLogger } from '@lazyapps/logger';
 export const createCatchupHandler = (eventStore, eventBus) => {
   const catchups = {};
 
-  const startCatchup = (correlationId, readModel, fromTimestamp) => {
+  const startCatchup = (
+    correlationId,
+    readModel,
+    fromTimestamp,
+    targetEndpointName,
+  ) => {
     if (catchups[readModel] && catchups[readModel].status === 'in_progress') {
       return Promise.reject(
         new Error(`Catch-up already in progress for ${readModel}`),
@@ -34,6 +39,7 @@ export const createCatchupHandler = (eventStore, eventBus) => {
             type: 'CATCHUP_EVENTS_DONE',
             readModel,
             toTimestamp: 0,
+            ...(targetEndpointName && { targetEndpointName }),
           });
           catchups[readModel] = {
             ...catchups[readModel],
@@ -58,7 +64,11 @@ export const createCatchupHandler = (eventStore, eventBus) => {
             const processNext = () =>
               cursor.next().then((event) => {
                 if (!event || cancelled) return Promise.resolve();
-                eventBus.publishCatchupEvent(correlationId)(readModel, event);
+                eventBus.publishCatchupEvent(correlationId)(
+                  readModel,
+                  event,
+                  targetEndpointName,
+                );
                 catchups[readModel].eventsPublished++;
                 if (catchups[readModel].eventsPublished % 1000 === 0) {
                   log.info(
@@ -77,6 +87,7 @@ export const createCatchupHandler = (eventStore, eventBus) => {
               eventBus.publishSystemMessage(correlationId)({
                 type: 'CATCHUP_CANCELLED',
                 readModel,
+                ...(targetEndpointName && { targetEndpointName }),
               });
               catchups[readModel] = {
                 ...catchups[readModel],
@@ -89,6 +100,7 @@ export const createCatchupHandler = (eventStore, eventBus) => {
                 type: 'CATCHUP_EVENTS_DONE',
                 readModel,
                 toTimestamp,
+                ...(targetEndpointName && { targetEndpointName }),
               });
               catchups[readModel] = {
                 ...catchups[readModel],
@@ -104,6 +116,7 @@ export const createCatchupHandler = (eventStore, eventBus) => {
         eventBus.publishSystemMessage(correlationId)({
           type: 'CATCHUP_CANCELLED',
           readModel,
+          ...(targetEndpointName && { targetEndpointName }),
         });
         catchups[readModel] = {
           ...catchups[readModel],

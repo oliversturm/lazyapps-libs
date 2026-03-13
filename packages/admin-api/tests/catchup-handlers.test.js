@@ -46,7 +46,7 @@ describe('startCatchupHandler', () => {
   test('publishes start_catchup instruction via event bus', () => {
     const handler = startCatchupHandler(context);
     const req = mockReq(
-      { fromTimestamp: 100, serviceId: 'svc-1' },
+      { fromTimestamp: 100, targetEndpointName: 'svc-1' },
       { readModelName: 'items' },
     );
     const res = mockRes();
@@ -60,7 +60,7 @@ describe('startCatchupHandler', () => {
       type: 'start_catchup',
       readModel: 'items',
       fromTimestamp: 100,
-      serviceId: 'svc-1',
+      targetEndpointName: 'svc-1',
       correlationId: 'test-corr-id',
     });
     expect(res.json).toHaveBeenCalledWith({

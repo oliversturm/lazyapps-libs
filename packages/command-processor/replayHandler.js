@@ -8,7 +8,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
     readModel,
     fromTimestamp,
     toTimestamp,
-    targetServiceId,
+    targetEndpointName,
   ) => {
     if (replays[readModel] && replays[readModel].status === 'in_progress') {
       return Promise.reject(
@@ -46,7 +46,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
             eventBus.publishReplayEvent(correlationId)(
               readModel,
               event,
-              targetServiceId,
+              targetEndpointName,
             );
             replays[readModel].eventsPublished++;
             if (replays[readModel].eventsPublished % 1000 === 0) {
@@ -65,6 +65,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
           eventBus.publishSystemMessage(correlationId)({
             type: 'REPLAY_CANCELLED',
             readModel,
+            ...(targetEndpointName && { targetEndpointName }),
           });
           replays[readModel] = {
             ...replays[readModel],
@@ -76,6 +77,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
           eventBus.publishSystemMessage(correlationId)({
             type: 'REPLAY_EVENTS_DONE',
             readModel,
+            ...(targetEndpointName && { targetEndpointName }),
           });
           replays[readModel] = {
             ...replays[readModel],
@@ -90,6 +92,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
         eventBus.publishSystemMessage(correlationId)({
           type: 'REPLAY_CANCELLED',
           readModel,
+          ...(targetEndpointName && { targetEndpointName }),
         });
         replays[readModel] = {
           ...replays[readModel],

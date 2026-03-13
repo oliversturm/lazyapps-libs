@@ -131,6 +131,7 @@ const createInlineAdminInstructionHandler = (context) => {
           const rm = context.readModels[name];
           return {
             name,
+            endpointName: context.endpointName,
             lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
             state: lm.getState(name),
             collections: rm.collections || [name],
@@ -199,6 +200,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
           { serviceId: `${dbPrefix}-RM` },
           {
             readModels: env.readModels,
+            endpointName: 'rm',
             storage: readModelStorageMongo({
               url: env.connectionString,
               database: `${dbPrefix}-rm`,
@@ -387,7 +389,7 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       })
       // Step 4: Activate items via admin server (orchestrator)
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -455,7 +457,7 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
         expect(status).toBe(202);
         expect(body.status).toBe('activating');
         // Admin returns all RMs (doesn't filter by state)
-        expect(body.readModels).toContain('stats');
+        expect(body.readModels).toContain('rm/stats');
       })
       // Wait for stats to reach live
       .then(() =>
@@ -478,14 +480,14 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       }));
 
   test('catch-up status endpoint returns progress', () =>
-    fetchAdmin('/admin/catchup/items/status').then(({ status, body }) => {
+    fetchAdmin('/admin/catchup/rm/items/status').then(({ status, body }) => {
       expect(status).toBe(200);
       expect(body).toHaveProperty('status');
       expect(body).toHaveProperty('readModel');
     }));
 
   test('cannot activate a read model that is already live', () =>
-    fetchRM('/admin/readmodels/items/activate', {
+    fetchRM('/admin/readmodels/rm/items/activate', {
       method: 'POST',
       body: '{}',
     }).then(({ status, body }) => {
@@ -529,7 +531,7 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
     )
       // Step 2: Activate items RM → catch up to 5 events
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -554,7 +556,7 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
       })
       // Step 3: Stop items RM
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/stop', {
+        fetchAdmin('/admin/readmodels/rm/items/stop', {
           method: 'POST',
           body: '{}',
         }),
@@ -580,7 +582,7 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
       )
       // Step 5: Re-activate items RM → should catch up the gap
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -659,7 +661,7 @@ describe(
         )
         // Step 2: Activate items RM via admin
         .then(() =>
-          fetchAdmin('/admin/readmodels/items/activate', {
+          fetchAdmin('/admin/readmodels/rm/items/activate', {
             method: 'POST',
             body: '{}',
           }),
@@ -865,7 +867,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       )
       // Activate via admin
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/activate', {
+        fetchAdmin('/admin/readmodels/rm/items/activate', {
           method: 'POST',
           body: '{}',
         }),
@@ -884,7 +886,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       )
       // Stop via admin
       .then(() =>
-        fetchAdmin('/admin/readmodels/items/stop', {
+        fetchAdmin('/admin/readmodels/rm/items/stop', {
           method: 'POST',
           body: '{}',
         }),

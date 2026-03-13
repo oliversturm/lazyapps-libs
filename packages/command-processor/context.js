@@ -65,6 +65,7 @@ export const initializeContext = (
                       correlationId,
                       instruction.readModel,
                       instruction.fromTimestamp || 0,
+                      instruction.targetEndpointName,
                     )
                     .catch((err) => {
                       log.error(
@@ -91,7 +92,7 @@ export const initializeContext = (
                       instruction.readModel,
                       instruction.fromTimestamp || 0,
                       instruction.toTimestamp || null,
-                      instruction.targetServiceId,
+                      instruction.targetEndpointName,
                     )
                     .catch((err) => {
                       log.error(

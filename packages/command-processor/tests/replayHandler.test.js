@@ -202,7 +202,7 @@ describe('createReplayHandler', () => {
       });
     });
 
-    test('passes targetServiceId to publishReplayEvent when provided', () => {
+    test('passes targetEndpointName to publishReplayEvent when provided', () => {
       const events = [{ type: 'ITEM_CREATED', timestamp: 100 }];
       const cursor = makeCursor(events);
       eventStore.countEvents.mockResolvedValue(1);

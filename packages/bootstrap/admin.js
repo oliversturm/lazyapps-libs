@@ -58,34 +58,42 @@ export const startAdmin = (
         return Promise.resolve(
           eventBusInstance.subscribeSystemMessages((msg) => {
             if (msg.type === 'REPLAY_EVENTS_DONE') {
-              context.projectionHandler.clearReadModelReplayState(
-                msg.readModel,
-              );
+              const key = msg.targetEndpointName
+                ? `${msg.targetEndpointName}/${msg.readModel}`
+                : msg.readModel;
+              context.projectionHandler.clearReadModelReplayState(key);
               context.projectionHandler.setReadModelTerminalStatus(
-                msg.readModel,
+                key,
                 'completed',
               );
             }
             if (msg.type === 'REPLAY_CANCELLED') {
-              context.projectionHandler.clearReadModelReplayState(
-                msg.readModel,
-              );
+              const key = msg.targetEndpointName
+                ? `${msg.targetEndpointName}/${msg.readModel}`
+                : msg.readModel;
+              context.projectionHandler.clearReadModelReplayState(key);
               context.projectionHandler.setReadModelTerminalStatus(
-                msg.readModel,
+                key,
                 'cancelled',
               );
             }
             if (msg.type === 'CATCHUP_EVENTS_DONE') {
-              log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+              const key = msg.targetEndpointName
+                ? `${msg.targetEndpointName}/${msg.readModel}`
+                : msg.readModel;
+              log.info(`Catch-up ${msg.type} for ${key}`);
               context.projectionHandler.setReadModelTerminalStatus(
-                msg.readModel,
+                key,
                 'completed',
               );
             }
             if (msg.type === 'CATCHUP_CANCELLED') {
-              log.info(`Catch-up ${msg.type} for ${msg.readModel}`);
+              const key = msg.targetEndpointName
+                ? `${msg.targetEndpointName}/${msg.readModel}`
+                : msg.readModel;
+              log.info(`Catch-up ${msg.type} for ${key}`);
               context.projectionHandler.setReadModelTerminalStatus(
-                msg.readModel,
+                key,
                 'cancelled',
               );
             }
@@ -207,7 +215,11 @@ export const startAdmin = (
                     activator
                       .fetchReadModels()
                       .then((rms) => {
-                        const names = rms.map((rm) => rm.name);
+                        const names = rms.map((rm) =>
+                          rm.endpointName
+                            ? `${rm.endpointName}/${rm.name}`
+                            : rm.name,
+                        );
                         log.info(`Discovered read models: ${names.join(', ')}`);
                         return activator.autoActivateAll(names);
                       })

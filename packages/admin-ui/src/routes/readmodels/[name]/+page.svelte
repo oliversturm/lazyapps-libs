@@ -23,7 +23,8 @@
       api
         .getReadModels(serviceUrl)
         .then((models) => models.find((m) => m.name === data.name) || null),
-      api.getReplayReadModelStatus('', data.name).catch(() => null),
+      api.getReplayReadModelStatus('', data.endpointName, data.name)
+        .catch(() => null),
     ]).then(([rm, replay]) => {
       readModel = rm;
       replayStatus = replay;
@@ -95,13 +96,13 @@
 
   <div class="flex space-x-4">
     <a
-      href="/readmodels/{data.name}/backups?service={data.service}"
+      href="/readmodels/{data.name}/backups?service={data.service}&endpointName={data.endpointName}"
       class="px-4 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
     >
       Manage Backups
     </a>
     <a
-      href="/readmodels/{data.name}/replay?service={data.service}"
+      href="/readmodels/{data.name}/replay?service={data.service}&endpointName={data.endpointName}"
       class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
     >
       Start Replay

@@ -82,8 +82,8 @@ describe('createCatchupHandler', () => {
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
         expect(eventBus.publishCatchupEvent).toHaveBeenCalledWith('corr-1');
         expect(publishFn).toHaveBeenCalledTimes(2);
-        expect(publishFn).toHaveBeenCalledWith('items', events[0]);
-        expect(publishFn).toHaveBeenCalledWith('items', events[1]);
+        expect(publishFn).toHaveBeenCalledWith('items', events[0], undefined);
+        expect(publishFn).toHaveBeenCalledWith('items', events[1], undefined);
       });
     });
 

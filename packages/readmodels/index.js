@@ -254,6 +254,7 @@ export const startReadModels = (correlationConfig, config) =>
     commandSender: config.commandSender,
     backup: config.backup,
     lifecycle: config.lifecycle,
+    endpointName: config.endpointName,
   }).then((context) => {
     context.adminInstructionHandler = createAdminInstructionHandler(context);
     if (config.token) {

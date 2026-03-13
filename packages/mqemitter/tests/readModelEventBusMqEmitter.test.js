@@ -324,7 +324,7 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
-  test('__replay handler ignores events with non-matching targetServiceId', () => {
+  test('__replay handler ignores events with non-matching targetEndpointName', () => {
     const mockProjectForRM = vi.fn();
     const context = {
       projectionHandler: {
@@ -336,7 +336,7 @@ describe('readModelEventBusMqEmitter', () => {
         handleReplayComplete: vi.fn(),
         handleReplayCancelled: vi.fn(),
       },
-      correlationConfig: { serviceId: 'customers-service' },
+      endpointName: 'customers-service',
       readModels: { overview: { projections: {} } },
     };
 
@@ -350,7 +350,7 @@ describe('readModelEventBusMqEmitter', () => {
               correlationId: 'corr-1',
               targetReadModel: 'overview',
               event,
-              targetServiceId: 'orders-service',
+              targetEndpointName: 'orders-service',
             },
           },
           cb,
@@ -364,7 +364,7 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
-  test('__replay handler processes events with matching targetServiceId', () => {
+  test('__replay handler processes events with matching targetEndpointName', () => {
     const mockProjectForRM = vi.fn();
     const context = {
       projectionHandler: {
@@ -376,7 +376,7 @@ describe('readModelEventBusMqEmitter', () => {
         handleReplayComplete: vi.fn(),
         handleReplayCancelled: vi.fn(),
       },
-      correlationConfig: { serviceId: 'orders-service' },
+      endpointName: 'orders-service',
       readModels: { overview: { projections: {} } },
     };
 
@@ -390,7 +390,7 @@ describe('readModelEventBusMqEmitter', () => {
               correlationId: 'corr-1',
               targetReadModel: 'overview',
               event,
-              targetServiceId: 'orders-service',
+              targetEndpointName: 'orders-service',
             },
           },
           cb,
@@ -405,7 +405,7 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
-  test('__replay handler processes events without targetServiceId (backward compat)', () => {
+  test('__replay handler processes events without targetEndpointName (backward compat)', () => {
     const mockProjectForRM = vi.fn();
     const context = {
       projectionHandler: {
@@ -417,7 +417,7 @@ describe('readModelEventBusMqEmitter', () => {
         handleReplayComplete: vi.fn(),
         handleReplayCancelled: vi.fn(),
       },
-      correlationConfig: { serviceId: 'orders-service' },
+      endpointName: 'orders-service',
       readModels: { overview: { projections: {} } },
     };
 

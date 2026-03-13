@@ -180,6 +180,7 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
           { serviceId: 'ISO-ORDERS' },
           {
             readModels: ordersReadModels,
+            endpointName: 'ISO-ORDERS',
             storage: readModelStorageMongo({
               url: connectionString,
               database: 'iso-readmodels',
@@ -203,6 +204,7 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
           { serviceId: 'ISO-CUSTOMERS' },
           {
             readModels: customersReadModels,
+            endpointName: 'ISO-CUSTOMERS',
             storage: readModelStorageMongo({
               url: connectionString,
               database: 'iso-readmodels',
@@ -349,13 +351,13 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
           .deleteMany({});
       })
       .then(() =>
-        // Step 5: Start replay for overview WITH targetServiceId
+        // Step 5: Start replay for overview WITH targetEndpointName
         fetchAdmin('/api/admin/startReplay', {
           method: 'POST',
           body: JSON.stringify({
             readModel: 'overview',
             fromTimestamp: 0,
-            targetServiceId: 'ISO-ORDERS',
+            targetEndpointName: 'ISO-ORDERS',
           }),
         }),
       )
@@ -398,7 +400,7 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
         );
       }));
 
-  test('replaying without targetServiceId affects all services with matching read model name (backward compat)', () => {
+  test('replaying without targetEndpointName affects all services with matching read model name (backward compat)', () => {
     // Clear both collections
     const db = cleanupClient.db('iso-readmodels');
     return db
@@ -406,7 +408,7 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
       .deleteMany({})
       .then(() => db.collection('orders_overview').deleteMany({}))
       .then(() =>
-        // Start replay WITHOUT targetServiceId
+        // Start replay WITHOUT targetEndpointName
         fetchAdmin('/api/admin/startReplay', {
           method: 'POST',
           body: JSON.stringify({
@@ -438,7 +440,7 @@ describe('replay service isolation integration', { timeout: 120000 }, () => {
         ]),
       )
       .then(([customers, orders]) => {
-        // Without targetServiceId, both services should have processed
+        // Without targetEndpointName, both services should have processed
         // the replay events (backward compatible behavior)
         expect(customers).toHaveLength(2);
         expect(orders).toHaveLength(2);

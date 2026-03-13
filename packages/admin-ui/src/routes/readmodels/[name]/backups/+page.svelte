@@ -15,7 +15,7 @@
     loading = true;
     error = null;
     api
-      .listBackups('', data.name)
+      .listBackups('', data.endpointName, data.name)
       .then((result) => {
         backups = result;
         loading = false;
@@ -34,7 +34,7 @@
     creating = true;
     error = null;
     api
-      .createBackup('', data.name)
+      .createBackup('', data.endpointName, data.name)
       .then(() => {
         creating = false;
         loadBackups();
@@ -48,7 +48,7 @@
   const handleDelete = (backupId) => {
     error = null;
     api
-      .deleteBackup('', backupId, data.name)
+      .deleteBackup('', backupId, data.endpointName, data.name)
       .then(() => {
         loadBackups();
       })

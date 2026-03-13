@@ -41,7 +41,7 @@ export const commandProcessorEventBusMqEmitter =
           return state;
         },
         publishReplayEvent:
-          (correlationId) => (targetReadModel, event, targetServiceId) => {
+          (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/MQE', correlationId);
             log.debug(`Publishing replay event for ${targetReadModel}`);
             mq.emit({
@@ -50,12 +50,12 @@ export const commandProcessorEventBusMqEmitter =
                 correlationId,
                 targetReadModel,
                 event,
-                ...(targetServiceId && { targetServiceId }),
+                ...(targetEndpointName && { targetEndpointName }),
               },
             });
           },
         publishCatchupEvent:
-          (correlationId) => (targetReadModel, event, targetServiceId) => {
+          (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/MQE', correlationId);
             log.debug(`Publishing catch-up event for ${targetReadModel}`);
             mq.emit({
@@ -64,7 +64,7 @@ export const commandProcessorEventBusMqEmitter =
                 correlationId,
                 targetReadModel,
                 event,
-                ...(targetServiceId && { targetServiceId }),
+                ...(targetEndpointName && { targetEndpointName }),
               },
             });
           },

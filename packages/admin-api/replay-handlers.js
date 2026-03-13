@@ -4,7 +4,8 @@ import { nanoid } from 'nanoid';
 export const startReplayHandler = (context) => (req, res) => {
   const correlationId = req.body.correlationId || nanoid();
   const log = getLogger('Admin/Replay', correlationId);
-  const { readModel, fromTimestamp, toTimestamp, targetServiceId } = req.body;
+  const { readModel, fromTimestamp, toTimestamp, targetEndpointName } =
+    req.body;
 
   if (!readModel) {
     res.status(400).json({ error: 'readModel is required' });
@@ -18,7 +19,7 @@ export const startReplayHandler = (context) => (req, res) => {
     readModel,
     fromTimestamp: fromTimestamp || 0,
     toTimestamp: toTimestamp || null,
-    targetServiceId,
+    targetEndpointName,
     correlationId,
   });
 
@@ -26,13 +27,14 @@ export const startReplayHandler = (context) => (req, res) => {
 };
 
 export const replayStatusHandler = (context) => (req, res) => {
-  const { readModel } = req.params;
+  const { endpointName, readModel } = req.params;
+  const key = endpointName ? `${endpointName}/${readModel}` : readModel;
   const replayStates = context.projectionHandler.getReadModelReplayStates();
   const terminalStatus =
-    context.projectionHandler.getReadModelTerminalStatus(readModel);
+    context.projectionHandler.getReadModelTerminalStatus(key);
   res.json({
     readModel,
-    status: replayStates[readModel] ? 'in_progress' : terminalStatus || 'idle',
+    status: replayStates[key] ? 'in_progress' : terminalStatus || 'idle',
   });
 };
 

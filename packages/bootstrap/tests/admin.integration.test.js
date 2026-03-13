@@ -262,11 +262,11 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       expect(body).toHaveLength(2);
       const customers = body.find((rm) => rm.name === 'customers');
       expect(customers.status).toBe('active');
-      expect(customers.serviceId).toBe('INTEGRATION-TEST');
+      expect(customers.endpointName).toBeUndefined();
     }));
 
   test.skipIf(!hasMongoTools)('POST /admin/backup/:name creates a backup', () =>
-    fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' }).then(
+    fetchJSON('/admin/backup/_/customers', { method: 'POST', body: '{}' }).then(
       ({ status, body }) => {
         expect(status).toBe(200);
         expect(body.backupId).toMatch(/^customers__\d{4}-\d{2}-\d{2}T/);
@@ -276,8 +276,8 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   );
 
   test.skipIf(!hasMongoTools)('GET /admin/backups/:name lists backups', () =>
-    fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' })
-      .then(() => fetchJSON('/admin/backups/customers'))
+    fetchJSON('/admin/backup/_/customers', { method: 'POST', body: '{}' })
+      .then(() => fetchJSON('/admin/backups/_/customers'))
       .then(({ status, body }) => {
         expect(status).toBe(200);
         expect(body).toHaveLength(1);
@@ -286,7 +286,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   );
 
   test.skipIf(!hasMongoTools)('DELETE /admin/backup/:id deletes a backup', () =>
-    fetchJSON('/admin/backup/customers', { method: 'POST', body: '{}' })
+    fetchJSON('/admin/backup/_/customers', { method: 'POST', body: '{}' })
       .then(({ body }) =>
         fetch(
           `http://127.0.0.1:${adminPort}/admin/backup/${body.backupId}?readModelName=customers`,
@@ -296,14 +296,14 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       .then((res) => {
         expect(res.status).toBe(204);
       })
-      .then(() => fetchJSON('/admin/backups/customers'))
+      .then(() => fetchJSON('/admin/backups/_/customers'))
       .then(({ body }) => {
         expect(body).toHaveLength(0);
       }),
   );
 
   test('POST /admin/backup/:name returns 404 for unknown read model', () =>
-    fetchJSON('/admin/backup/nonexistent', {
+    fetchJSON('/admin/backup/_/nonexistent', {
       method: 'POST',
       body: '{}',
     }).then(({ status, body }) => {
@@ -326,13 +326,15 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
     }));
 
   test('GET /api/admin/replayStatus/:name returns replay status', () =>
-    fetchJSON('/api/admin/replayStatus/customers').then(({ status, body }) => {
-      expect(status).toBe(200);
-      expect(body).toHaveProperty('status');
-    }));
+    fetchJSON('/api/admin/replayStatus/_/customers').then(
+      ({ status, body }) => {
+        expect(status).toBe(200);
+        expect(body).toHaveProperty('status');
+      },
+    ));
 
   test('GET /admin/replay/:name/status reflects replay state', () =>
-    fetchJSON('/admin/replay/customers/status').then(({ status, body }) => {
+    fetchJSON('/admin/replay/_/customers/status').then(({ status, body }) => {
       expect(status).toBe(200);
       expect(body.readModel).toBe('customers');
       expect(body.status).toBe('idle');
@@ -341,7 +343,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   test.skipIf(!hasMongoTools)(
     'POST /admin/replay/:name/prepare prepares a replay',
     () =>
-      fetchJSON('/admin/replay/customers/prepare', {
+      fetchJSON('/admin/replay/_/customers/prepare', {
         method: 'POST',
         body: '{}',
       }).then(({ status, body }) => {
@@ -356,12 +358,12 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
   test.skipIf(!hasMongoTools)(
     'POST /admin/replay/:name/prepare returns 409 when already replaying',
     () =>
-      fetchJSON('/admin/replay/customers/prepare', {
+      fetchJSON('/admin/replay/_/customers/prepare', {
         method: 'POST',
         body: '{}',
       })
         .then(() =>
-          fetchJSON('/admin/replay/customers/prepare', {
+          fetchJSON('/admin/replay/_/customers/prepare', {
             method: 'POST',
             body: '{}',
           }),
@@ -409,7 +411,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       // doesn't work here because the event bus is mocked and won't
       // deliver REPLAY_CANCELLED to clear the projection handler state)
       server.__testing__.context.projectionHandler.clearReadModelReplayState(
-        'customers',
+        '_/customers',
       );
       return db
         .collection('customers_overview')
@@ -418,7 +420,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
           { name: 'existing-customer' },
         )
         .then(() =>
-          fetchJSON('/admin/replay/customers/prepare', {
+          fetchJSON('/admin/replay/_/customers/prepare', {
             method: 'POST',
             body: JSON.stringify({ fromScratch: true }),
           }),
@@ -444,7 +446,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
       const db = cleanupClient.db('admin-test');
       // Clear any leftover replay state from prior tests
       server.__testing__.context.projectionHandler.clearReadModelReplayState(
-        'customers',
+        '_/customers',
       );
       return db
         .collection('customers_overview')
@@ -454,7 +456,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
         )
         .then(() =>
           // Create a backup
-          fetchJSON('/admin/backup/customers', {
+          fetchJSON('/admin/backup/_/customers', {
             method: 'POST',
             body: '{}',
           }),
@@ -467,7 +469,7 @@ describe('startAdmin integration', { timeout: 60000 }, () => {
             .collection('customers_overview')
             .insertOne({ name: 'post-backup-customer' })
             .then(() =>
-              fetchJSON('/admin/replay/customers/prepare', {
+              fetchJSON('/admin/replay/_/customers/prepare', {
                 method: 'POST',
                 body: JSON.stringify({ backupId }),
               }),
