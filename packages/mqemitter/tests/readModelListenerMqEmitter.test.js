@@ -213,7 +213,6 @@ describe('readModelListenerMqEmitter', () => {
     context.lifecycleManager = {
       getState: vi.fn().mockReturnValue('live'),
     };
-    context.readModels.users.collections = ['users_table'];
     context.readModels.users.lastProjectedEventTimestamp = 999;
 
     return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
@@ -237,9 +236,9 @@ describe('readModelListenerMqEmitter', () => {
             result: [
               {
                 name: 'users',
+                serviceId: 'TEST',
                 lastProjectedEventTimestamp: 999,
                 status: 'active',
-                collections: ['users_table'],
                 state: 'live',
                 fifoQueueSize: 0,
               },

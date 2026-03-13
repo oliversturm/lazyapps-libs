@@ -71,12 +71,6 @@
             {formatTimestamp(readModel.lastProjectedEventTimestamp)}
           </dd>
         </div>
-        <div>
-          <dt class="text-xs text-gray-400">Collections</dt>
-          <dd class="text-sm font-mono text-gray-900">
-            {readModel.collections?.join(', ')}
-          </dd>
-        </div>
       </dl>
     </div>
 

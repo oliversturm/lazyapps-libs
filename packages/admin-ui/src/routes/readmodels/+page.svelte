@@ -71,10 +71,6 @@
             >Status</th
           >
           <th
-            class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"
-            >Collections</th
-          >
-          <th
             class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase"
             >Actions</th
           >
@@ -98,9 +94,6 @@
             <td class="px-6 py-4">
               <StatusBadge status={rm.status} />
             </td>
-            <td class="px-6 py-4 text-sm text-gray-600 font-mono"
-              >{rm.collections?.join(', ')}</td
-            >
             <td class="px-6 py-4 text-right space-x-3">
               <a
                 href="/readmodels/{rm.name}/backups?service={rm.serviceName}"

@@ -103,9 +103,9 @@ export const readModelListenerMqEmitter =
           const result = Object.entries(context.readModels).map(
             ([name, rm]) => ({
               name,
+              serviceId: context.correlationConfig?.serviceId,
               lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
               status: replayStates[name] ? 'replaying' : 'active',
-              collections: rm.collections || [name],
               state: context.lifecycleManager?.getState(name),
               fifoQueueSize:
                 context.projectionHandler?.getFifoQueueSize?.(name),
