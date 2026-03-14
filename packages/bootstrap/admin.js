@@ -209,12 +209,35 @@ export const startAdmin = (
                     activator.autoActivateAll(explicitNames);
                   } else {
                     // Discover read models from RM services, then activate
+                    // Retry with exponential backoff when services aren't ready yet
                     log.info(
                       'Auto-activation: discovering read models from services',
                     );
-                    activator
-                      .fetchReadModels()
+                    const maxAttempts = 15;
+                    const delay = (ms) =>
+                      new Promise((resolve) => setTimeout(resolve, ms));
+
+                    const tryFetch = (attempt, backoff) =>
+                      activator.fetchReadModels().then((rms) => {
+                        if (rms.length === 0 && attempt < maxAttempts) {
+                          log.warn(
+                            `Read model discovery returned empty results (attempt ${attempt}/${maxAttempts}), retrying in ${backoff}ms`,
+                          );
+                          return delay(backoff).then(() =>
+                            tryFetch(attempt + 1, Math.min(backoff * 2, 30000)),
+                          );
+                        }
+                        return rms;
+                      });
+
+                    tryFetch(1, 1000)
                       .then((rms) => {
+                        if (rms.length === 0) {
+                          log.error(
+                            'Read model discovery returned empty results after all retry attempts',
+                          );
+                          return;
+                        }
                         const names = rms.map((rm) =>
                           rm.endpointName
                             ? `${rm.endpointName}/${rm.name}`

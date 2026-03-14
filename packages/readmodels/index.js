@@ -240,6 +240,10 @@ const createAdminInstructionHandler =
         handlePrepareForReplay(context, correlationId, instruction);
         break;
 
+      case 'set_ready':
+        log.debug('set_ready instruction received (no-op for read models)');
+        break;
+
       default:
         log.warn(`Unknown admin instruction type: ${type}`);
     }
