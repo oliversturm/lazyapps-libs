@@ -61,6 +61,7 @@ export const startAdmin = (
               const key = msg.targetEndpointName
                 ? `${msg.targetEndpointName}/${msg.readModel}`
                 : msg.readModel;
+              log.info(`Replay ${msg.type} for ${key}`);
               context.projectionHandler.clearReadModelReplayState(key);
               context.projectionHandler.setReadModelTerminalStatus(
                 key,
@@ -71,6 +72,7 @@ export const startAdmin = (
               const key = msg.targetEndpointName
                 ? `${msg.targetEndpointName}/${msg.readModel}`
                 : msg.readModel;
+              log.info(`Replay ${msg.type} for ${key}`);
               context.projectionHandler.clearReadModelReplayState(key);
               context.projectionHandler.setReadModelTerminalStatus(
                 key,
