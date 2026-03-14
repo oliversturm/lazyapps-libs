@@ -410,7 +410,7 @@ describe('createNotifier', () => {
         if (scopes.length === 0) {
           return {
             ...payload,
-            name: { unauthorized: true, text: '[redacted]' },
+            name: { restricted: true, text: '[redacted]' },
           };
         }
         return payload;

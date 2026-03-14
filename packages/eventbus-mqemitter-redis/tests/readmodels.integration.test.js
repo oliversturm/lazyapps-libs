@@ -43,8 +43,11 @@ beforeAll(async () => {
 afterAll(async () => {
   suppressErrors = true;
   if (container) await container.stop();
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  process.removeListener('uncaughtException', errorHandler);
+  // Do not remove the error handler on a timer — mqemitter-redis holds
+  // open connections that cannot be closed from test code, and they may
+  // throw ECONNREFUSED well after the container stops. The handler only
+  // suppresses expected teardown errors (ECONNRESET/EPIPE/ECONNREFUSED)
+  // when suppressErrors is true, so it is safe to leave registered.
 });
 
 const { connect } = await import('../connect.js');

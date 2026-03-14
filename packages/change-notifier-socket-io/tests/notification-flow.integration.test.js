@@ -147,7 +147,7 @@ describe('change notification integration flow', () => {
     expect(adminPayloads).toHaveLength(1);
     expect(adminPayloads[0].payload.name).toBe('Alice');
     expect(adminPayloads[0].payload.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
 
@@ -155,11 +155,11 @@ describe('change notification integration flow', () => {
     const nonePayloads = emittedPayloads.get('ep/customers/all:scopes=none');
     expect(nonePayloads).toHaveLength(1);
     expect(nonePayloads[0].payload.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(nonePayloads[0].payload.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
 
@@ -169,7 +169,7 @@ describe('change notification integration flow', () => {
     );
     expect(financePayloads).toHaveLength(1);
     expect(financePayloads[0].payload.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(financePayloads[0].payload.balance).toBe(500);
@@ -203,15 +203,15 @@ describe('change notification integration flow', () => {
     const payloads = emittedPayloads.get('ep/customers/all:scopes=none');
     expect(payloads).toHaveLength(1);
     expect(payloads[0].payload.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(payloads[0].payload.location).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(payloads[0].payload.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
   });
@@ -304,7 +304,7 @@ describe('change notification integration flow', () => {
     // No-scope client: schema redacts name, hook redacts computedScore
     const nonePayloads = emittedPayloads.get('ep/customers/all:scopes=none');
     expect(nonePayloads[0].payload.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(nonePayloads[0].payload.computedScore).toBe('[hidden]');
@@ -338,7 +338,7 @@ describe('change notification integration flow', () => {
     // No-scope client: encrypted field redacted
     const nonePayloads = emittedPayloads.get('ep/customers/all:scopes=none');
     expect(nonePayloads[0].payload.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(nonePayloads[0].payload.status).toBe('active');

@@ -9,6 +9,7 @@ import { Server as SocketIoServer } from 'socket.io';
 import http from 'http';
 import { nanoid } from 'nanoid';
 
+import { expressJwtSecret } from 'jwks-rsa';
 import { getLogger, getStream } from '@lazyapps/logger';
 import { initSockets, createNotifier } from './notifier.js';
 import { createRedactionEngine } from './redaction.js';
@@ -40,7 +41,7 @@ const runExpress = (
     port = 3008,
     host = '0.0.0.0',
     jwtSecret,
-    jwtAlgorithms = ['HS256'],
+    jwtAlgorithms,
     jwksUri,
     authCookieName,
     credentialsRequired,
@@ -53,6 +54,24 @@ const runExpress = (
   },
 ) => {
   return new Promise((resolve, reject) => {
+    // Auto-construct jwtSecret from jwksUri when jwtSecret is not provided
+    if (jwksUri && !jwtSecret) {
+      jwtSecret = expressJwtSecret({
+        cache: true,
+        rateLimit: true,
+        jwksRequestsPerMinute: 5,
+        jwksUri,
+      });
+      // Default to RS256 for JWKS unless caller explicitly specified algorithms
+      if (!jwtAlgorithms) {
+        jwtAlgorithms = ['RS256'];
+      }
+    }
+    // Default to HS256 for symmetric secrets when no algorithms specified
+    if (!jwtAlgorithms) {
+      jwtAlgorithms = ['HS256'];
+    }
+
     const app = express();
     app.use(cors());
     app.use(bodyParser.json());

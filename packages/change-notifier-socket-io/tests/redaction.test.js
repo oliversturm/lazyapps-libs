@@ -130,11 +130,11 @@ describe('redactPayload', () => {
 
     expect(result.id).toBe('1');
     expect(result.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(result.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
   });
@@ -171,7 +171,7 @@ describe('redactPayload', () => {
       data: 'enc',
     });
     expect(result.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
   });
@@ -215,11 +215,11 @@ describe('redactPayload', () => {
 
     expect(result.id).toBe('1');
     expect(result.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(result.email).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
   });
@@ -237,6 +237,142 @@ describe('redactPayload', () => {
     const result = redactPayload(payload, schema, ctxs, ['admin']);
 
     expect(result).toEqual(payload);
+  });
+
+  test('redacts fields inside details when unauthorized', () => {
+    const schema = createMockSchema();
+    const ctxs = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {}, email: {} },
+      },
+    };
+    const payload = {
+      id: '1',
+      details: { name: 'Alice', email: 'alice@test.com', status: 'active' },
+    };
+
+    const result = redactPayload(payload, schema, ctxs, []);
+
+    expect(result.details.name).toEqual({
+      restricted: true,
+      text: '[personal restricted]',
+    });
+    expect(result.details.email).toEqual({
+      restricted: true,
+      text: '[personal restricted]',
+    });
+    expect(result.details.status).toBe('active');
+  });
+
+  test('details with mixed authorized/unauthorized fields', () => {
+    const schema = createMockSchema();
+    const ctxs = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {} },
+      },
+      financial: {
+        roles: ['finance'],
+        fields: { balance: {} },
+      },
+    };
+    const payload = {
+      id: '1',
+      details: { name: 'Alice', balance: 100, status: 'active' },
+    };
+
+    const result = redactPayload(payload, schema, ctxs, ['admin']);
+
+    expect(result.details.name).toBe('Alice');
+    expect(result.details.balance).toEqual({
+      restricted: true,
+      text: '[financial restricted]',
+    });
+    expect(result.details.status).toBe('active');
+  });
+
+  test('details that is null does not crash', () => {
+    const schema = createMockSchema();
+    const ctxs = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {} },
+      },
+    };
+    const payload = { id: '1', details: null };
+
+    const result = redactPayload(payload, schema, ctxs, []);
+
+    expect(result.details).toBeNull();
+  });
+
+  test('details that is undefined does not crash', () => {
+    const schema = createMockSchema();
+    const ctxs = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {} },
+      },
+    };
+    const payload = { id: '1' };
+
+    const result = redactPayload(payload, schema, ctxs, []);
+
+    expect(result.details).toBeUndefined();
+  });
+
+  test('redacts __encrypted markers inside details', () => {
+    const schema = createMockSchema();
+    const payload = {
+      id: '1',
+      details: {
+        name: { __encrypted: true, ctx: 'personal', data: 'enc' },
+        status: 'active',
+      },
+    };
+
+    const result = redactPayload(payload, schema, contexts, []);
+
+    expect(result.details.name).toEqual({
+      restricted: true,
+      text: '[personal restricted]',
+    });
+    expect(result.details.status).toBe('active');
+  });
+
+  test('leaves __encrypted markers inside details when authorized', () => {
+    const schema = createMockSchema();
+    const payload = {
+      id: '1',
+      details: {
+        name: { __encrypted: true, ctx: 'personal', data: 'enc' },
+      },
+    };
+
+    const result = redactPayload(payload, schema, contexts, ['admin']);
+
+    expect(result.details.name).toEqual({
+      __encrypted: true,
+      ctx: 'personal',
+      data: 'enc',
+    });
+  });
+
+  test('does not mutate original details object', () => {
+    const schema = createMockSchema();
+    const ctxs = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {} },
+      },
+    };
+    const originalDetails = { name: 'Alice', status: 'active' };
+    const payload = { id: '1', details: originalDetails };
+
+    redactPayload(payload, schema, ctxs, []);
+
+    expect(originalDetails.name).toBe('Alice');
   });
 });
 
@@ -275,7 +411,7 @@ describe('createRedactionEngine', () => {
     const result = engine.redact(payload, []);
 
     expect(result.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
   });
@@ -377,12 +513,49 @@ describe('createRedactionEngine', () => {
     const result = engine.redact(payload, []);
 
     expect(result.name).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[personal restricted]',
     });
     expect(result.balance).toEqual({
-      unauthorized: true,
+      restricted: true,
       text: '[financial restricted]',
     });
+  });
+
+  test('auto-redaction of details followed by custom hook (additive)', () => {
+    const schema = createMockSchema();
+    const contexts = {
+      personal: {
+        roles: ['admin'],
+        fields: { name: {} },
+      },
+    };
+    const hook = vi.fn((payload) => ({
+      ...payload,
+      customRedacted: '[hook applied]',
+    }));
+
+    const engine = createRedactionEngine({
+      schema,
+      contexts,
+      redactionHooks: { customers: hook },
+    });
+
+    const payload = {
+      readModelName: 'customers',
+      details: { name: 'Alice', status: 'active' },
+    };
+
+    const result = engine.redact(payload, []);
+
+    // Auto-redaction happened on details
+    expect(result.details.name).toEqual({
+      restricted: true,
+      text: '[personal restricted]',
+    });
+    expect(result.details.status).toBe('active');
+    // Hook was applied additively
+    expect(result.customRedacted).toBe('[hook applied]');
+    expect(hook).toHaveBeenCalled();
   });
 });

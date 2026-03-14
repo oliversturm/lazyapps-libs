@@ -46,7 +46,19 @@ export const redactPayload = (changeInfo, schema, contexts, scopes) => {
       for (const fieldName of Object.keys(contextConfig.fields)) {
         if (result[fieldName] !== undefined) {
           const text = schema.getUnauthorizedText(fieldName, contextName);
-          result[fieldName] = { unauthorized: true, text };
+          result[fieldName] = { restricted: true, text };
+        }
+        // Also check inside details
+        if (
+          result.details &&
+          typeof result.details === 'object' &&
+          result.details[fieldName] !== undefined
+        ) {
+          if (result.details === changeInfo.details) {
+            result.details = { ...result.details };
+          }
+          const text = schema.getUnauthorizedText(fieldName, contextName);
+          result.details[fieldName] = { restricted: true, text };
         }
       }
     }
@@ -61,7 +73,27 @@ export const redactPayload = (changeInfo, schema, contexts, scopes) => {
         const isAuthorized = contextConfig.roles.some((r) => scopeSet.has(r));
         if (!isAuthorized) {
           const text = schema.getUnauthorizedText(fieldName, contextName);
-          result[fieldName] = { unauthorized: true, text };
+          result[fieldName] = { restricted: true, text };
+        }
+      }
+    }
+  }
+
+  // Check for encrypted field markers inside details
+  if (result.details && typeof result.details === 'object') {
+    for (const [fieldName, fieldValue] of Object.entries(result.details)) {
+      if (fieldValue && fieldValue.__encrypted) {
+        const contextName = fieldValue.ctx;
+        const contextConfig = contexts[contextName];
+        if (contextConfig && contextConfig.roles) {
+          const isAuthorized = contextConfig.roles.some((r) => scopeSet.has(r));
+          if (!isAuthorized) {
+            if (result.details === changeInfo.details) {
+              result.details = { ...result.details };
+            }
+            const text = schema.getUnauthorizedText(fieldName, contextName);
+            result.details[fieldName] = { restricted: true, text };
+          }
         }
       }
     }
