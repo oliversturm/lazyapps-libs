@@ -72,6 +72,22 @@ export const installReadModelStatusApi = (context) => (app) => {
   );
 };
 
+export const installAdminEventsApi = (context) => (app) => {
+  app.get('/api/admin/events', (req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    res.write(':keepalive\n\n');
+
+    context.sseClients.add(res);
+    req.on('close', () => {
+      context.sseClients.delete(res);
+    });
+  });
+};
+
 export const installReadModelAdminApi = (context) => (app) => {
   // Use admin-specific (activator-proxying) handlers when an activator is
   // available; fall back to the RM-service handlers otherwise (e.g. when

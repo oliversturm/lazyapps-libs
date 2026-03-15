@@ -24,7 +24,6 @@
   let prepareResult = $state(null);
   let targetEndpointName = $state(data.endpointName || null);
   let replayProgress = $state(null);
-  let pollTimer = $state(null);
 
   const loadBackups = () => {
     api
@@ -43,20 +42,73 @@
       .then((status) => {
         if (status && status.status === 'in_progress') {
           step = 'replaying';
-          startPolling();
+          pollStatus();
         }
       })
       .catch(() => {});
   };
 
+  const connectSSE = () => {
+    let aborted = false;
+    const controller = new AbortController();
+
+    fetch('/api/admin/events', { signal: controller.signal })
+      .then((response) => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const read = () => {
+          reader.read().then(({ done, value }) => {
+            if (done || aborted) return;
+            buffer += decoder.decode(value, { stream: true });
+
+            const parts = buffer.split('\n\n');
+            buffer = parts.pop();
+
+            parts.forEach((part) => {
+              let eventType = null;
+              let eventData = null;
+              part.split('\n').forEach((line) => {
+                if (line.startsWith('event: ')) eventType = line.slice(7);
+                if (line.startsWith('data: ')) eventData = line.slice(6);
+              });
+              if (eventType === 'replay-status' && eventData) {
+                const evt = JSON.parse(eventData);
+                if (
+                  evt.readModel === data.name &&
+                  evt.endpointName === targetEndpointName
+                ) {
+                  if (evt.status === 'completed') {
+                    step = 'done';
+                    pollStatus();
+                  } else if (evt.status === 'cancelled') {
+                    step = 'configure';
+                  }
+                }
+              }
+            });
+
+            read();
+          });
+        };
+        read();
+      })
+      .catch(() => {
+        // Connection lost — retry after 3s unless aborted
+        if (!aborted) setTimeout(connectSSE, 3000);
+      });
+
+    return () => {
+      aborted = true;
+      controller.abort();
+    };
+  };
+
   $effect(() => {
     loadBackups();
     checkExistingReplay();
-  });
-
-  // Cleanup polling on unmount
-  $effect(() => () => {
-    if (pollTimer) clearInterval(pollTimer);
+    return connectSSE();
   });
 
   const handlePrepare = () => {
@@ -90,7 +142,7 @@
       .startReplay(data.name, fromTimestamp, toTimestamp, targetEndpointName)
       .then(() => {
         step = 'replaying';
-        startPolling();
+        pollStatus();
       })
       .catch((err) => {
         error = err.error || String(err);
@@ -102,7 +154,6 @@
     api
       .cancelReplay(data.name)
       .then(() => {
-        stopPolling();
         step = 'configure';
         replayProgress = null;
         prepareResult = null;
@@ -112,23 +163,11 @@
       });
   };
 
-  const startPolling = () => {
-    stopPolling();
-    pollStatus();
-    pollTimer = setInterval(pollStatus, 2000);
-  };
-
-  const stopPolling = () => {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  };
-
   const pollStatus = () => {
     Promise.all([
       api.getReplayStatus(targetEndpointName, data.name).catch(() => null),
-      api.getReplayReadModelStatus('', targetEndpointName, data.name)
+      api
+        .getReplayReadModelStatus('', targetEndpointName, data.name)
         .catch(() => null),
     ]).then(([cpStatus, rmStatus]) => {
       replayProgress = {
@@ -137,14 +176,6 @@
         cpStatus: cpStatus?.status || 'unknown',
         rmStatus: rmStatus?.status || 'unknown',
       };
-
-      if (
-        cpStatus?.status === 'completed' &&
-        rmStatus?.status !== 'in_progress'
-      ) {
-        stopPolling();
-        step = 'done';
-      }
     });
   };
 

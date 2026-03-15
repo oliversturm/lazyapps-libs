@@ -6,6 +6,7 @@ import {
   installReplayAdminApi,
   installReadModelAdminApi,
   installCatchupAdminApi,
+  installAdminEventsApi,
 } from '@lazyapps/admin-api';
 import { adminTokenAuth } from '@lazyapps/admin-api/adminTokenAuth.js';
 import { createActivator } from './activator.js';
@@ -45,10 +46,13 @@ export const startAdmin = (
 ) => {
   log.info('Initializing admin service');
 
+  const sseClients = new Set();
+
   const context = {
     correlationConfig,
     readModels: readModels || {},
     projectionHandler: createAdminProjectionHandler(),
+    sseClients,
   };
 
   return eventBus()
@@ -67,6 +71,14 @@ export const startAdmin = (
                 key,
                 'completed',
               );
+              const sseData = JSON.stringify({
+                readModel: msg.readModel,
+                endpointName: msg.targetEndpointName || null,
+                status: 'completed',
+              });
+              sseClients.forEach((res) => {
+                res.write(`event: replay-status\ndata: ${sseData}\n\n`);
+              });
             }
             if (msg.type === 'REPLAY_CANCELLED') {
               const key = msg.targetEndpointName
@@ -78,6 +90,14 @@ export const startAdmin = (
                 key,
                 'cancelled',
               );
+              const sseData = JSON.stringify({
+                readModel: msg.readModel,
+                endpointName: msg.targetEndpointName || null,
+                status: 'cancelled',
+              });
+              sseClients.forEach((res) => {
+                res.write(`event: replay-status\ndata: ${sseData}\n\n`);
+              });
             }
             if (msg.type === 'CATCHUP_EVENTS_DONE') {
               const key = msg.targetEndpointName
@@ -88,6 +108,14 @@ export const startAdmin = (
                 key,
                 'completed',
               );
+              const sseData = JSON.stringify({
+                readModel: msg.readModel,
+                endpointName: msg.targetEndpointName || null,
+                status: 'completed',
+              });
+              sseClients.forEach((res) => {
+                res.write(`event: catchup-status\ndata: ${sseData}\n\n`);
+              });
             }
             if (msg.type === 'CATCHUP_CANCELLED') {
               const key = msg.targetEndpointName
@@ -98,6 +126,14 @@ export const startAdmin = (
                 key,
                 'cancelled',
               );
+              const sseData = JSON.stringify({
+                readModel: msg.readModel,
+                endpointName: msg.targetEndpointName || null,
+                status: 'cancelled',
+              });
+              sseClients.forEach((res) => {
+                res.write(`event: catchup-status\ndata: ${sseData}\n\n`);
+              });
             }
           }),
         ).then(() => ctx);
@@ -172,6 +208,7 @@ export const startAdmin = (
       installReplayAdminApi(context)(app);
       installCatchupAdminApi(context)(app);
       installReadModelAdminApi(context)(app);
+      installAdminEventsApi(context)(app);
 
       return import('@lazyapps/admin-ui/build/handler.js')
         .then(({ handler }) => {

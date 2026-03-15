@@ -12,11 +12,13 @@ vi.mock('@lazyapps/logger', () => ({
 const mockInstallReplayAdminApi = vi.fn().mockReturnValue(vi.fn());
 const mockInstallCatchupAdminApi = vi.fn().mockReturnValue(vi.fn());
 const mockInstallReadModelAdminApi = vi.fn().mockReturnValue(vi.fn());
+const mockInstallAdminEventsApi = vi.fn().mockReturnValue(vi.fn());
 
 vi.mock('@lazyapps/admin-api', () => ({
   installReplayAdminApi: mockInstallReplayAdminApi,
   installCatchupAdminApi: mockInstallCatchupAdminApi,
   installReadModelAdminApi: mockInstallReadModelAdminApi,
+  installAdminEventsApi: mockInstallAdminEventsApi,
 }));
 
 const mockActivator = {
@@ -304,6 +306,109 @@ describe('startAdmin', () => {
       expect(
         context.projectionHandler.getReadModelTerminalStatus('items'),
       ).toBe('cancelled');
+    });
+  });
+
+  test('broadcasts SSE replay-status event to all clients on REPLAY_EVENTS_DONE', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      const client1 = { write: vi.fn() };
+      const client2 = { write: vi.fn() };
+      context.sseClients.add(client1);
+      context.sseClients.add(client2);
+
+      systemHandler({
+        type: 'REPLAY_EVENTS_DONE',
+        readModel: 'orders',
+        targetEndpointName: 'ep1',
+      });
+
+      const expected =
+        'event: replay-status\n' +
+        'data: {"readModel":"orders","endpointName":"ep1","status":"completed"}\n\n';
+      expect(client1.write).toHaveBeenCalledWith(expected);
+      expect(client2.write).toHaveBeenCalledWith(expected);
+    });
+  });
+
+  test('broadcasts SSE replay-status event on REPLAY_CANCELLED', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      const client = { write: vi.fn() };
+      context.sseClients.add(client);
+
+      systemHandler({
+        type: 'REPLAY_CANCELLED',
+        readModel: 'items',
+        targetEndpointName: null,
+      });
+
+      const expected =
+        'event: replay-status\n' +
+        'data: {"readModel":"items","endpointName":null,"status":"cancelled"}\n\n';
+      expect(client.write).toHaveBeenCalledWith(expected);
+    });
+  });
+
+  test('broadcasts SSE catchup-status event on CATCHUP_EVENTS_DONE', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      const client = { write: vi.fn() };
+      context.sseClients.add(client);
+
+      systemHandler({
+        type: 'CATCHUP_EVENTS_DONE',
+        readModel: 'overview',
+        targetEndpointName: 'customers',
+      });
+
+      const expected =
+        'event: catchup-status\n' +
+        'data: {"readModel":"overview","endpointName":"customers","status":"completed"}\n\n';
+      expect(client.write).toHaveBeenCalledWith(expected);
+    });
+  });
+
+  test('broadcasts SSE catchup-status event on CATCHUP_CANCELLED', () => {
+    let systemHandler;
+    eventBusInstance.subscribeSystemMessages = vi
+      .fn()
+      .mockImplementation((handler) => {
+        systemHandler = handler;
+      });
+    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
+      const client = { write: vi.fn() };
+      context.sseClients.add(client);
+
+      systemHandler({
+        type: 'CATCHUP_CANCELLED',
+        readModel: 'overview',
+        targetEndpointName: 'customers',
+      });
+
+      const expected =
+        'event: catchup-status\n' +
+        'data: {"readModel":"overview","endpointName":"customers","status":"cancelled"}\n\n';
+      expect(client.write).toHaveBeenCalledWith(expected);
     });
   });
 

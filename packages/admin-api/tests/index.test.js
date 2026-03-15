@@ -16,6 +16,7 @@ const {
   installReplayAdminApi,
   installCatchupAdminApi,
   installReadModelAdminApi,
+  installAdminEventsApi,
 } = await import('../index.js');
 
 describe('installReplayAdminApi', () => {
@@ -104,6 +105,64 @@ describe('installReadModelAdminApi', () => {
     expect(app.post).toHaveBeenCalledTimes(5);
     expect(app.get).toHaveBeenCalledTimes(4);
     expect(app.delete).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('installAdminEventsApi', () => {
+  test('registers GET /api/admin/events route', () => {
+    const context = { sseClients: new Set() };
+    const app = { get: vi.fn() };
+
+    installAdminEventsApi(context)(app);
+
+    expect(app.get).toHaveBeenCalledWith(
+      '/api/admin/events',
+      expect.any(Function),
+    );
+    expect(app.get).toHaveBeenCalledTimes(1);
+  });
+
+  test('sets SSE headers and writes keepalive comment', () => {
+    const context = { sseClients: new Set() };
+    const app = { get: vi.fn() };
+
+    installAdminEventsApi(context)(app);
+
+    const handler = app.get.mock.calls[0][1];
+    const req = { on: vi.fn() };
+    const res = { writeHead: vi.fn(), write: vi.fn() };
+
+    handler(req, res);
+
+    expect(res.writeHead).toHaveBeenCalledWith(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    expect(res.write).toHaveBeenCalledWith(':keepalive\n\n');
+  });
+
+  test('adds response to sseClients and removes on close', () => {
+    const context = { sseClients: new Set() };
+    const app = { get: vi.fn() };
+
+    installAdminEventsApi(context)(app);
+
+    const handler = app.get.mock.calls[0][1];
+    const req = { on: vi.fn() };
+    const res = { writeHead: vi.fn(), write: vi.fn() };
+
+    handler(req, res);
+
+    expect(context.sseClients.has(res)).toBe(true);
+    expect(context.sseClients.size).toBe(1);
+
+    // Simulate close event
+    const closeHandler = req.on.mock.calls.find((c) => c[0] === 'close')[1];
+    closeHandler();
+
+    expect(context.sseClients.has(res)).toBe(false);
+    expect(context.sseClients.size).toBe(0);
   });
 });
 
