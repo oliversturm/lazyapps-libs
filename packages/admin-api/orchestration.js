@@ -221,10 +221,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           targetReadModel: rm,
         });
 
-        return sseClient.waitForStatus((status) => {
-          const rmStatus = status.readModels[`${ep}/${rm}`];
-          return rmStatus && rmStatus.state === 'catchup';
-        }, STEP_TIMEOUT_MS);
+        return sseClient.fetchAllStatus().then(() =>
+          sseClient.waitForStatus((status) => {
+            const rmStatus = status.readModels[`${ep}/${rm}`];
+            return rmStatus && rmStatus.state === 'catchup';
+          }, STEP_TIMEOUT_MS),
+        );
       })
       .then(() => {
         // Step 2: Query lastProjectedEventTimestamp and replayRelevantEvents
