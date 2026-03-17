@@ -15,7 +15,7 @@ export const channelWithExchange = ({ url, socketOptions, exchange }, log) =>
         channel
           .assertExchange(exchange, 'topic', { durable: false })
           .then(() => {
-            log.info(`Event bus using Rabbit MQ exchange "${exchange}"`);
+            log.info(`Message bus using Rabbit MQ exchange "${exchange}"`);
           })
           .then(() => ({ conn, channel })),
       ),

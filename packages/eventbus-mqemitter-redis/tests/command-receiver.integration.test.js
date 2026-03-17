@@ -56,17 +56,29 @@ describe('command-receiver mqEmitterRedis', { timeout: 60000 }, () => {
     vi.clearAllMocks();
   });
 
-  test('factory returns publishEvent, publishReplayState, publishReplayEvent, and publishSystemMessage', () => {
+  test('factory returns publishEvent, publishReplayEvent, publishCatchupEvent, and publishAdminInstruction', () => {
     const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
     return factory().then((result) => {
       expect(result).toHaveProperty('publishEvent');
-      expect(result).toHaveProperty('publishReplayState');
       expect(result).toHaveProperty('publishReplayEvent');
-      expect(result).toHaveProperty('publishSystemMessage');
+      expect(result).toHaveProperty('publishCatchupEvent');
+      expect(result).toHaveProperty('publishAdminInstruction');
+      expect(result).toHaveProperty('subscribeAdminMessages');
       expect(typeof result.publishEvent).toBe('function');
-      expect(typeof result.publishReplayState).toBe('function');
       expect(typeof result.publishReplayEvent).toBe('function');
-      expect(typeof result.publishSystemMessage).toBe('function');
+      expect(typeof result.publishCatchupEvent).toBe('function');
+      expect(typeof result.publishAdminInstruction).toBe('function');
+      expect(typeof result.subscribeAdminMessages).toBe('function');
+    });
+  });
+
+  test('does not expose publishReplayState, publishSystemMessage, subscribeSystemMessages, or subscribeAdminReply', () => {
+    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
+    return factory().then((result) => {
+      expect(result).not.toHaveProperty('publishReplayState');
+      expect(result).not.toHaveProperty('publishSystemMessage');
+      expect(result).not.toHaveProperty('subscribeSystemMessages');
+      expect(result).not.toHaveProperty('subscribeAdminReply');
     });
   });
 
@@ -77,42 +89,5 @@ describe('command-receiver mqEmitterRedis', { timeout: 60000 }, () => {
       const returned = result.publishEvent('corr-1')(event);
       expect(returned).toEqual(event);
     });
-  });
-
-  test('publishReplayState(correlationId)(state) returns the state', () => {
-    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
-    return factory().then((result) => {
-      const state = true;
-      const returned = result.publishReplayState('corr-2')(state);
-      expect(returned).toBe(true);
-    });
-  });
-
-  test('factory returns subscribeSystemMessages', () => {
-    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
-    return factory().then((result) => {
-      expect(result).toHaveProperty('subscribeSystemMessages');
-      expect(typeof result.subscribeSystemMessages).toBe('function');
-    });
-  });
-
-  test('subscribeSystemMessages receives published system messages', () => {
-    const factory = mqEmitterRedis({ host: redisHost, port: redisPort });
-    return factory().then(
-      (result) =>
-        new Promise((resolve) => {
-          const message = {
-            type: 'REPLAY_EVENTS_DONE',
-            readModel: 'testModel',
-          };
-          result.subscribeSystemMessages((received) => {
-            expect(received).toEqual(message);
-            resolve();
-          });
-          setTimeout(() => {
-            result.publishSystemMessage('corr-sub-1')(message);
-          }, 100);
-        }),
-    );
   });
 });

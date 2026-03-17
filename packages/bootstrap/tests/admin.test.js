@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -9,25 +9,43 @@ vi.mock('@lazyapps/logger', () => ({
   }),
 }));
 
-const mockInstallReplayAdminApi = vi.fn().mockReturnValue(vi.fn());
-const mockInstallCatchupAdminApi = vi.fn().mockReturnValue(vi.fn());
-const mockInstallReadModelAdminApi = vi.fn().mockReturnValue(vi.fn());
-const mockInstallAdminEventsApi = vi.fn().mockReturnValue(vi.fn());
+const mockInstallAdminRoutes = vi.fn().mockReturnValue(vi.fn());
+const mockCreateSseClient = vi.fn().mockReturnValue({
+  cache: {
+    getAllReadModels: vi.fn().mockReturnValue({}),
+    getReadModel: vi.fn(),
+    getCommandProcessor: vi.fn().mockReturnValue({ state: 'idle' }),
+    updateReadModel: vi.fn(),
+  },
+  emitter: { on: vi.fn(), off: vi.fn() },
+  addBrowserClient: vi.fn().mockResolvedValue(undefined),
+  removeBrowserClient: vi.fn(),
+  startOperation: vi.fn().mockResolvedValue(undefined),
+  endOperation: vi.fn(),
+  ensureConnected: vi.fn().mockResolvedValue(undefined),
+  disconnectAll: vi.fn(),
+  waitForStatus: vi.fn(),
+  fetchReplayRelevantEvents: vi.fn(),
+  fetchBackupList: vi.fn(),
+  fetchAllStatus: vi.fn().mockResolvedValue(undefined),
+  getServiceUrls: vi.fn().mockReturnValue([]),
+});
+const mockCreateOrchestrator = vi.fn().mockReturnValue({
+  replayOrchestration: vi.fn().mockResolvedValue({}),
+  cancelReplayOrchestration: vi.fn().mockResolvedValue({}),
+  activationOrchestration: vi.fn().mockResolvedValue({}),
+  activateAll: vi.fn().mockResolvedValue([]),
+});
 
 vi.mock('@lazyapps/admin-api', () => ({
-  installReplayAdminApi: mockInstallReplayAdminApi,
-  installCatchupAdminApi: mockInstallCatchupAdminApi,
-  installReadModelAdminApi: mockInstallReadModelAdminApi,
-  installAdminEventsApi: mockInstallAdminEventsApi,
+  installAdminRoutes: mockInstallAdminRoutes,
+  createSseClient: mockCreateSseClient,
+  createOrchestrator: mockCreateOrchestrator,
 }));
 
 const mockActivator = {
-  activateReadModel: vi.fn().mockResolvedValue(),
-  stopReadModel: vi.fn(),
-  restartReadModel: vi.fn().mockResolvedValue(),
-  queryReadModelState: vi.fn().mockResolvedValue({}),
-  signalCpReady: vi.fn().mockResolvedValue(),
   autoActivateAll: vi.fn().mockResolvedValue(),
+  fetchReadModels: vi.fn().mockResolvedValue([]),
 };
 
 vi.mock('../activator.js', () => ({
@@ -68,14 +86,14 @@ describe('startAdmin', () => {
     vi.clearAllMocks();
 
     eventBusInstance = {
-      publishReplayEvent: vi.fn(),
-      publishSystemMessage: vi.fn(),
+      publishAdminInstruction: vi.fn().mockReturnValue(vi.fn()),
     };
 
     config = {
       port: 3005,
       eventBus: vi.fn().mockResolvedValue(eventBusInstance),
-      readModels: { customers: { resolvers: { all: vi.fn() } } },
+      readModelServiceUrl: 'http://localhost:3002',
+      commandProcessorUrl: 'http://localhost:3000',
     };
 
     // Simulate server 'listening' event firing
@@ -86,43 +104,35 @@ describe('startAdmin', () => {
     });
   });
 
-  test('initializes event bus', () =>
+  test('initializes message bus', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
       expect(config.eventBus).toHaveBeenCalledOnce();
     }));
 
-  test('installs replay admin API routes', () =>
+  test('creates SSE client with correct config', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(mockInstallReplayAdminApi).toHaveBeenCalledOnce();
-      const context = mockInstallReplayAdminApi.mock.calls[0][0];
-      expect(context.eventBus).toBe(eventBusInstance);
-    }));
-
-  test('installs read model admin API routes', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(mockInstallReadModelAdminApi).toHaveBeenCalledOnce();
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      expect(context.readModels).toBe(config.readModels);
-    }));
-
-  test('context includes projectionHandler with replay state tracking', () =>
-    startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      expect(context.projectionHandler).toBeDefined();
-      expect(context.projectionHandler.getReadModelReplayStates()).toEqual({});
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        false,
-      );
-      context.projectionHandler.setReadModelReplayState('items', true);
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        true,
-      );
-      expect(context.projectionHandler.getReadModelReplayStates()).toEqual({
-        items: true,
+      expect(mockCreateSseClient).toHaveBeenCalledWith({
+        readModelServiceUrl: 'http://localhost:3002',
+        commandProcessorUrl: 'http://localhost:3000',
+        token: undefined,
       });
-      context.projectionHandler.clearReadModelReplayState('items');
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        false,
+    }));
+
+  test('creates orchestrator with SSE client and message bus', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      expect(mockCreateOrchestrator).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventBus: eventBusInstance,
+        }),
+      );
+    }));
+
+  test('installs admin routes', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      expect(mockInstallAdminRoutes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventBus: eventBusInstance,
+        }),
       );
     }));
 
@@ -151,7 +161,7 @@ describe('startAdmin', () => {
       expect(server.on).toBeDefined();
     }));
 
-  test('rejects when event bus initialization fails', () => {
+  test('rejects when message bus initialization fails', () => {
     const configBadEB = {
       ...config,
       eventBus: vi.fn().mockRejectedValue(new Error('EB fail')),
@@ -172,264 +182,23 @@ describe('startAdmin', () => {
     );
   });
 
-  test('context includes activator when readModelServiceUrl is provided', () =>
-    startAdmin(
-      { serviceId: 'TEST' },
-      { ...config, readModelServiceUrl: 'http://localhost:3002' },
-    ).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      expect(context.activator).toBeDefined();
-      expect(context.activator.activateReadModel).toBeInstanceOf(Function);
-      expect(context.activator.stopReadModel).toBeInstanceOf(Function);
-      expect(context.activator.signalCpReady).toBeInstanceOf(Function);
+  test('server __testing__ exposes sseClient and orchestrator', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then((server) => {
+      expect(server.__testing__).toBeDefined();
+      expect(server.__testing__.sseClient).toBeDefined();
+      expect(server.__testing__.orchestrator).toBeDefined();
+      expect(server.__testing__.eventBus).toBe(eventBusInstance);
     }));
 
-  test('context has no activator when readModelServiceUrl is not provided', () =>
+  test('triggers auto-activation when autoActivate and readModelServiceUrl are set', () =>
+    startAdmin({ serviceId: 'TEST' }, { ...config, autoActivate: true }).then(
+      () => {
+        expect(mockActivator.autoActivateAll).toHaveBeenCalled();
+      },
+    ));
+
+  test('does not trigger auto-activation when autoActivate is falsy', () =>
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      expect(context.activator).toBeUndefined();
+      expect(mockActivator.autoActivateAll).not.toHaveBeenCalled();
     }));
-
-  test('subscribes to system messages when available', () => {
-    const subscribeSystemMessages = vi.fn();
-    eventBusInstance.subscribeSystemMessages = subscribeSystemMessages;
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(subscribeSystemMessages).toHaveBeenCalledOnce();
-    });
-  });
-
-  test('subscribes to admin messages when available', () => {
-    const subscribeAdminMessages = vi.fn();
-    eventBusInstance.subscribeAdminMessages = subscribeAdminMessages;
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      expect(subscribeAdminMessages).toHaveBeenCalledOnce();
-    });
-  });
-
-  test('clears replay state on REPLAY_EVENTS_DONE system message', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      context.projectionHandler.setReadModelReplayState('items', true);
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        true,
-      );
-      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        false,
-      );
-    });
-  });
-
-  test('clears replay state on REPLAY_CANCELLED system message', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      context.projectionHandler.setReadModelReplayState('items', true);
-      systemHandler({ type: 'REPLAY_CANCELLED', readModel: 'items' });
-      expect(context.projectionHandler.isReadModelReplaying('items')).toBe(
-        false,
-      );
-    });
-  });
-
-  test('sets terminal status to completed on REPLAY_EVENTS_DONE', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      context.projectionHandler.setReadModelReplayState('items', true);
-      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe('completed');
-    });
-  });
-
-  test('sets terminal status to cancelled on REPLAY_CANCELLED', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      context.projectionHandler.setReadModelReplayState('items', true);
-      systemHandler({ type: 'REPLAY_CANCELLED', readModel: 'items' });
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe('cancelled');
-    });
-  });
-
-  test('sets terminal status to completed on CATCHUP_EVENTS_DONE', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      systemHandler({ type: 'CATCHUP_EVENTS_DONE', readModel: 'items' });
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe('completed');
-    });
-  });
-
-  test('sets terminal status to cancelled on CATCHUP_CANCELLED', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      systemHandler({ type: 'CATCHUP_CANCELLED', readModel: 'items' });
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe('cancelled');
-    });
-  });
-
-  test('broadcasts SSE replay-status event to all clients on REPLAY_EVENTS_DONE', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      const client1 = { write: vi.fn() };
-      const client2 = { write: vi.fn() };
-      context.sseClients.add(client1);
-      context.sseClients.add(client2);
-
-      systemHandler({
-        type: 'REPLAY_EVENTS_DONE',
-        readModel: 'orders',
-        targetEndpointName: 'ep1',
-      });
-
-      const expected =
-        'event: replay-status\n' +
-        'data: {"readModel":"orders","endpointName":"ep1","status":"completed"}\n\n';
-      expect(client1.write).toHaveBeenCalledWith(expected);
-      expect(client2.write).toHaveBeenCalledWith(expected);
-    });
-  });
-
-  test('broadcasts SSE replay-status event on REPLAY_CANCELLED', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      const client = { write: vi.fn() };
-      context.sseClients.add(client);
-
-      systemHandler({
-        type: 'REPLAY_CANCELLED',
-        readModel: 'items',
-        targetEndpointName: null,
-      });
-
-      const expected =
-        'event: replay-status\n' +
-        'data: {"readModel":"items","endpointName":null,"status":"cancelled"}\n\n';
-      expect(client.write).toHaveBeenCalledWith(expected);
-    });
-  });
-
-  test('broadcasts SSE catchup-status event on CATCHUP_EVENTS_DONE', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      const client = { write: vi.fn() };
-      context.sseClients.add(client);
-
-      systemHandler({
-        type: 'CATCHUP_EVENTS_DONE',
-        readModel: 'overview',
-        targetEndpointName: 'customers',
-      });
-
-      const expected =
-        'event: catchup-status\n' +
-        'data: {"readModel":"overview","endpointName":"customers","status":"completed"}\n\n';
-      expect(client.write).toHaveBeenCalledWith(expected);
-    });
-  });
-
-  test('broadcasts SSE catchup-status event on CATCHUP_CANCELLED', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      const client = { write: vi.fn() };
-      context.sseClients.add(client);
-
-      systemHandler({
-        type: 'CATCHUP_CANCELLED',
-        readModel: 'overview',
-        targetEndpointName: 'customers',
-      });
-
-      const expected =
-        'event: catchup-status\n' +
-        'data: {"readModel":"overview","endpointName":"customers","status":"cancelled"}\n\n';
-      expect(client.write).toHaveBeenCalledWith(expected);
-    });
-  });
-
-  test('setReadModelReplayState clears terminal status', () => {
-    let systemHandler;
-    eventBusInstance.subscribeSystemMessages = vi
-      .fn()
-      .mockImplementation((handler) => {
-        systemHandler = handler;
-      });
-    return startAdmin({ serviceId: 'TEST' }, config).then(() => {
-      const context = mockInstallReadModelAdminApi.mock.calls[0][0];
-      context.projectionHandler.setReadModelReplayState('items', true);
-      systemHandler({ type: 'REPLAY_EVENTS_DONE', readModel: 'items' });
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe('completed');
-      context.projectionHandler.setReadModelReplayState('items', true);
-      expect(
-        context.projectionHandler.getReadModelTerminalStatus('items'),
-      ).toBe(null);
-    });
-  });
 });

@@ -8,58 +8,12 @@ export const mqEmitterRedis =
   (context) => {
     const initLog = getLogger('RM/EB/Redis', 'INIT');
 
-    let inReplay = false;
-
-    const handleSysMessage = (msg, correlationId) => {
-      switch (msg.type) {
-        case 'SET_REPLAY_STATE':
-          if (msg.readModel) {
-            context.projectionHandler.setReadModelReplayState(
-              msg.readModel,
-              msg.state,
-            );
-          } else {
-            inReplay = msg.state;
-          }
-          break;
-        case 'REPLAY_EVENTS_DONE':
-          context.replayHandler.handleReplayComplete(
-            msg.readModel,
-            correlationId,
-          );
-          break;
-        case 'REPLAY_CANCELLED':
-          context.replayHandler.handleReplayCancelled(
-            msg.readModel,
-            correlationId,
-          );
-          break;
-        case 'CATCHUP_EVENTS_DONE':
-          if (context.catchupHandler) {
-            context.catchupHandler.handleCatchupComplete(
-              msg.readModel,
-              msg.toTimestamp,
-              correlationId,
-            );
-          }
-          break;
-        case 'CATCHUP_CANCELLED':
-          if (context.catchupHandler) {
-            context.catchupHandler.handleCatchupCancelled(
-              msg.readModel,
-              correlationId,
-            );
-          }
-          break;
-      }
-    };
-
     const subscribeToEvents = (mq) => {
       mq.on('events', ({ payload }, cb) => {
         const { correlationId, event } = payload;
         const log = getLogger('RM/EB/Redis', correlationId);
         log.debug(`Received event: ${JSON.stringify(event)}`);
-        context.projectionHandler.projectEvent(correlationId)(event, inReplay);
+        context.projectionHandler.projectEvent(correlationId)(event, false);
 
         cb();
       });
@@ -78,9 +32,6 @@ export const mqEmitterRedis =
         initLog.error(`Failed to connect to Redis on port ${port}: ${err}`);
       })
       .then((mq) => {
-        context.publishAdminReply = (replyTopic, payload) => {
-          mq.emit({ topic: replyTopic, payload });
-        };
         if (context.deferEventsSubscription) {
           context.subscribeToEvents = () => {
             subscribeToEvents(mq);
@@ -92,14 +43,6 @@ export const mqEmitterRedis =
         } else {
           subscribeToEvents(mq);
         }
-        mq.on('__system', ({ payload }, cb) => {
-          const { correlationId, event } = payload;
-          const log = getLogger('RM/EB/Redis', correlationId);
-          log.debug(`Received '__system' event: ${JSON.stringify(event)}`);
-
-          handleSysMessage(event, correlationId);
-          cb();
-        });
         mq.on('__replay', ({ payload }, cb) => {
           const { correlationId, targetReadModel, event, targetEndpointName } =
             payload;
@@ -186,6 +129,6 @@ export const mqEmitterRedis =
         });
       })
       .then(() => {
-        initLog.info(`Event bus connected at ${host}:${port}`);
+        initLog.info(`Message bus connected at ${host}:${port}`);
       });
   };

@@ -1,29 +1,13 @@
 import { getLogger } from '@lazyapps/logger';
-import { nanoid } from 'nanoid';
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const parseIdentifier = (identifier) => {
-  const slashIndex = identifier.indexOf('/');
-  if (slashIndex === -1) {
-    return { endpointName: null, readModelName: identifier };
-  }
-  return {
-    endpointName: identifier.substring(0, slashIndex),
-    readModelName: identifier.substring(slashIndex + 1),
-  };
-};
-
 export const createActivator = ({
-  eventBus,
-  correlationConfig,
+  sseClient,
+  orchestrator,
   token,
   readModelServiceUrl,
-  queryRetries = 5,
-  queryRetryDelayMs = 2000,
 }) => {
-  const discoveredReadModels = {};
-
   const getServiceUrls = () => {
     if (typeof readModelServiceUrl === 'string') {
       return [readModelServiceUrl];
@@ -38,18 +22,16 @@ export const createActivator = ({
     const urls = getServiceUrls();
     if (urls.length === 0) {
       return Promise.reject(
-        new Error('readModelServiceUrl is required for queryReadModelState'),
+        new Error('readModelServiceUrl is required for discovery'),
       );
     }
 
     const headers = { 'Content-Type': 'application/json' };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    if (token) headers['Authorization'] = `Bearer ${token}`;
 
     return Promise.all(
       urls.map((baseUrl) => {
-        const url = `${baseUrl}/admin/readmodels`;
+        const url = `${baseUrl}/admin/readmodel`;
         return fetch(url, { headers })
           .then((response) => {
             if (!response.ok) {
@@ -62,260 +44,71 @@ export const createActivator = ({
             return [];
           });
       }),
-    ).then((results) => {
-      const flat = results.flat();
-      flat.forEach((rm) => {
-        if (rm.name) {
-          const key = rm.endpointName
-            ? `${rm.endpointName}/${rm.name}`
-            : rm.name;
-          discoveredReadModels[key] = rm;
-        }
-      });
-      return flat;
-    });
+    ).then((results) => results.flat());
   };
 
-  const getDiscoveredReadModel = (name) => discoveredReadModels[name];
+  const autoActivateAll = () => {
+    const log = getLogger('Admin/Activator', 'AUTO');
+    const maxAttempts = 15;
 
-  const getDiscoveredReadModels = () => ({ ...discoveredReadModels });
+    log.info('Auto-activation: discovering read models from services');
 
-  const queryReadModelState = (
-    identifier,
-    retries = queryRetries,
-    retryDelayMs = queryRetryDelayMs,
-  ) => {
-    const { endpointName, readModelName } = parseIdentifier(identifier);
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    const matchesRm = (r) => {
-      if (endpointName) {
-        return r.name === readModelName && r.endpointName === endpointName;
-      }
-      return r.name === readModelName;
-    };
-
-    const attempt = (attemptsLeft) =>
-      fetchReadModels(log).then((readModels) => {
-        const rm = identifier ? readModels.find(matchesRm) : readModels[0];
-        if (!rm && attemptsLeft > 0) {
+    const tryFetch = (attempt, backoff) =>
+      fetchReadModels(log).then((rms) => {
+        if (rms.length === 0 && attempt < maxAttempts) {
           log.warn(
-            `Read model '${identifier}' not found, retrying (${attemptsLeft} left)`,
+            `Read model discovery returned empty results (attempt ${attempt}/${maxAttempts}), retrying in ${backoff}ms`,
           );
-          return delay(retryDelayMs).then(() => attempt(attemptsLeft - 1));
-        }
-        if (!rm) {
-          throw new Error(
-            `Read model '${identifier}' not found in HTTP response`,
+          return delay(backoff).then(() =>
+            tryFetch(attempt + 1, Math.min(backoff * 2, 30000)),
           );
         }
-        log.debug(`Read model '${identifier}' state: ${JSON.stringify(rm)}`);
-        return rm;
+        return rms;
       });
 
-    return attempt(retries);
-  };
+    return tryFetch(1, 1000)
+      .then((rms) => {
+        if (rms.length === 0) {
+          log.error(
+            'Read model discovery returned empty results after all retry attempts',
+          );
+          return;
+        }
 
-  const activateReadModel = (identifier) => {
-    const { endpointName, readModelName } = parseIdentifier(identifier);
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    log.info(`Starting activation orchestration for '${identifier}'`);
-
-    // Step 1: Publish "activate" instruction via message bus __admin topic
-    eventBus.publishAdminInstruction(correlationId)({
-      type: 'activate',
-      targetReadModel: readModelName,
-      ...(endpointName && { targetEndpointName: endpointName }),
-      ...(token && { token }),
-      correlationId,
-    });
-    log.info(
-      `Published activate instruction for '${identifier}' on __admin topic`,
-    );
-
-    // Step 2: Wait briefly for RM to process activation
-    return delay(200)
-      .then(() => {
-        // Step 3: Query RM state via HTTP
-        log.info(`Querying RM state via HTTP for '${identifier}'`);
-        return queryReadModelState(identifier);
-      })
-      .then((rm) => {
-        const fromTimestamp = rm.lastProjectedEventTimestamp || 0;
-        log.info(
-          `Read model '${identifier}' fromTimestamp: ${fromTimestamp}, ` +
-            `state: ${rm.state || 'unknown'}`,
+        const names = rms.map((rm) =>
+          rm.endpointName ? `${rm.endpointName}/${rm.name}` : rm.name,
         );
-        return { fromTimestamp, rmEndpointName: rm.endpointName };
-      })
-      .then(({ fromTimestamp, rmEndpointName }) => {
-        // Step 4: Start catch-up via event bus
-        const catchupCorrelationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-        log.info(`Starting catch-up for '${identifier}' from ${fromTimestamp}`);
-        const ep = rmEndpointName || endpointName;
-        eventBus.publishAdminInstruction(catchupCorrelationId)({
-          type: 'start_catchup',
-          readModel: readModelName,
-          fromTimestamp,
-          ...(ep && { targetEndpointName: ep }),
-          ...(token && { token }),
-          correlationId: catchupCorrelationId,
+        log.info(`Discovered read models: ${names.join(', ')}`);
+
+        // Seed the SSE client cache with discovered RMs
+        rms.forEach((rm) => {
+          if (rm.name && rm.endpointName) {
+            sseClient.cache.updateReadModel({
+              endpointName: rm.endpointName,
+              readModelName: rm.name,
+              state: rm.state || 'stopped',
+              lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
+            });
+          }
         });
-        return {
-          status: 'started',
-          readModel: readModelName,
-          correlationId: catchupCorrelationId,
-        };
+
+        // Use orchestrator's activateAll which reads from cache
+        return orchestrator.activateAll();
       })
-      .then((result) => {
-        log.info(
-          `Catch-up started for '${identifier}': ` + JSON.stringify(result),
-        );
-        return result;
+      .then((results) => {
+        if (results) {
+          log.info('All read models activated');
+        }
+        return results;
       })
       .catch((err) => {
-        log.error(
-          `Activation orchestration failed for '${identifier}': ` + err.message,
-        );
+        log.error(`Auto-activation failed: ${err.message}`);
         throw err;
       });
   };
 
-  const stopReadModel = (identifier) => {
-    const { endpointName, readModelName } = parseIdentifier(identifier);
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    log.info(`Publishing stop instruction for '${identifier}'`);
-    eventBus.publishAdminInstruction(correlationId)({
-      type: 'stop',
-      targetReadModel: readModelName,
-      ...(endpointName && { targetEndpointName: endpointName }),
-      ...(token && { token }),
-      correlationId,
-    });
-  };
-
-  const restartReadModel = (identifier) => {
-    const { endpointName, readModelName } = parseIdentifier(identifier);
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    log.info(`Publishing restart instruction for '${identifier}'`);
-    eventBus.publishAdminInstruction(correlationId)({
-      type: 'restart',
-      targetReadModel: readModelName,
-      ...(endpointName && { targetEndpointName: endpointName }),
-      ...(token && { token }),
-      correlationId,
-    });
-
-    // After restart, the RM will re-enter waiting → activating → catching-up.
-    // We need to re-orchestrate catch-up after a brief delay.
-    return delay(500).then(() => activateReadModel(identifier));
-  };
-
-  const signalCpReady = () => {
-    const correlationId = `${correlationConfig?.serviceId || 'ADM'}-${nanoid()}`;
-    const log = getLogger('Admin/Activator', correlationId);
-
-    log.info('Signaling CP readiness via event bus');
-    eventBus.publishAdminInstruction(correlationId)({
-      type: 'set_ready',
-      ...(token && { token }),
-      correlationId,
-    });
-    log.info('CP readiness signaled');
-    return Promise.resolve({ status: 'ready' });
-  };
-
-  const autoActivateAll = (readModelNames) => {
-    const log = getLogger('Admin/Activator', 'AUTO');
-    log.info(`Auto-activating read models: ${readModelNames.join(', ')}`);
-
-    const activateWithRetry = (name, attempt = 1, maxAttempts = 10) => {
-      const retryLog = getLogger('Admin/Activator', `AUTO/${name}`);
-      return activateReadModel(name).catch((err) => {
-        if (attempt >= maxAttempts) {
-          retryLog.error(
-            `Auto-activation failed for '${name}' after ${maxAttempts} attempts: ${err.message}`,
-          );
-          throw err;
-        }
-        const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
-        retryLog.warn(
-          `Auto-activation attempt ${attempt} failed for '${name}', ` +
-            `retrying in ${backoffMs}ms: ${err.message}`,
-        );
-        return delay(backoffMs).then(() =>
-          activateWithRetry(name, attempt + 1, maxAttempts),
-        );
-      });
-    };
-
-    return Promise.all(readModelNames.map((name) => activateWithRetry(name)))
-      .then(() => {
-        log.info('All read models activated, waiting for live state');
-        return waitForAllLive(readModelNames);
-      })
-      .then(() => {
-        log.info('All auto-start read models are live, signaling CP ready');
-        return signalCpReady();
-      })
-      .catch((err) => {
-        log.error(`Auto-activation failed: ${err.message}`);
-      });
-  };
-
-  const waitForAllLive = (readModelNames, maxWaitMs = 300000) => {
-    const log = getLogger('Admin/Activator', 'AUTO/WAIT');
-    const startTime = Date.now();
-
-    const pollOnce = () => {
-      if (Date.now() - startTime > maxWaitMs) {
-        return Promise.reject(
-          new Error(
-            `Timed out waiting for read models to reach live state after ${maxWaitMs}ms`,
-          ),
-        );
-      }
-
-      return Promise.all(
-        readModelNames.map((name) => queryReadModelState(name)),
-      )
-        .then((states) => {
-          const allLive = states.every((s) => s.state === 'live');
-          if (allLive) {
-            log.info('All read models are live');
-            return;
-          }
-          const summary = states
-            .map((s) => `${s.name}=${s.state || 'unknown'}`)
-            .join(', ');
-          log.debug(`Waiting for live state: ${summary}`);
-          return delay(2000).then(pollOnce);
-        })
-        .catch((err) => {
-          log.warn(`Error polling RM states: ${err.message}, retrying...`);
-          return delay(2000).then(pollOnce);
-        });
-    };
-
-    return pollOnce();
-  };
-
   return {
-    activateReadModel,
-    stopReadModel,
-    restartReadModel,
-    queryReadModelState,
-    signalCpReady,
     autoActivateAll,
-    getDiscoveredReadModel,
-    getDiscoveredReadModels,
     fetchReadModels: () =>
       fetchReadModels(getLogger('Admin/Activator', 'DISCOVER')),
   };

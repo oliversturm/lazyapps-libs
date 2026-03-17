@@ -4,32 +4,19 @@ import pRetry from 'p-retry';
 import { getLogger } from '@lazyapps/logger';
 
 const replay = (dbContext) => (correlationId) => (cmdProcContext) =>
-  Promise.all([
-    cmdProcContext.aggregateStore.startReplay(),
-    cmdProcContext.eventBus.publishReplayState(correlationId)(true),
-  ])
+  Promise.resolve(cmdProcContext.aggregateStore.startReplay())
     .then(() =>
       dbContext.collection
         .find({}, { sort: { timestamp: 1 } })
         .forEach((event) => {
           if (event) {
-            return Promise.all([
-              cmdProcContext.aggregateStore.applyAggregateProjection(
-                correlationId,
-              )(event),
-              // Implementation of event replay concept in these samples is currently
-              // incomplete, so don't do it.
-              // cmdProcContext.eventBus.publishEvent(event),
-            ]);
+            return cmdProcContext.aggregateStore.applyAggregateProjection(
+              correlationId,
+            )(event);
           } else return false;
         }),
     )
-    .then(() =>
-      Promise.all([
-        cmdProcContext.aggregateStore.endReplay(),
-        cmdProcContext.eventBus.publishReplayState(correlationId)(false),
-      ]),
-    );
+    .then(() => cmdProcContext.aggregateStore.endReplay());
 
 export const mongodb =
   ({

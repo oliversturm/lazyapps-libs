@@ -2,52 +2,6 @@ import { getLogger } from '@lazyapps/logger';
 import { channelWithExchange } from '../channelWithExchange.js';
 
 export const rabbitMq = (config) => (context) => {
-  let inReplay = false;
-
-  const handleSysMessage = (msg, correlationId) => {
-    switch (msg.type) {
-      case 'SET_REPLAY_STATE':
-        if (msg.readModel) {
-          context.projectionHandler.setReadModelReplayState(
-            msg.readModel,
-            msg.state,
-          );
-        } else {
-          inReplay = msg.state;
-        }
-        break;
-      case 'REPLAY_EVENTS_DONE':
-        context.replayHandler.handleReplayComplete(
-          msg.readModel,
-          correlationId,
-        );
-        break;
-      case 'REPLAY_CANCELLED':
-        context.replayHandler.handleReplayCancelled(
-          msg.readModel,
-          correlationId,
-        );
-        break;
-      case 'CATCHUP_EVENTS_DONE':
-        if (context.catchupHandler) {
-          context.catchupHandler.handleCatchupComplete(
-            msg.readModel,
-            msg.toTimestamp,
-            correlationId,
-          );
-        }
-        break;
-      case 'CATCHUP_CANCELLED':
-        if (context.catchupHandler) {
-          context.catchupHandler.handleCatchupCancelled(
-            msg.readModel,
-            correlationId,
-          );
-        }
-        break;
-    }
-  };
-
   const defaultConfig = {
     url: 'amqp://localhost',
     socketOptions: {},
@@ -63,13 +17,6 @@ export const rabbitMq = (config) => (context) => {
 
   return channelWithExchange(actualConfig, initLog)
     .then(({ channel }) => {
-      context.publishAdminReply = (replyTopic, payload) => {
-        channel.publish(
-          exchange,
-          replyTopic,
-          Buffer.from(JSON.stringify(payload)),
-        );
-      };
       return channel.assertQueue('', { exclusive: true }).then((q) => {
         const bindEvents = () =>
           channel.bindQueue(q.queue, exchange, pattern).then(() => {
@@ -77,31 +24,20 @@ export const rabbitMq = (config) => (context) => {
             initLog.debug('Subscribed to events topic');
           });
 
-        const bindSystemTopics = () =>
+        const bindTopics = () =>
           channel
-            .bindQueue(q.queue, exchange, '__system')
-            .then(() => channel.bindQueue(q.queue, exchange, '__replay'))
+            .bindQueue(q.queue, exchange, '__replay')
             .then(() => channel.bindQueue(q.queue, exchange, '__catchup'))
             .then(() => channel.bindQueue(q.queue, exchange, '__admin'));
 
         const startConsuming = () => {
           initLog.info(
-            `Event bus connected to Rabbit MQ exchange "${exchange}" with pattern "${pattern}"`,
+            `Message bus connected to Rabbit MQ exchange "${exchange}" with pattern "${pattern}"`,
           );
           return channel.consume(
             q.queue,
             (msg) => {
-              if (msg.fields.routingKey.startsWith('__system')) {
-                const { correlationId, event } = JSON.parse(
-                  msg.content.toString(),
-                );
-                const log = getLogger('RM/EB/Rabbit', correlationId);
-                log.debug(
-                  `Received '__system' event: ${JSON.stringify(event)}`,
-                );
-
-                handleSysMessage(event, correlationId);
-              } else if (msg.fields.routingKey.startsWith('__replay')) {
+              if (msg.fields.routingKey.startsWith('__replay')) {
                 const {
                   correlationId,
                   targetReadModel,
@@ -189,11 +125,8 @@ export const rabbitMq = (config) => (context) => {
                   context.adminInstructionHandler(correlationId, instruction);
                 }
               } else if (msg.fields.routingKey.startsWith('__')) {
-                // Ignore other system messages (e.g. __admin_reply)
+                // Ignore other system messages
               } else if (eventsSubscribed) {
-                // must assume that this message
-                // was caught due to the pattern
-                // passed from the outside
                 const { correlationId, event } = JSON.parse(
                   msg.content.toString(),
                 );
@@ -205,7 +138,7 @@ export const rabbitMq = (config) => (context) => {
                 );
                 context.projectionHandler.projectEvent(correlationId)(
                   event,
-                  inReplay,
+                  false,
                 );
               }
             },
@@ -215,13 +148,13 @@ export const rabbitMq = (config) => (context) => {
 
         return (
           context.deferEventsSubscription
-            ? bindSystemTopics().then(() => {
+            ? bindTopics().then(() => {
                 context.subscribeToEvents = () => bindEvents();
                 initLog.debug(
                   'Deferred events subscription — waiting for activate()',
                 );
               })
-            : bindEvents().then(() => bindSystemTopics())
+            : bindEvents().then(() => bindTopics())
         ).then(() => startConsuming());
       });
     })

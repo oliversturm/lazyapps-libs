@@ -44,51 +44,7 @@ describe('createApiHandler', () => {
     vi.clearAllMocks();
   });
 
-  test('returns 503 when isReady returns false', () => {
-    const handleCommand = vi.fn();
-    const handler = createApiHandler({
-      aggregates: testAggregates,
-      handleCommand,
-      isReady: () => false,
-    });
-    const req = mockReq({
-      command: 'CREATE',
-      aggregateName: 'thing',
-      aggregateId: '1',
-    });
-    const res = mockRes();
-
-    handler(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(503);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.any(String) }),
-    );
-    expect(handleCommand).not.toHaveBeenCalled();
-  });
-
-  test('proceeds normally when isReady returns true', () => {
-    const handleCommand = vi.fn().mockResolvedValue();
-    const handler = createApiHandler({
-      aggregates: testAggregates,
-      handleCommand,
-      isReady: () => true,
-    });
-    const req = mockReq({
-      command: 'CREATE',
-      aggregateName: 'thing',
-      aggregateId: '1',
-      payload: {},
-      correlationId: 'corr-1',
-    });
-    const res = mockRes();
-
-    return handler(req, res).then(() => {
-      expect(res.sendStatus).toHaveBeenCalledWith(200);
-    });
-  });
-
-  test('proceeds normally when isReady is not provided', () => {
+  test('accepts commands immediately (no deferReady gating)', () => {
     const handleCommand = vi.fn().mockResolvedValue();
     const handler = createApiHandler({
       aggregates: testAggregates,

@@ -4,6 +4,7 @@ vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
     debug: vi.fn(),
     info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
   }),
 }));
@@ -36,16 +37,12 @@ describe('readModelEventBusMqEmitter', () => {
     });
   });
 
-  test('subscribes to events, __system, and __replay topics', () => {
+  test('subscribes to events, __replay, __catchup, and __admin topics', () => {
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       readModels: {},
     };
@@ -57,28 +54,32 @@ describe('readModelEventBusMqEmitter', () => {
           expect.any(Function),
         );
         expect(mockEmitter.on).toHaveBeenCalledWith(
+          '__replay',
+          expect.any(Function),
+        );
+        expect(mockEmitter.on).toHaveBeenCalledWith(
+          '__catchup',
+          expect.any(Function),
+        );
+        expect(mockEmitter.on).not.toHaveBeenCalledWith(
           '__system',
           expect.any(Function),
         );
         expect(mockEmitter.on).toHaveBeenCalledWith(
-          '__replay',
+          '__admin',
           expect.any(Function),
         );
       },
     );
   });
 
-  test('events handler calls projectionHandler.projectEvent', () => {
+  test('events handler calls projectionHandler.projectEvent with inReplay=false', () => {
     const mockProjectFn = vi.fn();
     const context = {
       projectionHandler: {
         projectEvent: vi.fn().mockReturnValue(mockProjectFn),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       readModels: {},
     };
@@ -98,167 +99,13 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
-  test('__system handler with global SET_REPLAY_STATE updates inReplay', () => {
-    const mockProjectFn = vi.fn();
-    const context = {
-      projectionHandler: {
-        projectEvent: vi.fn().mockReturnValue(mockProjectFn),
-        setReadModelReplayState: vi.fn(),
-        projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      readModels: {},
-    };
-
-    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
-      () => {
-        // Set replay to true (global - no readModel)
-        const sysCb = vi.fn();
-        mockHandlers['__system'](
-          {
-            payload: {
-              correlationId: 'corr-1',
-              event: { type: 'SET_REPLAY_STATE', state: true },
-            },
-          },
-          sysCb,
-        );
-        expect(sysCb).toHaveBeenCalled();
-
-        // Now send an event - inReplay should be true
-        const eventCb = vi.fn();
-        const payload = { correlationId: 'corr-2', type: 'REPLAYED' };
-        mockHandlers['events']({ payload }, eventCb);
-
-        expect(mockProjectFn).toHaveBeenCalledWith(payload, true);
-      },
-    );
-  });
-
-  test('__system handler with per-read-model SET_REPLAY_STATE calls setReadModelReplayState', () => {
-    const context = {
-      projectionHandler: {
-        projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
-        projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      readModels: {},
-    };
-
-    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
-      () => {
-        const cb = vi.fn();
-        mockHandlers['__system'](
-          {
-            payload: {
-              correlationId: 'corr-1',
-              event: {
-                type: 'SET_REPLAY_STATE',
-                state: true,
-                readModel: 'items',
-              },
-            },
-          },
-          cb,
-        );
-
-        expect(
-          context.projectionHandler.setReadModelReplayState,
-        ).toHaveBeenCalledWith('items', true);
-        expect(cb).toHaveBeenCalled();
-      },
-    );
-  });
-
-  test('__system handler with REPLAY_EVENTS_DONE calls replayHandler.handleReplayComplete', () => {
-    const context = {
-      projectionHandler: {
-        projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
-        projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      readModels: {},
-    };
-
-    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
-      () => {
-        const cb = vi.fn();
-        mockHandlers['__system'](
-          {
-            payload: {
-              correlationId: 'corr-1',
-              event: { type: 'REPLAY_EVENTS_DONE', readModel: 'items' },
-            },
-          },
-          cb,
-        );
-
-        expect(context.replayHandler.handleReplayComplete).toHaveBeenCalledWith(
-          'items',
-          'corr-1',
-        );
-        expect(cb).toHaveBeenCalled();
-      },
-    );
-  });
-
-  test('__system handler with REPLAY_CANCELLED calls replayHandler.handleReplayCancelled', () => {
-    const context = {
-      projectionHandler: {
-        projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
-        projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      readModels: {},
-    };
-
-    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
-      () => {
-        const cb = vi.fn();
-        mockHandlers['__system'](
-          {
-            payload: {
-              correlationId: 'corr-1',
-              event: { type: 'REPLAY_CANCELLED', readModel: 'orders' },
-            },
-          },
-          cb,
-        );
-
-        expect(
-          context.replayHandler.handleReplayCancelled,
-        ).toHaveBeenCalledWith('orders', 'corr-1');
-        expect(cb).toHaveBeenCalled();
-      },
-    );
-  });
-
   test('__replay handler calls projectEventForReadModel for known read model', () => {
     const mockProjectForRM = vi.fn();
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       readModels: { items: { projections: {} } },
     };
@@ -291,12 +138,8 @@ describe('readModelEventBusMqEmitter', () => {
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn(() => vi.fn()),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       readModels: { items: { projections: {} } },
     };
@@ -329,12 +172,8 @@ describe('readModelEventBusMqEmitter', () => {
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       endpointName: 'customers-service',
       readModels: { overview: { projections: {} } },
@@ -369,12 +208,8 @@ describe('readModelEventBusMqEmitter', () => {
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
         projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
-      },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
       endpointName: 'orders-service',
       readModels: { overview: { projections: {} } },
@@ -405,67 +240,102 @@ describe('readModelEventBusMqEmitter', () => {
     );
   });
 
-  test('__replay handler processes events without targetEndpointName (backward compat)', () => {
-    const mockProjectForRM = vi.fn();
+  test('__admin handler dispatches to adminInstructionHandler', () => {
+    const adminHandler = vi.fn();
     const context = {
       projectionHandler: {
         projectEvent: vi.fn(() => vi.fn()),
-        setReadModelReplayState: vi.fn(),
-        projectEventForReadModel: vi.fn().mockReturnValue(mockProjectForRM),
+        projectEventForReadModel: vi.fn(() => vi.fn()),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      endpointName: 'orders-service',
-      readModels: { overview: { projections: {} } },
+      adminInstructionHandler: adminHandler,
+      readModels: { items: {} },
     };
 
     return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
       () => {
-        const event = { type: 'ORDER_CREATED', timestamp: 100 };
+        const instruction = {
+          type: 'stop',
+          targetReadModel: 'items',
+        };
         const cb = vi.fn();
-        mockHandlers['__replay'](
+        mockHandlers['__admin'](
           {
-            payload: {
-              correlationId: 'corr-1',
-              targetReadModel: 'overview',
-              event,
-            },
+            payload: { correlationId: 'corr-1', instruction },
           },
           cb,
         );
 
-        expect(
-          context.projectionHandler.projectEventForReadModel,
-        ).toHaveBeenCalledWith('corr-1', 'overview');
-        expect(mockProjectForRM).toHaveBeenCalledWith(event);
+        expect(adminHandler).toHaveBeenCalledWith('corr-1', instruction);
         expect(cb).toHaveBeenCalled();
       },
     );
   });
 
-  test('inReplay starts as false', () => {
-    const mockProjectFn = vi.fn();
+  test('__admin handler rejects invalid token', () => {
+    const adminHandler = vi.fn();
     const context = {
       projectionHandler: {
-        projectEvent: vi.fn().mockReturnValue(mockProjectFn),
-        setReadModelReplayState: vi.fn(),
+        projectEvent: vi.fn(() => vi.fn()),
         projectEventForReadModel: vi.fn(() => vi.fn()),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
       },
-      replayHandler: {
-        handleReplayComplete: vi.fn(),
-        handleReplayCancelled: vi.fn(),
-      },
-      readModels: {},
+      adminInstructionHandler: adminHandler,
+      expectedAdminToken: 'valid-token',
+      readModels: { items: {} },
     };
 
     return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
       () => {
-        const payload = { correlationId: 'corr-1', type: 'TEST' };
-        mockHandlers['events']({ payload }, vi.fn());
+        const instruction = {
+          type: 'stop',
+          targetReadModel: 'items',
+          token: 'wrong-token',
+        };
+        const cb = vi.fn();
+        mockHandlers['__admin'](
+          {
+            payload: { correlationId: 'corr-1', instruction },
+          },
+          cb,
+        );
 
-        expect(mockProjectFn).toHaveBeenCalledWith(payload, false);
+        expect(adminHandler).not.toHaveBeenCalled();
+        expect(cb).toHaveBeenCalled();
+      },
+    );
+  });
+
+  test('__admin handler accepts valid token', () => {
+    const adminHandler = vi.fn();
+    const context = {
+      projectionHandler: {
+        projectEvent: vi.fn(() => vi.fn()),
+        projectEventForReadModel: vi.fn(() => vi.fn()),
+        projectCatchupEventForReadModel: vi.fn(() => vi.fn()),
+      },
+      adminInstructionHandler: adminHandler,
+      expectedAdminToken: 'valid-token',
+      readModels: { items: {} },
+    };
+
+    return readModelEventBusMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const instruction = {
+          type: 'stop',
+          targetReadModel: 'items',
+          token: 'valid-token',
+        };
+        const cb = vi.fn();
+        mockHandlers['__admin'](
+          {
+            payload: { correlationId: 'corr-1', instruction },
+          },
+          cb,
+        );
+
+        expect(adminHandler).toHaveBeenCalledWith('corr-1', instruction);
+        expect(cb).toHaveBeenCalled();
       },
     );
   });

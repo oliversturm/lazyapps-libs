@@ -61,15 +61,16 @@ describe('catchupHandler', () => {
         getCatchupState: vi.fn(),
         clearCatchupState: vi.fn(),
         projectCatchupEventForReadModel: vi.fn(),
+        flushEventQueue: vi.fn().mockResolvedValue(undefined),
       },
       lifecycleManager: {
-        setState: vi.fn(),
+        stop: vi.fn(),
       },
     };
   });
 
   describe('handleCatchupComplete', () => {
-    test('transitions to live when FIFO queue is empty', () => {
+    test('clears catchup state when FIFO queue is empty', () => {
       context.projectionHandler.getCatchupState.mockReturnValue({
         active: true,
         fifoQueue: [],
@@ -83,11 +84,6 @@ describe('catchupHandler', () => {
         expect(
           context.projectionHandler.clearCatchupState,
         ).toHaveBeenCalledWith('customers');
-        expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
-          'customers',
-          'live',
-          undefined,
-        );
       });
     });
 
@@ -128,11 +124,9 @@ describe('catchupHandler', () => {
         expect(projectedEvents[1].event.type).toBe('B');
         expect(projectedEvents[2].event.type).toBe('C');
         expect(projectedEvents[0].correlationId).toBe('c1');
-        expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
-          'customers',
-          'live',
-          undefined,
-        );
+        expect(
+          context.projectionHandler.clearCatchupState,
+        ).toHaveBeenCalledWith('customers');
       });
     });
 
@@ -211,13 +205,12 @@ describe('catchupHandler', () => {
         expect(
           context.projectionHandler.clearCatchupState,
         ).not.toHaveBeenCalled();
-        expect(context.lifecycleManager.setState).not.toHaveBeenCalled();
       });
     });
   });
 
   describe('handleCatchupCancelled', () => {
-    test('clears state and reverts to waiting', () => {
+    test('clears state and stops read model', () => {
       const handler = createCatchupHandler(context);
 
       handler.handleCatchupCancelled('customers');
@@ -225,9 +218,8 @@ describe('catchupHandler', () => {
       expect(context.projectionHandler.clearCatchupState).toHaveBeenCalledWith(
         'customers',
       );
-      expect(context.lifecycleManager.setState).toHaveBeenCalledWith(
+      expect(context.lifecycleManager.stop).toHaveBeenCalledWith(
         'customers',
-        'waiting',
         undefined,
       );
     });

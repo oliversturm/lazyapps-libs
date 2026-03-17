@@ -1,6 +1,6 @@
 import { getLogger } from '@lazyapps/logger';
 
-export const createReplayHandler = (eventStore, eventBus) => {
+export const createReplayHandler = (eventStore, eventBus, statusTracker) => {
   const replays = {};
 
   const startReplay = (
@@ -9,6 +9,7 @@ export const createReplayHandler = (eventStore, eventBus) => {
     fromTimestamp,
     toTimestamp,
     targetEndpointName,
+    replayRelevantEvents,
   ) => {
     if (replays[readModel] && replays[readModel].status === 'in_progress') {
       return Promise.reject(
@@ -18,6 +19,10 @@ export const createReplayHandler = (eventStore, eventBus) => {
     const log = getLogger('CP/Replay', correlationId);
     let cancelled = false;
     let activeCursor = null;
+    const eventFilter =
+      replayRelevantEvents && replayRelevantEvents.length > 0
+        ? new Set(replayRelevantEvents)
+        : null;
 
     replays[readModel] = {
       status: 'in_progress',
@@ -31,6 +36,14 @@ export const createReplayHandler = (eventStore, eventBus) => {
       },
     };
 
+    if (statusTracker) {
+      statusTracker.trackReplayStart(
+        readModel,
+        targetEndpointName,
+        correlationId,
+      );
+    }
+
     return eventStore
       .countEvents(fromTimestamp, toTimestamp)
       .then((total) => {
@@ -43,12 +56,22 @@ export const createReplayHandler = (eventStore, eventBus) => {
         const processNext = () =>
           cursor.next().then((event) => {
             if (!event || cancelled) return Promise.resolve();
+            if (eventFilter && !eventFilter.has(event.type)) {
+              return processNext();
+            }
             eventBus.publishReplayEvent(correlationId)(
               readModel,
               event,
               targetEndpointName,
             );
             replays[readModel].eventsPublished++;
+            if (statusTracker) {
+              statusTracker.trackReplayEvent(
+                readModel,
+                targetEndpointName,
+                event.timestamp,
+              );
+            }
             if (replays[readModel].eventsPublished % 1000 === 0) {
               log.info(
                 `Replay progress: ${replays[readModel].eventsPublished}/${replays[readModel].eventsTotal}`,
@@ -62,11 +85,6 @@ export const createReplayHandler = (eventStore, eventBus) => {
         activeCursor = null;
         if (cancelled) {
           log.info(`Replay cancelled for ${readModel}`);
-          eventBus.publishSystemMessage(correlationId)({
-            type: 'REPLAY_CANCELLED',
-            readModel,
-            ...(targetEndpointName && { targetEndpointName }),
-          });
           replays[readModel] = {
             ...replays[readModel],
             status: 'cancelled',
@@ -74,32 +92,28 @@ export const createReplayHandler = (eventStore, eventBus) => {
           };
         } else {
           log.info(`Replay complete for ${readModel}`);
-          eventBus.publishSystemMessage(correlationId)({
-            type: 'REPLAY_EVENTS_DONE',
-            readModel,
-            ...(targetEndpointName && { targetEndpointName }),
-          });
           replays[readModel] = {
             ...replays[readModel],
             status: 'completed',
             cancel: undefined,
           };
         }
+        if (statusTracker) {
+          statusTracker.trackReplayEnd(readModel, targetEndpointName);
+        }
       })
       .catch((err) => {
         activeCursor = null;
         log.error(`Replay failed for ${readModel}: ${err}`);
-        eventBus.publishSystemMessage(correlationId)({
-          type: 'REPLAY_CANCELLED',
-          readModel,
-          ...(targetEndpointName && { targetEndpointName }),
-        });
         replays[readModel] = {
           ...replays[readModel],
           status: 'error',
           error: String(err),
           cancel: undefined,
         };
+        if (statusTracker) {
+          statusTracker.trackReplayEnd(readModel, targetEndpointName);
+        }
       });
   };
 

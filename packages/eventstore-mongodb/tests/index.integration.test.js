@@ -134,9 +134,7 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
           endReplay: vi.fn().mockResolvedValue(),
           applyAggregateProjection: vi.fn(() => vi.fn().mockResolvedValue()),
         },
-        eventBus: {
-          publishReplayState: vi.fn(() => vi.fn().mockResolvedValue()),
-        },
+        eventBus: {},
       };
     }, 30000);
 
@@ -156,23 +154,13 @@ describe('eventstore-mongodb', { timeout: 60000 }, () => {
           ).toHaveBeenCalledOnce();
         }));
 
-    test('calls publishReplayState(true) then publishReplayState(false)', () =>
+    test('does not call publishReplayState (removed)', () =>
       store
         .replay('corr-r2')(mockCmdProcContext)
         .then(() => {
           expect(
             mockCmdProcContext.eventBus.publishReplayState,
-          ).toHaveBeenCalledTimes(2);
-          expect(
-            mockCmdProcContext.eventBus.publishReplayState,
-          ).toHaveBeenCalledWith('corr-r2');
-
-          const calls =
-            mockCmdProcContext.eventBus.publishReplayState.mock.results;
-          const innerFn0 = calls[0].value;
-          const innerFn1 = calls[1].value;
-          expect(innerFn0).toHaveBeenCalledWith(true);
-          expect(innerFn1).toHaveBeenCalledWith(false);
+          ).toBeUndefined();
         }));
 
     test('calls applyAggregateProjection for each stored event', () =>

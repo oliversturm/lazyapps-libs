@@ -42,7 +42,7 @@ export const mqEmitterRedis =
       })
       .then(waitSubscribers(initLog, 1000))
       .then((mq) => {
-        initLog.info(`Event bus publishing to port ${port}`);
+        initLog.info(`Message bus publishing to port ${port}`);
         return mq;
       })
       .then((mq) => ({
@@ -51,24 +51,6 @@ export const mqEmitterRedis =
           log.debug(`Publishing event timestamp ${event.timestamp}`);
           mq.emit({ topic: 'events', payload: { correlationId, event } });
           return event;
-        },
-        publishReplayState: (correlationId) => (state, readModel) => {
-          const log = getLogger('CP/EB/Redis', correlationId);
-          log.debug(
-            `Publishing replay state ${state} for ${readModel || 'global'}`,
-          );
-          mq.emit({
-            topic: '__system',
-            payload: {
-              correlationId,
-              event: {
-                type: 'SET_REPLAY_STATE',
-                state,
-                ...(readModel && { readModel }),
-              },
-            },
-          });
-          return state;
         },
         publishReplayEvent:
           (correlationId) => (targetReadModel, event, targetEndpointName) => {
@@ -98,14 +80,6 @@ export const mqEmitterRedis =
               },
             });
           },
-        publishSystemMessage: (correlationId) => (message) => {
-          const log = getLogger('CP/EB/Redis', correlationId);
-          log.debug(`Publishing system message: ${JSON.stringify(message)}`);
-          mq.emit({
-            topic: '__system',
-            payload: { correlationId, event: message },
-          });
-        },
         publishAdminInstruction: (correlationId) => (instruction) => {
           const log = getLogger('CP/EB/Redis', correlationId);
           log.debug(
@@ -116,22 +90,9 @@ export const mqEmitterRedis =
             payload: { correlationId, instruction },
           });
         },
-        subscribeSystemMessages: (handler) => {
-          mq.on('__system', ({ payload }, cb) => {
-            handler(payload.event);
-            cb();
-          });
-        },
         subscribeAdminMessages: (handler) => {
           mq.on('__admin', ({ payload }, cb) => {
             handler(payload.correlationId, payload.instruction);
-            cb();
-          });
-          return Promise.resolve();
-        },
-        subscribeAdminReply: (replyTopic, handler) => {
-          mq.on(replyTopic, ({ payload }, cb) => {
-            handler(payload);
             cb();
           });
           return Promise.resolve();

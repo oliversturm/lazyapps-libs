@@ -531,7 +531,7 @@ describe('createProjectionHandler', () => {
         });
     });
 
-    test('calls updateTimestamp after successful projection', () => {
+    test('does NOT call updateTimestamp during replay projection', () => {
       const context = makeContext();
       const handler = createProjectionHandler(context);
       const event = { type: 'ITEM_CREATED', timestamp: 12345 };
@@ -544,7 +544,7 @@ describe('createProjectionHandler', () => {
         .then(() => {
           expect(
             context.storage.updateLastProjectedEventTimestamps,
-          ).toHaveBeenCalledWith('corr-1', ['items'], 12345);
+          ).not.toHaveBeenCalled();
         });
     });
 

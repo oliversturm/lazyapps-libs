@@ -36,7 +36,6 @@ const {
 } = await import('@lazyapps/mqemitter');
 const { express: expressReceiver } =
   await import('@lazyapps/express/command-receiver/index.js');
-const { startAdmin } = await import('../admin.js');
 
 const testAggregates = {
   item: {
@@ -94,8 +93,6 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
   let cleanupClient;
   let commandServer;
   let commandPort;
-  let adminServer;
-  let adminPort;
   let commandRecordFile;
   let aggregateStore;
 
@@ -163,33 +160,11 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
         commandSender: commandSenderMqEmitter({ mqName: 'commands' }),
       },
     );
-
-    // Start admin server
-    adminServer = await startAdmin(
-      { serviceId: 'REPLAY-TEST' },
-      {
-        port: 0,
-        eventStore: eventStoreMongo({
-          url: connectionString,
-          database: 'events',
-        }),
-        readModelStorage: readModelStorageMongo({
-          url: connectionString,
-          database: 'readmodel-test',
-        }),
-        eventBus: commandProcessorEventBusMqEmitter({
-          mqName: 'events',
-        }),
-        readModels: testReadModels,
-      },
-    );
-    adminPort = adminServer.address().port;
   });
 
   afterAll(async () => {
     if (commandServer)
       await new Promise((resolve) => commandServer.close(resolve));
-    if (adminServer) await new Promise((resolve) => adminServer.close(resolve));
     if (cleanupClient) await cleanupClient.close();
     if (container) await container.stop();
     try {
@@ -209,12 +184,6 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
         aggregateId,
         payload: { name },
       }),
-    });
-
-  const fetchAdmin = (path, options = {}) =>
-    fetch(`http://127.0.0.1:${adminPort}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
     });
 
   const getReadModelItems = () =>
@@ -288,17 +257,7 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
     const clearedItems = await getReadModelItems();
     expect(clearedItems).toHaveLength(0);
 
-    // Step 6: Set command replay state
-    const replayOnRes = await fetchAdmin('/api/admin/commandReplayState', {
-      method: 'POST',
-      body: JSON.stringify({ state: true }),
-    });
-    expect(replayOnRes.status).toBe(200);
-
-    // Small delay for replay state to propagate through event bus
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Step 7: Replay each recorded command
+    // Step 6: Replay each recorded command
     for (const cmd of recordedCommands) {
       const res = await fetch(`http://127.0.0.1:${commandPort}/api/command`, {
         method: 'POST',
@@ -313,20 +272,13 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
       expect(res.status).toBe(200);
     }
 
-    // Step 8: Unset command replay state
-    const replayOffRes = await fetchAdmin('/api/admin/commandReplayState', {
-      method: 'POST',
-      body: JSON.stringify({ state: false }),
-    });
-    expect(replayOffRes.status).toBe(200);
-
-    // Step 9: Wait for projections
+    // Step 7: Wait for projections
     await waitForCondition(async () => {
       const items = await getReadModelItems();
       return items.length === 3;
     });
 
-    // Step 10: Verify read model matches original
+    // Step 8: Verify read model matches original
     const replayedItems = await getReadModelItems();
     expect(replayedItems).toHaveLength(3);
     expect(replayedItems).toEqual(
@@ -407,20 +359,7 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
       .split('\n')
       .filter((l) => l.length > 0).length;
 
-    // Step 6: Set command replay state with Bearer token
-    const replayOnRes = await fetchAdmin('/api/admin/commandReplayState', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify({ state: true }),
-    });
-    expect(replayOnRes.status).toBe(200);
-
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Step 7: Replay commands with Bearer token
+    // Step 6: Replay commands with Bearer token
     for (const cmd of authCommands) {
       const res = await fetch(`http://127.0.0.1:${commandPort}/api/command`, {
         method: 'POST',
@@ -438,24 +377,13 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
       expect(res.status).toBe(200);
     }
 
-    // Step 8: Unset replay state with Bearer token
-    const replayOffRes = await fetchAdmin('/api/admin/commandReplayState', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders,
-      },
-      body: JSON.stringify({ state: false }),
-    });
-    expect(replayOffRes.status).toBe(200);
-
-    // Step 9: Wait for projections
+    // Step 7: Wait for projections
     await waitForCondition(async () => {
       const items = await getReadModelItems();
       return items.length === 2;
     });
 
-    // Step 10: Verify read model matches original
+    // Step 8: Verify read model matches original
     const replayedItems = await getReadModelItems();
     expect(replayedItems).toHaveLength(2);
     expect(replayedItems).toEqual(
@@ -465,7 +393,7 @@ describe('command replay full-stack integration', { timeout: 120000 }, () => {
       ]),
     );
 
-    // Step 11: Verify replayed commands also recorded auth info
+    // Step 9: Verify replayed commands also recorded auth info
     // The command recorder is still active during replay, so the
     // replay commands should appear as new lines in the recording file
     // with the auth info from the bearer token.

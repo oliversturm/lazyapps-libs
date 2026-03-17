@@ -14,6 +14,7 @@ const { createCatchupHandler } = await import('../catchupHandler.js');
 describe('createCatchupHandler', () => {
   let eventStore;
   let eventBus;
+  let statusTracker;
   let handler;
 
   const makeCursor = (events) => {
@@ -33,9 +34,14 @@ describe('createCatchupHandler', () => {
     };
     eventBus = {
       publishCatchupEvent: vi.fn().mockReturnValue(vi.fn()),
-      publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
     };
-    handler = createCatchupHandler(eventStore, eventBus);
+    statusTracker = {
+      trackCatchUpStart: vi.fn(),
+      trackCatchUpEvent: vi.fn(),
+      trackCatchUpSetToTimestamp: vi.fn(),
+      trackCatchUpEnd: vi.fn(),
+    };
+    handler = createCatchupHandler(eventStore, eventBus, statusTracker);
   });
 
   describe('getCatchupStatus', () => {
@@ -87,37 +93,25 @@ describe('createCatchupHandler', () => {
       });
     });
 
-    test('publishes CATCHUP_EVENTS_DONE with toTimestamp after streaming', () => {
+    test('sets status to completed after successful catchup', () => {
       const cursor = makeCursor([]);
       eventStore.getLatestEventTimestamp.mockResolvedValue(500);
       eventStore.countEvents.mockResolvedValue(0);
       eventStore.streamEvents.mockResolvedValue(cursor);
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
-        expect(eventBus.publishSystemMessage).toHaveBeenCalledWith('corr-1');
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'CATCHUP_EVENTS_DONE',
-          readModel: 'items',
-          toTimestamp: 500,
-        });
+        const status = handler.getCatchupStatus('items');
+        expect(status.status).toBe('completed');
+        expect(status.readModel).toBe('items');
       });
     });
 
-    test('empty event store: immediate CATCHUP_EVENTS_DONE with toTimestamp 0', () => {
+    test('empty event store: immediate completion with toTimestamp 0', () => {
       eventStore.getLatestEventTimestamp.mockResolvedValue(null);
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'CATCHUP_EVENTS_DONE',
-          readModel: 'items',
-          toTimestamp: 0,
-        });
+        const status = handler.getCatchupStatus('items');
+        expect(status.status).toBe('completed');
         expect(eventStore.countEvents).not.toHaveBeenCalled();
         expect(eventStore.streamEvents).not.toHaveBeenCalled();
       });
@@ -159,7 +153,6 @@ describe('createCatchupHandler', () => {
       eventStore.getLatestEventTimestamp.mockResolvedValue(500);
       eventStore.countEvents.mockResolvedValue(0);
       eventStore.streamEvents.mockResolvedValue(cursor2);
-      eventBus.publishSystemMessage.mockReturnValue(vi.fn());
 
       return handler.startCatchup('corr-2', 'orders', 0).then(() => {
         expect(handler.getCatchupStatus('orders').status).toBe('completed');
@@ -177,7 +170,6 @@ describe('createCatchupHandler', () => {
       eventStore.countEvents.mockResolvedValue(3);
       eventStore.streamEvents.mockResolvedValue(cursor);
       eventBus.publishCatchupEvent.mockReturnValue(vi.fn());
-      eventBus.publishSystemMessage.mockReturnValue(vi.fn());
 
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
         const status = handler.getCatchupStatus('items');
@@ -196,7 +188,6 @@ describe('createCatchupHandler', () => {
       eventStore.countEvents.mockResolvedValue(1);
       eventStore.streamEvents.mockResolvedValue(cursor);
       eventBus.publishCatchupEvent.mockReturnValue(vi.fn());
-      eventBus.publishSystemMessage.mockReturnValue(vi.fn());
 
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
         const status = handler.getCatchupStatus('items');
@@ -211,17 +202,10 @@ describe('createCatchupHandler', () => {
         new Error('DB connection lost'),
       );
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
         const status = handler.getCatchupStatus('items');
         expect(status.status).toBe('error');
         expect(status.error).toMatch(/DB connection lost/);
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'CATCHUP_CANCELLED',
-          readModel: 'items',
-        });
       });
     });
 
@@ -238,16 +222,125 @@ describe('createCatchupHandler', () => {
       eventStore.streamEvents.mockResolvedValue(errorCursor);
       eventBus.publishCatchupEvent.mockReturnValue(vi.fn());
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startCatchup('corr-1', 'items', 0).then(() => {
         const status = handler.getCatchupStatus('items');
         expect(status.status).toBe('error');
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'CATCHUP_CANCELLED',
-          readModel: 'items',
+      });
+    });
+
+    test('filters events by replayRelevantEvents', () => {
+      const events = [
+        { type: 'ITEM_CREATED', timestamp: 100 },
+        { type: 'OTHER_EVENT', timestamp: 200 },
+        { type: 'ITEM_UPDATED', timestamp: 300 },
+      ];
+      const cursor = makeCursor(events);
+      eventStore.getLatestEventTimestamp.mockResolvedValue(500);
+      eventStore.countEvents.mockResolvedValue(3);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishCatchupEvent.mockReturnValue(publishFn);
+
+      return handler
+        .startCatchup('corr-1', 'items', 0, undefined, [
+          'ITEM_CREATED',
+          'ITEM_UPDATED',
+        ])
+        .then(() => {
+          expect(publishFn).toHaveBeenCalledTimes(2);
+          expect(publishFn).toHaveBeenCalledWith('items', events[0], undefined);
+          expect(publishFn).toHaveBeenCalledWith('items', events[2], undefined);
         });
+    });
+
+    test('publishes all events when replayRelevantEvents is empty', () => {
+      const events = [
+        { type: 'ITEM_CREATED', timestamp: 100 },
+        { type: 'OTHER_EVENT', timestamp: 200 },
+      ];
+      const cursor = makeCursor(events);
+      eventStore.getLatestEventTimestamp.mockResolvedValue(500);
+      eventStore.countEvents.mockResolvedValue(2);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishCatchupEvent.mockReturnValue(publishFn);
+
+      return handler
+        .startCatchup('corr-1', 'items', 0, undefined, [])
+        .then(() => {
+          expect(publishFn).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    test('notifies statusTracker on catchup lifecycle', () => {
+      const events = [{ type: 'A', timestamp: 100 }];
+      const cursor = makeCursor(events);
+      eventStore.getLatestEventTimestamp.mockResolvedValue(500);
+      eventStore.countEvents.mockResolvedValue(1);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+      eventBus.publishCatchupEvent.mockReturnValue(vi.fn());
+
+      return handler.startCatchup('corr-1', 'items', 0, 'ep1').then(() => {
+        expect(statusTracker.trackCatchUpStart).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+          'corr-1',
+        );
+        expect(statusTracker.trackCatchUpSetToTimestamp).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+          500,
+        );
+        expect(statusTracker.trackCatchUpEvent).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+          100,
+        );
+        expect(statusTracker.trackCatchUpEnd).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+        );
+      });
+    });
+
+    test('notifies statusTracker on empty event store', () => {
+      eventStore.getLatestEventTimestamp.mockResolvedValue(null);
+
+      return handler.startCatchup('corr-1', 'items', 0, 'ep1').then(() => {
+        expect(statusTracker.trackCatchUpStart).toHaveBeenCalled();
+        expect(statusTracker.trackCatchUpEnd).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+        );
+      });
+    });
+
+    test('notifies statusTracker on error', () => {
+      eventStore.getLatestEventTimestamp.mockRejectedValue(
+        new Error('DB error'),
+      );
+
+      return handler.startCatchup('corr-1', 'items', 0, 'ep1').then(() => {
+        expect(statusTracker.trackCatchUpEnd).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+        );
+      });
+    });
+
+    test('works without statusTracker (backward compat)', () => {
+      const handlerNoTracker = createCatchupHandler(eventStore, eventBus);
+      eventStore.getLatestEventTimestamp.mockResolvedValue(100);
+      const cursor = makeCursor([]);
+      eventStore.countEvents.mockResolvedValue(0);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      return handlerNoTracker.startCatchup('corr-1', 'items', 0).then(() => {
+        expect(handlerNoTracker.getCatchupStatus('items').status).toBe(
+          'completed',
+        );
       });
     });
   });
@@ -265,9 +358,6 @@ describe('createCatchupHandler', () => {
       eventStore.getLatestEventTimestamp.mockResolvedValue(1000);
       eventStore.countEvents.mockResolvedValue(1000);
       eventStore.streamEvents.mockResolvedValue(neverCursor);
-
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
 
       handler.startCatchup('corr-1', 'items', 0);
 
@@ -292,7 +382,6 @@ describe('createCatchupHandler', () => {
       const cursor = makeCursor([]);
       eventStore.countEvents.mockResolvedValue(0);
       eventStore.streamEvents.mockResolvedValue(cursor);
-      eventBus.publishSystemMessage.mockReturnValue(vi.fn());
 
       return handler
         .startCatchup('corr-1', 'items', 0)

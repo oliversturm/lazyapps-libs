@@ -55,18 +55,31 @@ describe('command-receiver integration', { timeout: 60000 }, () => {
     vi.clearAllMocks();
   });
 
-  test('factory returns publishEvent, publishReplayState, publishReplayEvent, and publishSystemMessage', () => {
+  test('factory returns publishEvent, publishReplayEvent, publishCatchupEvent, and publishAdminInstruction', () => {
     const exchange = uniqueExchange();
     const factory = rabbitMq({ url: amqpUrl, exchange });
     return factory().then((result) => {
       expect(result).toHaveProperty('publishEvent');
-      expect(result).toHaveProperty('publishReplayState');
       expect(result).toHaveProperty('publishReplayEvent');
-      expect(result).toHaveProperty('publishSystemMessage');
+      expect(result).toHaveProperty('publishCatchupEvent');
+      expect(result).toHaveProperty('publishAdminInstruction');
+      expect(result).toHaveProperty('subscribeAdminMessages');
       expect(typeof result.publishEvent).toBe('function');
-      expect(typeof result.publishReplayState).toBe('function');
       expect(typeof result.publishReplayEvent).toBe('function');
-      expect(typeof result.publishSystemMessage).toBe('function');
+      expect(typeof result.publishCatchupEvent).toBe('function');
+      expect(typeof result.publishAdminInstruction).toBe('function');
+      expect(typeof result.subscribeAdminMessages).toBe('function');
+    });
+  });
+
+  test('does not expose publishReplayState, publishSystemMessage, subscribeSystemMessages, or subscribeAdminReply', () => {
+    const exchange = uniqueExchange();
+    const factory = rabbitMq({ url: amqpUrl, exchange });
+    return factory().then((result) => {
+      expect(result).not.toHaveProperty('publishReplayState');
+      expect(result).not.toHaveProperty('publishSystemMessage');
+      expect(result).not.toHaveProperty('subscribeSystemMessages');
+      expect(result).not.toHaveProperty('subscribeAdminReply');
     });
   });
 
@@ -77,16 +90,6 @@ describe('command-receiver integration', { timeout: 60000 }, () => {
       const event = { type: 'TEST_EVENT', timestamp: Date.now() };
       const returned = result.publishEvent('corr-1')(event);
       expect(returned).toEqual(event);
-    });
-  });
-
-  test('publishReplayState returns the state', () => {
-    const exchange = uniqueExchange();
-    const factory = rabbitMq({ url: amqpUrl, exchange });
-    return factory().then((result) => {
-      const state = true;
-      const returned = result.publishReplayState('corr-2')(state);
-      expect(returned).toBe(true);
     });
   });
 
@@ -131,79 +134,6 @@ describe('command-receiver integration', { timeout: 60000 }, () => {
         expect(received[0]).toEqual({
           correlationId: 'corr-3',
           event: { type: 'ITEM_CREATED', timestamp: 1234567890 },
-        });
-        return consumerConn.close();
-      });
-  });
-
-  test('factory returns subscribeSystemMessages', () => {
-    const exchange = uniqueExchange();
-    const factory = rabbitMq({ url: amqpUrl, exchange });
-    return factory().then((result) => {
-      expect(result).toHaveProperty('subscribeSystemMessages');
-      expect(typeof result.subscribeSystemMessages).toBe('function');
-    });
-  });
-
-  test('subscribeSystemMessages receives published system messages', () => {
-    const exchange = uniqueExchange();
-    const factory = rabbitMq({ url: amqpUrl, exchange });
-    return factory().then((result) => {
-      const message = { type: 'REPLAY_EVENTS_DONE', readModel: 'testModel' };
-      const received = [];
-      return result
-        .subscribeSystemMessages((msg) => {
-          received.push(msg);
-        })
-        .then(() => delay(200))
-        .then(() => {
-          result.publishSystemMessage('corr-sub-1')(message);
-          return delay(500);
-        })
-        .then(() => {
-          expect(received).toHaveLength(1);
-          expect(received[0]).toEqual(message);
-        });
-    });
-  });
-
-  test('published replay state is receivable on __system topic', () => {
-    const exchange = uniqueExchange();
-    const received = [];
-    let consumerConn;
-
-    return amqp
-      .connect(amqpUrl)
-      .then((conn) => {
-        consumerConn = conn;
-        return conn.createChannel();
-      })
-      .then((ch) =>
-        ch
-          .assertExchange(exchange, 'topic', { durable: false })
-          .then(() => ch.assertQueue('', { exclusive: true }))
-          .then((q) =>
-            ch.bindQueue(q.queue, exchange, '__system').then(() =>
-              ch.consume(
-                q.queue,
-                (msg) => {
-                  received.push(JSON.parse(msg.content.toString()));
-                },
-                { noAck: true },
-              ),
-            ),
-          ),
-      )
-      .then(() => rabbitMq({ url: amqpUrl, exchange })())
-      .then(({ publishReplayState }) => {
-        publishReplayState('corr-4')(true);
-        return delay(500);
-      })
-      .then(() => {
-        expect(received).toHaveLength(1);
-        expect(received[0]).toEqual({
-          correlationId: 'corr-4',
-          event: { type: 'SET_REPLAY_STATE', state: true },
         });
         return consumerConn.close();
       });

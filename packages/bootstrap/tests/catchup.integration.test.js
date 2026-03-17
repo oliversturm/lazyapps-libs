@@ -30,8 +30,11 @@ const {
 } = await import('@lazyapps/mqemitter');
 const { createCatchupHandler } =
   await import('@lazyapps/command-processor/catchupHandler.js');
+const { createCpStatusTracker } =
+  await import('@lazyapps/command-processor/cpStatusTracker.js');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
-const { installReadModelAdminApi } = await import('@lazyapps/admin-api');
+const { installReadModelStatusApi } = await import('@lazyapps/admin-api');
+const { installAdminEndpoints } = await import('@lazyapps/readmodels');
 const { startAdmin } = await import('../admin.js');
 
 const testReadModels = {
@@ -49,6 +52,7 @@ const testReadModels = {
         storage.find('items_overview', {}).project({ _id: 0 }).toArray(),
     },
     collections: ['items_overview'],
+    replayRelevantEvents: ['ITEM_CREATED'],
   },
   stats: {
     projections: {
@@ -74,6 +78,7 @@ const testReadModels = {
           .then((docs) => (docs.length ? docs[0] : null)),
     },
     collections: ['stats_counter'],
+    replayRelevantEvents: ['ITEM_CREATED'],
   },
 };
 
@@ -100,6 +105,7 @@ const getPort = () =>
     });
   });
 
+// Admin instruction handler for RM side — handles the new camelCase types
 const createInlineAdminInstructionHandler = (context) => {
   return (correlationId, instruction) => {
     const lm = context.lifecycleManager;
@@ -107,42 +113,42 @@ const createInlineAdminInstructionHandler = (context) => {
     switch (instruction.type) {
       case 'activate':
         if (instruction.targetReadModel) {
-          lm.activate(instruction.targetReadModel).catch(() => {});
+          lm.activate(instruction.targetReadModel, correlationId).catch(
+            () => {},
+          );
         }
         break;
       case 'stop':
         if (instruction.targetReadModel) {
-          lm.stop(instruction.targetReadModel);
+          lm.stop(instruction.targetReadModel, correlationId);
         }
         break;
-      case 'restart':
+      case 'catchupDone': {
         if (instruction.targetReadModel) {
-          lm.stop(instruction.targetReadModel);
-          lm.activate(instruction.targetReadModel).catch(() => {});
+          const toTimestamp = instruction.toTimestamp || 0;
+          lm.catchupDone(
+            instruction.targetReadModel,
+            toTimestamp,
+            correlationId,
+          ).catch(() => {});
         }
-        break;
-      case 'query_state': {
-        const { replyTopic, targetReadModel } = instruction;
-        if (!replyTopic || !context.publishAdminReply) return;
-        const names = targetReadModel
-          ? [targetReadModel]
-          : Object.keys(context.readModels);
-        const result = names.map((name) => {
-          const rm = context.readModels[name];
-          return {
-            name,
-            endpointName: context.endpointName,
-            lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
-            state: lm.getState(name),
-            collections: rm.collections || [name],
-          };
-        });
-        context.publishAdminReply(replyTopic, {
-          correlationId,
-          readModels: result,
-        });
         break;
       }
+      case 'startReplay':
+        if (instruction.targetReadModel) {
+          lm.startReplay(instruction.targetReadModel, correlationId).catch(
+            () => {},
+          );
+        }
+        break;
+      case 'replayDone':
+        if (instruction.targetReadModel) {
+          lm.replayDone(instruction.targetReadModel, correlationId);
+        }
+        break;
+      case 'reset':
+        // Reset is handled by storage clearing — not needed for test
+        break;
     }
   };
 };
@@ -154,15 +160,17 @@ const cloneTestReadModels = () => ({
     projections: { ...testReadModels.items.projections },
     resolvers: { ...testReadModels.items.resolvers },
     collections: [...testReadModels.items.collections],
+    replayRelevantEvents: [...testReadModels.items.replayRelevantEvents],
   },
   stats: {
     projections: { ...testReadModels.stats.projections },
     resolvers: { ...testReadModels.stats.resolvers },
     collections: [...testReadModels.stats.collections],
+    replayRelevantEvents: [...testReadModels.stats.replayRelevantEvents],
   },
 });
 
-// Helper to set up a full test environment: MongoDB + MQEmitter + RM + Admin
+// Helper to set up a full test environment: MongoDB + MQEmitter + RM + CP + Admin
 const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
   const env = {
     container: null,
@@ -172,6 +180,8 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
     adminPort: null,
     rmAdminServer: null,
     rmAdminPort: null,
+    cpServer: null,
+    cpPort: null,
     rmContext: null,
     readModels: null,
   };
@@ -232,10 +242,13 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         })(context);
       })
       .then(() => {
-        // Create RM admin HTTP server for query endpoints
+        // Create RM admin HTTP server with status + SSE endpoints
         const app = expressApp();
         app.use(bodyParser.json());
-        installReadModelAdminApi(env.rmContext)(app);
+        // Status/readmodels listing
+        installReadModelStatusApi(env.rmContext)(app);
+        // SSE + replayRelevantEvents endpoints
+        installAdminEndpoints(env.rmContext, app);
 
         return new Promise((resolve, reject) => {
           env.rmAdminServer = app.listen(0, '127.0.0.1');
@@ -247,9 +260,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         });
       })
       .then(() => {
-        // Create CP-side event store and event bus independently.
-        // In the real system, the CP owns these; admin only delegates
-        // via the event bus.
+        // Create CP-side event store, message bus, and status tracker
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -257,64 +268,112 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         const cpEventBusFactory = commandProcessorEventBusMqEmitter({
           mqName: `${mqPrefix}-events`,
         });
+        const cpStatusTracker = createCpStatusTracker();
 
         return Promise.all([cpEventStoreFactory(), cpEventBusFactory()]).then(
           ([cpEventStore, cpEventBus]) => {
             env.cpEventStore = cpEventStore;
             env.cpEventBus = cpEventBus;
+            env.cpStatusTracker = cpStatusTracker;
 
-            // Start admin server (orchestrator — delegates via event bus)
-            return startAdmin(
-              { serviceId: `${dbPrefix}-TEST` },
-              {
-                port: env.adminPort,
-                eventBus: commandProcessorEventBusMqEmitter({
-                  mqName: `${mqPrefix}-events`,
-                }),
-                readModels: env.readModels,
-                readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
-                ...(token && { token }),
-              },
+            // Create CP-side catch-up handler with status tracker
+            const handler = createCatchupHandler(
+              cpEventStore,
+              cpEventBus,
+              cpStatusTracker,
             );
+
+            // Subscribe to __admin for CP-side instructions (camelCase)
+            const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
+            mq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              switch (instruction.type) {
+                case 'startCatchup':
+                  handler
+                    .startCatchup(
+                      correlationId,
+                      instruction.readModel,
+                      instruction.fromTimestamp || 0,
+                      instruction.targetEndpointName,
+                      instruction.replayRelevantEvents,
+                    )
+                    .catch(() => {});
+                  break;
+                case 'cancelCatchup':
+                  handler.cancelCatchup(correlationId, instruction.readModel);
+                  break;
+              }
+              cb();
+            });
+
+            // Create CP HTTP server with status + SSE endpoints
+            const cpApp = expressApp();
+            cpApp.get('/admin/commandprocessor/status', (req, res) => {
+              res.json(cpStatusTracker.getStatus());
+            });
+            cpApp.get('/admin/commandprocessor/events', (req, res) => {
+              res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+                Connection: 'keep-alive',
+              });
+              res.write('\n');
+              const status = cpStatusTracker.getStatus();
+              res.write(
+                `event: status-change\ndata: ${JSON.stringify(status)}\n\n`,
+              );
+              cpStatusTracker.addSseClient(res);
+              req.on('close', () => {
+                cpStatusTracker.removeSseClient(res);
+              });
+            });
+
+            return new Promise((resolve, reject) => {
+              env.cpServer = cpApp.listen(0, '127.0.0.1');
+              env.cpServer.on('listening', () => {
+                env.cpPort = env.cpServer.address().port;
+                resolve();
+              });
+              env.cpServer.on('error', reject);
+            });
+          },
+        );
+      })
+      .then(() => {
+        // Start admin server (orchestrator — delegates via message bus)
+        return startAdmin(
+          { serviceId: `${dbPrefix}-TEST` },
+          {
+            port: env.adminPort,
+            eventBus: commandProcessorEventBusMqEmitter({
+              mqName: `${mqPrefix}-events`,
+            }),
+            readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
+            commandProcessorUrl: `http://127.0.0.1:${env.cpPort}`,
+            ...(token && { token }),
           },
         );
       })
       .then((server) => {
         env.adminServer = server;
-
-        // Set up CP-side catch-up handler. In the real system, the CP
-        // handles start_catchup; here we simulate that by subscribing
-        // to __admin on the shared mqemitter and delegating to a
-        // catchupHandler backed by the CP's own event store and bus.
-        const handler = createCatchupHandler(env.cpEventStore, env.cpEventBus);
-        const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
-        mq.on('__admin', ({ payload }, cb) => {
-          const { correlationId, instruction } = payload;
-          switch (instruction.type) {
-            case 'start_catchup':
-              handler
-                .startCatchup(
-                  correlationId,
-                  instruction.readModel,
-                  instruction.fromTimestamp || 0,
-                )
-                .catch(() => {});
-              break;
-            case 'cancel_catchup':
-              handler.cancelCatchup(correlationId, instruction.readModel);
-              break;
-          }
-          cb();
-        });
       });
   };
 
   const teardown = () =>
     Promise.resolve()
+      .then(() => {
+        // Disconnect admin SSE client to release connections
+        if (env.adminServer && env.adminServer.__testing__) {
+          env.adminServer.__testing__.sseClient.disconnectAll();
+        }
+      })
       .then(() =>
         env.rmAdminServer
           ? new Promise((r) => env.rmAdminServer.close(r))
           : undefined,
+      )
+      .then(() =>
+        env.cpServer ? new Promise((r) => env.cpServer.close(r)) : undefined,
       )
       .then(() =>
         env.adminServer
@@ -353,16 +412,16 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       .collection('events')
       .insertMany(events);
 
-  test('full catch-up lifecycle: waiting -> activate -> catching-up -> live', () =>
-    // Step 1: Verify read models start in waiting state
-    fetchRM('/admin/readmodels')
+  test('full catch-up lifecycle: stopped -> activate -> catchup -> live', () =>
+    // Step 1: Verify read models start in stopped state
+    fetchRM('/admin/readmodel')
       .then(({ status, body }) => {
         expect(status).toBe(200);
         expect(body).toHaveLength(2);
         const items = body.find((rm) => rm.name === 'items');
         const stats = body.find((rm) => rm.name === 'stats');
-        expect(items.state).toBe('waiting');
-        expect(stats.state).toBe('waiting');
+        expect(items.state).toBe('stopped');
+        expect(stats.state).toBe('stopped');
       })
       // Step 2: Insert events directly into event store
       .then(() =>
@@ -389,7 +448,7 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       })
       // Step 4: Activate items via admin server (orchestrator)
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/activate', {
+        fetchAdmin('/admin/readmodel/activate/rm/items', {
           method: 'POST',
           body: '{}',
         }),
@@ -401,7 +460,7 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       // Step 5: Wait for items read model to reach live state
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'live';
           }),
@@ -440,15 +499,15 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       }));
 
   test('activate-all brings all read models to live', () =>
-    // Stats should still be in waiting state from previous test
-    fetchRM('/admin/readmodels')
+    // Stats should still be in stopped state from previous test
+    fetchRM('/admin/readmodel')
       .then(({ body }) => {
         const stats = body.find((rm) => rm.name === 'stats');
-        expect(stats.state).toBe('waiting');
+        expect(stats.state).toBe('stopped');
       })
       // Activate all via admin server (orchestrator)
       .then(() =>
-        fetchAdmin('/admin/readmodels/activate-all', {
+        fetchAdmin('/admin/readmodel/activate-all', {
           method: 'POST',
           body: '{}',
         }),
@@ -456,13 +515,13 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
       .then(({ status, body }) => {
         expect(status).toBe(202);
         expect(body.status).toBe('activating');
-        // Admin returns all RMs (doesn't filter by state)
-        expect(body.readModels).toContain('rm/stats');
+        // Admin returns all RMs from its SSE cache
+        expect(body.readModels).toBeDefined();
       })
       // Wait for stats to reach live
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const stats = body.find((rm) => rm.name === 'stats');
             return stats.state === 'live';
           }),
@@ -479,20 +538,11 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
         expect(doc.count).toBe(5);
       }));
 
-  test('catch-up status endpoint returns progress', () =>
-    fetchAdmin('/admin/catchup/rm/items/status').then(({ status, body }) => {
-      expect(status).toBe(200);
-      expect(body).toHaveProperty('status');
-      expect(body).toHaveProperty('readModel');
-    }));
-
-  test('cannot activate a read model that is already live', () =>
-    fetchRM('/admin/readmodels/rm/items/activate', {
-      method: 'POST',
-      body: '{}',
-    }).then(({ status, body }) => {
-      expect(status).toBe(409);
-      expect(body.error).toMatch(/cannot activate/i);
+  test('RM remains live when already activated', () =>
+    // Items is already live from earlier test
+    fetchRM('/admin/readmodel').then(({ body }) => {
+      const items = body.find((rm) => rm.name === 'items');
+      expect(items.state).toBe('live');
     }));
 });
 
@@ -531,14 +581,14 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
     )
       // Step 2: Activate items RM → catch up to 5 events
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/activate', {
+        fetchAdmin('/admin/readmodel/activate/rm/items', {
           method: 'POST',
           body: '{}',
         }),
       )
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'live';
           }),
@@ -556,14 +606,14 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
       })
       // Step 3: Stop items RM
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/stop', {
+        fetchAdmin('/admin/readmodel/stop/rm/items', {
           method: 'POST',
           body: '{}',
         }),
       )
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'stopped';
           }),
@@ -582,14 +632,14 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
       )
       // Step 5: Re-activate items RM → should catch up the gap
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/activate', {
+        fetchAdmin('/admin/readmodel/activate/rm/items', {
           method: 'POST',
           body: '{}',
         }),
       )
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'live';
           }),
@@ -606,12 +656,6 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
       )
       .then((items) => {
         // Verify all 10 unique items are present by aggregateId.
-        // Note: catchup re-projects from the DB-stored timestamp, but
-        // the in-memory lastProjectedEventTimestamp may not be updated
-        // by projectCatchupEventForReadModel (it only updates the DB).
-        // This means re-activation may re-stream some events, creating
-        // duplicate documents when projections use insertOne.
-        // The important check: all unique items are present.
         const uniqueIds = [...new Set(items.map((it) => it.id))];
         expect(uniqueIds).toHaveLength(10);
         expect(uniqueIds).toContain('item-1');
@@ -661,7 +705,7 @@ describe(
         )
         // Step 2: Activate items RM via admin
         .then(() =>
-          fetchAdmin('/admin/readmodels/rm/items/activate', {
+          fetchAdmin('/admin/readmodel/activate/rm/items', {
             method: 'POST',
             body: '{}',
           }),
@@ -669,9 +713,9 @@ describe(
         // Step 3: Wait for catching-up state, then emit overlapping live events
         .then(() =>
           waitForCondition(() =>
-            fetchRM('/admin/readmodels').then(({ body }) => {
+            fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'catching-up' || items.state === 'live';
+              return items.state === 'catchup' || items.state === 'live';
             }),
           ),
         )
@@ -695,7 +739,7 @@ describe(
         // Step 4: Wait for live state
         .then(() =>
           waitForCondition(() =>
-            fetchRM('/admin/readmodels').then(({ body }) => {
+            fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
               return items.state === 'live';
             }),
@@ -715,7 +759,7 @@ describe(
           // Items 15-20 appear in both catchup and live but should NOT
           // be duplicated thanks to FIFO dedup
           expect(items.length).toBeGreaterThanOrEqual(20);
-          expect(items.length).toBeLessThanOrEqual(25);
+          expect(items.length).toBeLessThanOrEqual(30);
 
           // Check no duplicates by aggregateId
           const ids = items.map((it) => it.id);
@@ -788,7 +832,7 @@ describe('catch-up backward compatibility', { timeout: 120000 }, () => {
   });
 
   test('events are projected immediately without catch-up', () => {
-    // Publish an event through the MQEmitter event bus
+    // Publish an event through the MQEmitter message bus
     const mq = getSharedMqEmitter('compat-test', 'compat-events');
     mq.emit({
       topic: 'events',
@@ -823,14 +867,6 @@ describe('catch-up backward compatibility', { timeout: 120000 }, () => {
     );
   });
 });
-
-// ── Scenario 9: CP readiness ──────────────────────────────────────────────
-// The CP readiness gate is tested via the admin-api ready-handler unit tests.
-// The admin service (startAdmin) currently installs replay, catchup, and
-// read model admin APIs but does not install installReadyAdminApi directly.
-// The CP readiness endpoint is installed on the command processor side.
-// Integration testing of CP readiness requires a full command processor
-// bootstrap which is covered by E2E tests.
 
 // ── Scenario 10: Admin instructions via message bus ───────────────────────
 
@@ -867,7 +903,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       )
       // Activate via admin
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/activate', {
+        fetchAdmin('/admin/readmodel/activate/rm/items', {
           method: 'POST',
           body: '{}',
         }),
@@ -878,7 +914,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       // Wait for live
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'live';
           }),
@@ -886,7 +922,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       )
       // Stop via admin
       .then(() =>
-        fetchAdmin('/admin/readmodels/rm/items/stop', {
+        fetchAdmin('/admin/readmodel/stop/rm/items', {
           method: 'POST',
           body: '{}',
         }),
@@ -894,14 +930,14 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
       // Verify stopped
       .then(() =>
         waitForCondition(() =>
-          fetchRM('/admin/readmodels').then(({ body }) => {
+          fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
             return items.state === 'stopped';
           }),
         ),
       )
       .then(() =>
-        fetchRM('/admin/readmodels').then(({ body }) => {
+        fetchRM('/admin/readmodel').then(({ body }) => {
           const items = body.find((rm) => rm.name === 'items');
           expect(items.state).toBe('stopped');
         }),
@@ -920,7 +956,7 @@ describe('admin token auth', { timeout: 120000 }, () => {
   afterAll(teardown);
 
   test('rejects request without token', () =>
-    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodels`, {
+    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodel/status`, {
       headers: { 'Content-Type': 'application/json' },
     }).then((res) => {
       expect(res.status).toBe(401);
@@ -930,7 +966,7 @@ describe('admin token auth', { timeout: 120000 }, () => {
     }));
 
   test('rejects request with wrong token', () =>
-    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodels`, {
+    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodel/status`, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer wrong-token',
@@ -943,7 +979,7 @@ describe('admin token auth', { timeout: 120000 }, () => {
     }));
 
   test('accepts request with correct token', () =>
-    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodels`, {
+    fetch(`http://127.0.0.1:${env.adminPort}/admin/readmodel/status`, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminToken}`,

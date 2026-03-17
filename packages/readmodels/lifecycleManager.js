@@ -1,12 +1,13 @@
 import { getLogger } from '@lazyapps/logger';
 
-const VALID_STATES = [
-  'waiting',
-  'activating',
-  'catching-up',
-  'live',
-  'stopped',
-];
+const VALID_STATES = ['stopped', 'live', 'replay', 'catchup'];
+
+const VALID_TRANSITIONS = {
+  stopped: ['replay', 'catchup'],
+  live: ['stopped'],
+  replay: ['stopped'],
+  catchup: ['live', 'stopped'],
+};
 
 export const createLifecycleManager = (context) => {
   const states = {};
@@ -15,7 +16,7 @@ export const createLifecycleManager = (context) => {
   const initialize = (readModelNames) => {
     const log = getLogger('RM/Lifecycle', 'SYS');
     readModelNames.forEach((name) => {
-      states[name] = 'waiting';
+      states[name] = 'stopped';
     });
     log.info(
       `Initialized lifecycle for read models: ${readModelNames.join(', ')}`,
@@ -24,23 +25,72 @@ export const createLifecycleManager = (context) => {
 
   const getState = (name) => states[name] || 'unknown';
 
+  const isValidTransition = (from, to) => {
+    const allowed = VALID_TRANSITIONS[from];
+    return allowed ? allowed.includes(to) : false;
+  };
+
   const setState = (name, state, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const prev = states[name];
     states[name] = state;
     log.info(`Read model '${name}': ${prev} -> ${state}`);
+    if (context.statusTracker) {
+      context.statusTracker.setState(name, state, correlationId);
+    }
+  };
+
+  const stop = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
+    const current = getState(readModelName);
+    if (current === 'stopped') {
+      log.info(`Read model '${readModelName}' already stopped`);
+      return;
+    }
+    if (current === 'catchup') {
+      context.projectionHandler.clearCatchupState(readModelName);
+    }
+    log.info(`Stopping read model '${readModelName}'`);
+    setState(readModelName, 'stopped', correlationId);
+  };
+
+  const startReplay = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
+    const current = getState(readModelName);
+    if (current !== 'stopped') {
+      return Promise.reject(
+        new Error(
+          `Cannot start replay for '${readModelName}' from state '${current}'`,
+        ),
+      );
+    }
+    context.projectionHandler.setReadModelReplayState(readModelName, true);
+    setState(readModelName, 'replay', correlationId);
+    log.info(`Read model '${readModelName}' is now in replay mode`);
+    return Promise.resolve();
+  };
+
+  const replayDone = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
+    const current = getState(readModelName);
+    if (current !== 'replay') {
+      log.warn(`replayDone for '${readModelName}' but state is '${current}'`);
+      return;
+    }
+    context.projectionHandler.clearReadModelReplayState(readModelName);
+    setState(readModelName, 'stopped', correlationId);
+    log.info(`Read model '${readModelName}' replay done, now stopped`);
   };
 
   const activate = (readModelName, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const current = getState(readModelName);
-    if (current !== 'waiting' && current !== 'stopped') {
+    if (current !== 'stopped') {
       return Promise.reject(
         new Error(`Cannot activate '${readModelName}' from state '${current}'`),
       );
     }
 
-    setState(readModelName, 'activating', correlationId);
     log.info(`Activating read model '${readModelName}'`);
 
     if (!connectPromise) {
@@ -54,21 +104,33 @@ export const createLifecycleManager = (context) => {
     return connectEventBus
       .then(() => {
         context.projectionHandler.setReadModelCatchingUp(readModelName);
-        setState(readModelName, 'catching-up', correlationId);
+        setState(readModelName, 'catchup', correlationId);
         log.info(`Read model '${readModelName}' is now catching up`);
       })
       .catch((err) => {
         log.error(`Activation failed for ${readModelName}: ${err}`);
         context.projectionHandler.clearCatchupState(readModelName);
-        setState(readModelName, 'waiting', correlationId);
+        setState(readModelName, 'stopped', correlationId);
         throw err;
       });
   };
 
-  const stop = (readModelName, correlationId) => {
+  const catchupDone = (readModelName, toTimestamp, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
-    log.info(`Stopping read model '${readModelName}'`);
-    setState(readModelName, 'stopped', correlationId);
+    const current = getState(readModelName);
+    if (current !== 'catchup') {
+      log.warn(`catchupDone for '${readModelName}' but state is '${current}'`);
+      return Promise.resolve();
+    }
+    log.info(
+      `Catch-up events done for '${readModelName}', draining FIFO queue`,
+    );
+    return context.catchupHandler
+      .handleCatchupComplete(readModelName, toTimestamp, correlationId)
+      .then(() => {
+        setState(readModelName, 'live', correlationId);
+        log.info(`Read model '${readModelName}' is now live`);
+      });
   };
 
   return {
@@ -77,7 +139,11 @@ export const createLifecycleManager = (context) => {
     setState,
     activate,
     stop,
+    startReplay,
+    replayDone,
+    catchupDone,
+    isValidTransition,
   };
 };
 
-export const __testing__ = { VALID_STATES };
+export const __testing__ = { VALID_STATES, VALID_TRANSITIONS };

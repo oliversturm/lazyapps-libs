@@ -10,89 +10,70 @@ const jsonFetch = (url, options) =>
     return r.json().then((body) => (r.ok ? body : Promise.reject(body)));
   });
 
-export const createAdminClient = (
-  commandProcessorUrl,
-  readModelServiceUrls,
-) => ({
-  // Command processor endpoints
-
-  startReplay: (readModel, fromTimestamp, toTimestamp, targetEndpointName) =>
-    jsonFetch(`${commandProcessorUrl}/api/admin/startReplay`, {
+export const createAdminClient = () => ({
+  startReplay: (ep, rm, options) =>
+    jsonFetch(`/admin/replay/start/${ep}/${rm}`, {
       method: 'POST',
-      body: JSON.stringify({
-        readModel,
-        fromTimestamp,
-        toTimestamp,
-        ...(targetEndpointName && { targetEndpointName }),
-      }),
+      body: JSON.stringify(options),
     }),
 
-  getReplayStatus: (endpointName, readModel) =>
-    jsonFetch(
-      `${commandProcessorUrl}/api/admin/replayStatus` +
-        `/${endpointName}/${readModel}`,
-    ),
-
-  cancelReplay: (readModel) =>
-    jsonFetch(`${commandProcessorUrl}/api/admin/cancelReplay`, {
+  cancelReplay: (ep, rm, options) =>
+    jsonFetch(`/admin/replay/cancel/${ep}/${rm}`, {
       method: 'POST',
-      body: JSON.stringify({ readModel }),
+      body: JSON.stringify(options),
     }),
 
-  // Read model service endpoints
-
-  getStatus: (serviceUrl) => jsonFetch(`${serviceUrl}/admin/status`),
-
-  getReadModels: (serviceUrl) => jsonFetch(`${serviceUrl}/admin/readmodels`),
-
-  prepareReplay: (serviceUrl, endpointName, readModel, options) =>
-    jsonFetch(
-      `${serviceUrl}/admin/replay/${endpointName}/${readModel}/prepare`,
-      {
-        method: 'POST',
-        body: JSON.stringify(options),
-      },
-    ),
-
-  getReplayReadModelStatus: (serviceUrl, endpointName, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/replay/${endpointName}/${readModel}/status`),
-
-  createBackup: (serviceUrl, endpointName, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/backup/${endpointName}/${readModel}`, {
+  createBackup: (ep, rm) =>
+    jsonFetch(`/admin/backup/create/${ep}/${rm}`, {
       method: 'POST',
       body: '{}',
     }),
 
-  listBackups: (serviceUrl, endpointName, readModel) =>
-    jsonFetch(`${serviceUrl}/admin/backups/${endpointName}/${readModel}`),
+  cancelBackup: (ep, rm) =>
+    jsonFetch(`/admin/backup/cancel/${ep}/${rm}`, {
+      method: 'POST',
+      body: '{}',
+    }),
 
-  deleteBackup: (serviceUrl, backupId, endpointName, readModelName) =>
-    jsonFetch(
-      `${serviceUrl}/admin/backup/${backupId}` +
-        `?readModelName=${encodeURIComponent(readModelName)}` +
-        `&endpointName=${encodeURIComponent(endpointName)}`,
-      {
-        method: 'DELETE',
-      },
-    ),
+  restoreBackup: (ep, rm, backupId) =>
+    jsonFetch(`/admin/backup/restore/${ep}/${rm}`, {
+      method: 'POST',
+      body: JSON.stringify({ backupId }),
+    }),
 
-  // Helpers
+  deleteBackup: (ep, rm, backupId) =>
+    jsonFetch(`/admin/backup/delete/${ep}/${rm}`, {
+      method: 'POST',
+      body: JSON.stringify({ backupId }),
+    }),
 
-  getServiceUrl: (serviceName) => readModelServiceUrls[serviceName],
+  listBackups: (ep, rm) => jsonFetch(`/admin/backup/list/${ep}/${rm}`),
 
-  getServiceNames: () => Object.keys(readModelServiceUrls),
+  activateAll: () =>
+    jsonFetch('/admin/readmodel/activate-all', {
+      method: 'POST',
+      body: '{}',
+    }),
 
-  findServiceForReadModel: (readModelName) =>
-    Promise.all(
-      Object.entries(readModelServiceUrls).map(([name, url]) =>
-        jsonFetch(`${url}/admin/readmodels`)
-          .then((models) => {
-            const found = models.find((m) => m.name === readModelName);
-            return found
-              ? { name, url, endpointName: found.endpointName }
-              : null;
-          })
-          .catch(() => null),
-      ),
-    ).then((results) => results.find((r) => r !== null) || null),
+  activate: (ep, rm) =>
+    jsonFetch(`/admin/readmodel/activate/${ep}/${rm}`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  stop: (ep, rm) =>
+    jsonFetch(`/admin/readmodel/stop/${ep}/${rm}`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  reset: (ep, rm) =>
+    jsonFetch(`/admin/readmodel/reset/${ep}/${rm}`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  refreshStatus: () => jsonFetch('/admin/readmodel/status'),
+
+  getCommandProcessorStatus: () => jsonFetch('/admin/commandprocessor/status'),
 });

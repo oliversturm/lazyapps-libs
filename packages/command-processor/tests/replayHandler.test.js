@@ -13,6 +13,7 @@ const { createReplayHandler } = await import('../replayHandler.js');
 describe('createReplayHandler', () => {
   let eventStore;
   let eventBus;
+  let statusTracker;
   let handler;
 
   const makeCursor = (events) => {
@@ -31,9 +32,13 @@ describe('createReplayHandler', () => {
     };
     eventBus = {
       publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
-      publishSystemMessage: vi.fn().mockReturnValue(vi.fn()),
     };
-    handler = createReplayHandler(eventStore, eventBus);
+    statusTracker = {
+      trackReplayStart: vi.fn(),
+      trackReplayEvent: vi.fn(),
+      trackReplayEnd: vi.fn(),
+    };
+    handler = createReplayHandler(eventStore, eventBus, statusTracker);
   });
 
   describe('getReplayStatus', () => {
@@ -63,23 +68,6 @@ describe('createReplayHandler', () => {
         expect(publishFn).toHaveBeenCalledTimes(2);
         expect(publishFn).toHaveBeenCalledWith('items', events[0], undefined);
         expect(publishFn).toHaveBeenCalledWith('items', events[1], undefined);
-      });
-    });
-
-    test('publishes REPLAY_EVENTS_DONE on completion', () => {
-      const cursor = makeCursor([]);
-      eventStore.countEvents.mockResolvedValue(0);
-      eventStore.streamEvents.mockResolvedValue(cursor);
-
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
-      return handler.startReplay('corr-1', 'items', 0, null).then(() => {
-        expect(eventBus.publishSystemMessage).toHaveBeenCalledWith('corr-1');
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'REPLAY_EVENTS_DONE',
-          readModel: 'items',
-        });
       });
     });
 
@@ -152,8 +140,6 @@ describe('createReplayHandler', () => {
       const cursor2 = makeCursor([]);
       eventStore.countEvents.mockResolvedValue(0);
       eventStore.streamEvents.mockResolvedValue(cursor2);
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
 
       return handler.startReplay('corr-2', 'orders', 0, null).then(() => {
         expect(handler.getReplayStatus('orders').status).toBe('completed');
@@ -163,17 +149,10 @@ describe('createReplayHandler', () => {
     test('handles eventStore errors gracefully', () => {
       eventStore.countEvents.mockRejectedValue(new Error('DB connection lost'));
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startReplay('corr-1', 'items', 0, null).then(() => {
         const status = handler.getReplayStatus('items');
         expect(status.status).toBe('error');
         expect(status.error).toMatch(/DB connection lost/);
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'REPLAY_CANCELLED',
-          readModel: 'items',
-        });
       });
     });
 
@@ -189,16 +168,9 @@ describe('createReplayHandler', () => {
       eventStore.streamEvents.mockResolvedValue(errorCursor);
       eventBus.publishReplayEvent.mockReturnValue(vi.fn());
 
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
-
       return handler.startReplay('corr-1', 'items', 0, null).then(() => {
         const status = handler.getReplayStatus('items');
         expect(status.status).toBe('error');
-        expect(sysMsgFn).toHaveBeenCalledWith({
-          type: 'REPLAY_CANCELLED',
-          readModel: 'items',
-        });
       });
     });
 
@@ -232,6 +204,117 @@ describe('createReplayHandler', () => {
         expect(eventStore.streamEvents).toHaveBeenCalledWith(500, 1000);
       });
     });
+
+    test('filters events by replayRelevantEvents', () => {
+      const events = [
+        { type: 'ITEM_CREATED', timestamp: 100 },
+        { type: 'OTHER_EVENT', timestamp: 200 },
+        { type: 'ITEM_UPDATED', timestamp: 300 },
+      ];
+      const cursor = makeCursor(events);
+      eventStore.countEvents.mockResolvedValue(3);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishReplayEvent.mockReturnValue(publishFn);
+
+      return handler
+        .startReplay('corr-1', 'items', 0, null, undefined, [
+          'ITEM_CREATED',
+          'ITEM_UPDATED',
+        ])
+        .then(() => {
+          expect(publishFn).toHaveBeenCalledTimes(2);
+          expect(publishFn).toHaveBeenCalledWith('items', events[0], undefined);
+          expect(publishFn).toHaveBeenCalledWith('items', events[2], undefined);
+        });
+    });
+
+    test('publishes all events when replayRelevantEvents is empty', () => {
+      const events = [
+        { type: 'ITEM_CREATED', timestamp: 100 },
+        { type: 'OTHER_EVENT', timestamp: 200 },
+      ];
+      const cursor = makeCursor(events);
+      eventStore.countEvents.mockResolvedValue(2);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishReplayEvent.mockReturnValue(publishFn);
+
+      return handler
+        .startReplay('corr-1', 'items', 0, null, undefined, [])
+        .then(() => {
+          expect(publishFn).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    test('publishes all events when replayRelevantEvents is not provided', () => {
+      const events = [
+        { type: 'ITEM_CREATED', timestamp: 100 },
+        { type: 'OTHER_EVENT', timestamp: 200 },
+      ];
+      const cursor = makeCursor(events);
+      eventStore.countEvents.mockResolvedValue(2);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      const publishFn = vi.fn();
+      eventBus.publishReplayEvent.mockReturnValue(publishFn);
+
+      return handler.startReplay('corr-1', 'items', 0, null).then(() => {
+        expect(publishFn).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    test('notifies statusTracker on replay lifecycle', () => {
+      const cursor = makeCursor([{ type: 'A', timestamp: 100 }]);
+      eventStore.countEvents.mockResolvedValue(1);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+      eventBus.publishReplayEvent.mockReturnValue(vi.fn());
+
+      return handler.startReplay('corr-1', 'items', 0, null, 'ep1').then(() => {
+        expect(statusTracker.trackReplayStart).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+          'corr-1',
+        );
+        expect(statusTracker.trackReplayEvent).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+          100,
+        );
+        expect(statusTracker.trackReplayEnd).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+        );
+      });
+    });
+
+    test('notifies statusTracker on error', () => {
+      eventStore.countEvents.mockRejectedValue(new Error('DB error'));
+
+      return handler.startReplay('corr-1', 'items', 0, null, 'ep1').then(() => {
+        expect(statusTracker.trackReplayEnd).toHaveBeenCalledWith(
+          'items',
+          'ep1',
+        );
+      });
+    });
+
+    test('works without statusTracker (backward compat)', () => {
+      const handlerNoTracker = createReplayHandler(eventStore, eventBus);
+      const cursor = makeCursor([]);
+      eventStore.countEvents.mockResolvedValue(0);
+      eventStore.streamEvents.mockResolvedValue(cursor);
+
+      return handlerNoTracker
+        .startReplay('corr-1', 'items', 0, null)
+        .then(() => {
+          expect(handlerNoTracker.getReplayStatus('items').status).toBe(
+            'completed',
+          );
+        });
+    });
   });
 
   describe('cancelReplay', () => {
@@ -247,9 +330,6 @@ describe('createReplayHandler', () => {
       };
       eventStore.countEvents.mockResolvedValue(1000);
       eventStore.streamEvents.mockResolvedValue(neverCursor);
-
-      const sysMsgFn = vi.fn();
-      eventBus.publishSystemMessage.mockReturnValue(sysMsgFn);
 
       handler.startReplay('corr-1', 'items', 0, null);
 
@@ -272,7 +352,6 @@ describe('createReplayHandler', () => {
       const cursor = makeCursor([]);
       eventStore.countEvents.mockResolvedValue(0);
       eventStore.streamEvents.mockResolvedValue(cursor);
-      eventBus.publishSystemMessage.mockReturnValue(vi.fn());
 
       return handler
         .startReplay('corr-1', 'items', 0, null)

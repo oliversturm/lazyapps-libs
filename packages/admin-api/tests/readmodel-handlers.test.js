@@ -501,7 +501,7 @@ describe('createBackupHandler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('delegates to RM via event bus and returns result', () => {
+  test('delegates to RM via message bus and returns result', () => {
     const handler = createBackupHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();
@@ -573,7 +573,7 @@ describe('listBackupsHandler', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('lists backups via event bus delegation', () => {
+  test('lists backups via message bus delegation', () => {
     const backups = [
       { backupId: 'b1', timestamp: 100, eventTimestamp: 90 },
       { backupId: 'b2', timestamp: 200, eventTimestamp: 190 },
@@ -609,7 +609,7 @@ describe('deleteBackupHandler', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  test('deletes backup via event bus and returns 204', () => {
+  test('deletes backup via message bus and returns 204', () => {
     const context = {
       readModels: { items: {} },
       eventBus: mockEventBus({
@@ -687,7 +687,7 @@ describe('prepareReplayHandler', () => {
     expect(res.status).toHaveBeenCalledWith(409);
   });
 
-  test('delegates prepare_for_replay to RM service via event bus', () => {
+  test('delegates prepare_for_replay to RM service via message bus', () => {
     const handler = prepareReplayHandler(context);
     const req = mockReq({}, { readModelName: 'items' });
     const res = mockRes();

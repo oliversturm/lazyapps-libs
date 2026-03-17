@@ -1,18 +1,50 @@
 <script>
   import '../app.css';
-  import { setContext } from 'svelte';
+  import { onDestroy, setContext } from 'svelte';
   import { createAdminClient } from '$lib/api.js';
+  import { createSseConnection } from '$lib/sse.js';
+  import { createStatusStore } from '$lib/statusStore.js';
 
-  let { data, children } = $props();
+  let { children } = $props();
 
-  const api = createAdminClient(
-    data.commandProcessorUrl,
-    data.readModelServices,
-  );
+  const api = createAdminClient();
+  const statusStore = createStatusStore();
+
   setContext('api', api);
-  setContext('config', {
-    commandProcessorUrl: data.commandProcessorUrl,
-    readModelServices: data.readModelServices,
+  setContext('statusStore', statusStore);
+
+  let refreshing = $state(false);
+
+  const handleRefresh = () => {
+    refreshing = true;
+    Promise.all([
+      api.refreshStatus().catch(() => null),
+      api.getCommandProcessorStatus().catch(() => null),
+    ]).then(([rmStatus, cpStatus]) => {
+      if (rmStatus) statusStore.replaceAllReadModels(rmStatus);
+      if (cpStatus) statusStore.updateCommandProcessorStatus(cpStatus);
+      refreshing = false;
+    });
+  };
+
+  const sse = createSseConnection('/admin/events');
+
+  sse
+    .on('connected', () => {
+      statusStore.setConnected(true);
+    })
+    .on('disconnected', () => {
+      statusStore.setConnected(false);
+    })
+    .on('readmodel-status', (data) => {
+      statusStore.updateReadModelStatus(data);
+    })
+    .on('commandprocessor-status', (data) => {
+      statusStore.updateCommandProcessorStatus(data);
+    });
+
+  onDestroy(() => {
+    sse.close();
   });
 </script>
 
@@ -30,10 +62,24 @@
             >Dashboard</a
           >
           <a
-            href="/readmodels"
+            href="/readmodel"
             class="text-sm text-gray-600 hover:text-gray-900"
             >Read Models</a
           >
+        </div>
+        <div class="flex items-center space-x-3">
+          {#if $statusStore.connected}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Connected</span>
+          {:else}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">Disconnected</span>
+          {/if}
+          <button
+            onclick={handleRefresh}
+            disabled={refreshing}
+            class="px-3 py-1.5 bg-gray-100 text-gray-700 text-sm rounded hover:bg-gray-200 disabled:opacity-50"
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
       </div>
     </div>

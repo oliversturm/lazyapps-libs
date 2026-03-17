@@ -55,7 +55,6 @@ describe('initializeContext', () => {
     const eventBusResult = {
       name: 'eventBus',
       publishReplayEvent: vi.fn(),
-      publishSystemMessage: vi.fn(),
     };
 
     const aggregateStore = vi.fn().mockResolvedValue(aggregateStoreResult);
@@ -71,6 +70,132 @@ describe('initializeContext', () => {
       expect(typeof context.replayHandler.startReplay).toBe('function');
       expect(typeof context.replayHandler.cancelReplay).toBe('function');
       expect(typeof context.replayHandler.getReplayStatus).toBe('function');
+    });
+  });
+
+  test('wires statusTracker into context', () => {
+    const aggregates = { thing: {} };
+    const aggregateStoreResult = { name: 'aggregateStore' };
+    const eventStoreResult = {
+      name: 'eventStore',
+      replay: vi.fn().mockReturnValue(vi.fn().mockResolvedValue()),
+    };
+    const eventBusResult = { name: 'eventBus' };
+
+    const aggregateStore = vi.fn().mockResolvedValue(aggregateStoreResult);
+    const eventStore = vi.fn().mockResolvedValue(eventStoreResult);
+    const eventBus = vi.fn().mockResolvedValue(eventBusResult);
+
+    return initializeContext(
+      { serviceId: 'TEST' },
+      { aggregateStore, eventStore, eventBus, aggregates },
+      vi.fn(),
+    ).then((context) => {
+      expect(context.statusTracker).toBeDefined();
+      expect(typeof context.statusTracker.getStatus).toBe('function');
+      expect(typeof context.statusTracker.addSseClient).toBe('function');
+      expect(typeof context.statusTracker.removeSseClient).toBe('function');
+    });
+  });
+
+  test('does not have isReady or setReady (deferReady eliminated)', () => {
+    const aggregates = { thing: {} };
+    const aggregateStoreResult = { name: 'aggregateStore' };
+    const eventStoreResult = {
+      name: 'eventStore',
+      replay: vi.fn().mockReturnValue(vi.fn().mockResolvedValue()),
+    };
+    const eventBusResult = { name: 'eventBus' };
+
+    const aggregateStore = vi.fn().mockResolvedValue(aggregateStoreResult);
+    const eventStore = vi.fn().mockResolvedValue(eventStoreResult);
+    const eventBus = vi.fn().mockResolvedValue(eventBusResult);
+
+    return initializeContext(
+      { serviceId: 'TEST' },
+      { aggregateStore, eventStore, eventBus, aggregates },
+      vi.fn(),
+    ).then((context) => {
+      expect(context.isReady).toBeUndefined();
+      expect(context.setReady).toBeUndefined();
+    });
+  });
+
+  test('subscribes to admin messages with camelCase commands', () => {
+    const aggregates = { thing: {} };
+    const aggregateStoreResult = { name: 'aggregateStore' };
+    const eventStoreResult = {
+      name: 'eventStore',
+      replay: vi.fn().mockReturnValue(vi.fn().mockResolvedValue()),
+      countEvents: vi.fn().mockResolvedValue(0),
+      streamEvents: vi.fn().mockResolvedValue({
+        next: vi.fn().mockResolvedValue(null),
+        close: vi.fn(),
+      }),
+      getLatestEventTimestamp: vi.fn().mockResolvedValue(null),
+    };
+
+    let subscribedHandler;
+    const eventBusResult = {
+      name: 'eventBus',
+      publishReplayEvent: vi.fn().mockReturnValue(vi.fn()),
+      publishCatchupEvent: vi.fn().mockReturnValue(vi.fn()),
+      subscribeAdminMessages: vi.fn((handler) => {
+        subscribedHandler = handler;
+      }),
+    };
+
+    const aggregateStore = vi.fn().mockResolvedValue(aggregateStoreResult);
+    const eventStore = vi.fn().mockResolvedValue(eventStoreResult);
+    const eventBus = vi.fn().mockResolvedValue(eventBusResult);
+
+    return initializeContext(
+      { serviceId: 'TEST' },
+      { aggregateStore, eventStore, eventBus, aggregates },
+      vi.fn(),
+    ).then((context) => {
+      expect(eventBusResult.subscribeAdminMessages).toHaveBeenCalled();
+      expect(subscribedHandler).toBeDefined();
+
+      // Verify 'replay' command (was 'start_replay')
+      eventStoreResult.countEvents.mockResolvedValue(0);
+      eventStoreResult.streamEvents.mockResolvedValue({
+        next: vi.fn().mockResolvedValue(null),
+        close: vi.fn(),
+      });
+      subscribedHandler('corr-1', {
+        type: 'replay',
+        readModel: 'items',
+        fromTimestamp: 0,
+        targetEndpointName: 'ep1',
+        replayRelevantEvents: ['A', 'B'],
+      });
+
+      // Verify 'cancelReplay' command (was 'cancel_replay')
+      subscribedHandler('corr-2', {
+        type: 'cancelReplay',
+        readModel: 'items',
+      });
+
+      // Verify 'startCatchup' command (was 'start_catchup')
+      eventStoreResult.countEvents.mockResolvedValue(0);
+      subscribedHandler('corr-3', {
+        type: 'startCatchup',
+        readModel: 'orders',
+        fromTimestamp: 100,
+        targetEndpointName: 'ep2',
+        replayRelevantEvents: ['C'],
+      });
+
+      // Verify 'cancelCatchup' command (was 'cancel_catchup')
+      subscribedHandler('corr-4', {
+        type: 'cancelCatchup',
+        readModel: 'orders',
+      });
+
+      // Verify 'set_ready' is NOT handled (eliminated)
+      // This should go to the default case without error
+      subscribedHandler('corr-5', { type: 'set_ready' });
     });
   });
 });

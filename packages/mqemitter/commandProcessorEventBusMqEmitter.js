@@ -22,24 +22,6 @@ export const commandProcessorEventBusMqEmitter =
           span.end();
           return event;
         },
-        publishReplayState: (correlationId) => (state, readModel) => {
-          const log = getLogger('CP/EB/MQE', correlationId);
-          log.debug(
-            `Publishing replay state ${state} for ${readModel || 'global'}`,
-          );
-          mq.emit({
-            topic: '__system',
-            payload: {
-              correlationId,
-              event: {
-                type: 'SET_REPLAY_STATE',
-                state,
-                ...(readModel && { readModel }),
-              },
-            },
-          });
-          return state;
-        },
         publishReplayEvent:
           (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/MQE', correlationId);
@@ -68,14 +50,6 @@ export const commandProcessorEventBusMqEmitter =
               },
             });
           },
-        publishSystemMessage: (correlationId) => (message) => {
-          const log = getLogger('CP/EB/MQE', correlationId);
-          log.debug(`Publishing system message: ${JSON.stringify(message)}`);
-          mq.emit({
-            topic: '__system',
-            payload: { correlationId, event: message },
-          });
-        },
         publishAdminInstruction: (correlationId) => (instruction) => {
           const log = getLogger('CP/EB/MQE', correlationId);
           log.debug(
@@ -86,12 +60,6 @@ export const commandProcessorEventBusMqEmitter =
             payload: { correlationId, instruction },
           });
         },
-        subscribeSystemMessages: (handler) => {
-          mq.on('__system', ({ payload }, cb) => {
-            handler(payload.event);
-            cb();
-          });
-        },
         subscribeAdminMessages: (handler) => {
           mq.on('__admin', ({ payload }, cb) => {
             handler(payload.correlationId, payload.instruction);
@@ -99,16 +67,9 @@ export const commandProcessorEventBusMqEmitter =
           });
           return Promise.resolve();
         },
-        subscribeAdminReply: (replyTopic, handler) => {
-          mq.on(replyTopic, ({ payload }, cb) => {
-            handler(payload);
-            cb();
-          });
-          return Promise.resolve();
-        },
       }))
       .then((res) => {
-        initLog.debug('Event bus ready');
+        initLog.debug('Message bus ready');
         return res;
       });
   };

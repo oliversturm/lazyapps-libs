@@ -5,6 +5,7 @@ import { createCommandHandler } from './commands.js';
 import { createReadModelReplayHandler } from './replayHandler.js';
 import { createLifecycleManager } from './lifecycleManager.js';
 import { createCatchupHandler } from './catchupHandler.js';
+import { createStatusTracker } from './statusTracker.js';
 import { getLogger } from '@lazyapps/logger';
 
 export const initializeContext = (
@@ -60,6 +61,11 @@ export const initializeContext = (
         ? Promise.resolve({ ...context, backup: backup(context.storage) })
         : Promise.resolve(context),
     )
+    .then((context) => {
+      const statusTracker = createStatusTracker(readModels, endpointName);
+      statusTracker.initialize(Object.keys(readModels));
+      return { ...context, statusTracker };
+    })
     .then((context) => ({
       ...context,
       projectionHandler: createProjectionHandler(context),
@@ -74,14 +80,14 @@ export const initializeContext = (
         context.lifecycleManager = lifecycleManager;
         context.catchupHandler = createCatchupHandler(context);
 
-        // Signal to event bus: connect to message bus and subscribe to
-        // __admin, __system, __catchup, __replay topics on startup,
+        // Signal to message bus: connect and subscribe to
+        // __admin, __catchup, __replay topics on startup,
         // but defer the events topic subscription until activate().
         context.deferEventsSubscription = true;
 
         // connectEventBus subscribes to the events topic. Called by
         // lifecycleManager.activate() when a read model is activated.
-        // The event bus implementation places subscribeToEvents() on
+        // The message bus implementation places subscribeToEvents() on
         // the context during initial connection.
         // Uses promise-caching to prevent duplicate subscriptions when
         // multiple read models activate concurrently.
@@ -90,8 +96,8 @@ export const initializeContext = (
           if (!context.subscribeToEvents) {
             return Promise.reject(
               new Error(
-                'Event bus did not provide subscribeToEvents — ' +
-                  'ensure the event bus supports deferred events subscription',
+                'Message bus did not provide subscribeToEvents — ' +
+                  'ensure the message bus supports deferred events subscription',
               ),
             );
           }

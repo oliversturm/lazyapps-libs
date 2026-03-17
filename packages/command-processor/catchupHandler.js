@@ -1,6 +1,6 @@
 import { getLogger } from '@lazyapps/logger';
 
-export const createCatchupHandler = (eventStore, eventBus) => {
+export const createCatchupHandler = (eventStore, eventBus, statusTracker) => {
   const catchups = {};
 
   const startCatchup = (
@@ -8,6 +8,7 @@ export const createCatchupHandler = (eventStore, eventBus) => {
     readModel,
     fromTimestamp,
     targetEndpointName,
+    replayRelevantEvents,
   ) => {
     if (catchups[readModel] && catchups[readModel].status === 'in_progress') {
       return Promise.reject(
@@ -17,6 +18,10 @@ export const createCatchupHandler = (eventStore, eventBus) => {
     const log = getLogger('CP/CatchUp', correlationId);
     let cancelled = false;
     let activeCursor = null;
+    const eventFilter =
+      replayRelevantEvents && replayRelevantEvents.length > 0
+        ? new Set(replayRelevantEvents)
+        : null;
 
     catchups[readModel] = {
       status: 'in_progress',
@@ -30,23 +35,36 @@ export const createCatchupHandler = (eventStore, eventBus) => {
       },
     };
 
+    if (statusTracker) {
+      statusTracker.trackCatchUpStart(
+        readModel,
+        targetEndpointName,
+        correlationId,
+      );
+    }
+
     return eventStore
       .getLatestEventTimestamp()
       .then((toTimestamp) => {
         if (!toTimestamp) {
           log.info(`Event store is empty, nothing to catch up`);
-          eventBus.publishSystemMessage(correlationId)({
-            type: 'CATCHUP_EVENTS_DONE',
-            readModel,
-            toTimestamp: 0,
-            ...(targetEndpointName && { targetEndpointName }),
-          });
           catchups[readModel] = {
             ...catchups[readModel],
             status: 'completed',
             cancel: undefined,
           };
+          if (statusTracker) {
+            statusTracker.trackCatchUpEnd(readModel, targetEndpointName);
+          }
           return;
+        }
+
+        if (statusTracker) {
+          statusTracker.trackCatchUpSetToTimestamp(
+            readModel,
+            targetEndpointName,
+            toTimestamp,
+          );
         }
 
         return eventStore
@@ -64,12 +82,22 @@ export const createCatchupHandler = (eventStore, eventBus) => {
             const processNext = () =>
               cursor.next().then((event) => {
                 if (!event || cancelled) return Promise.resolve();
+                if (eventFilter && !eventFilter.has(event.type)) {
+                  return processNext();
+                }
                 eventBus.publishCatchupEvent(correlationId)(
                   readModel,
                   event,
                   targetEndpointName,
                 );
                 catchups[readModel].eventsPublished++;
+                if (statusTracker) {
+                  statusTracker.trackCatchUpEvent(
+                    readModel,
+                    targetEndpointName,
+                    event.timestamp,
+                  );
+                }
                 if (catchups[readModel].eventsPublished % 1000 === 0) {
                   log.info(
                     `Catch-up progress: ${catchups[readModel].eventsPublished}` +
@@ -84,11 +112,6 @@ export const createCatchupHandler = (eventStore, eventBus) => {
             activeCursor = null;
             if (cancelled) {
               log.info(`Catch-up cancelled for ${readModel}`);
-              eventBus.publishSystemMessage(correlationId)({
-                type: 'CATCHUP_CANCELLED',
-                readModel,
-                ...(targetEndpointName && { targetEndpointName }),
-              });
               catchups[readModel] = {
                 ...catchups[readModel],
                 status: 'cancelled',
@@ -96,34 +119,29 @@ export const createCatchupHandler = (eventStore, eventBus) => {
               };
             } else {
               log.info(`Catch-up complete for ${readModel}`);
-              eventBus.publishSystemMessage(correlationId)({
-                type: 'CATCHUP_EVENTS_DONE',
-                readModel,
-                toTimestamp,
-                ...(targetEndpointName && { targetEndpointName }),
-              });
               catchups[readModel] = {
                 ...catchups[readModel],
                 status: 'completed',
                 cancel: undefined,
               };
             }
+            if (statusTracker) {
+              statusTracker.trackCatchUpEnd(readModel, targetEndpointName);
+            }
           });
       })
       .catch((err) => {
         activeCursor = null;
         log.error(`Catch-up failed for ${readModel}: ${err}`);
-        eventBus.publishSystemMessage(correlationId)({
-          type: 'CATCHUP_CANCELLED',
-          readModel,
-          ...(targetEndpointName && { targetEndpointName }),
-        });
         catchups[readModel] = {
           ...catchups[readModel],
           status: 'error',
           error: String(err),
           cancel: undefined,
         };
+        if (statusTracker) {
+          statusTracker.trackCatchUpEnd(readModel, targetEndpointName);
+        }
       });
   };
 

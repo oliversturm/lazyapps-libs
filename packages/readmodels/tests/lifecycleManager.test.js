@@ -21,6 +21,14 @@ const createMockContext = (overrides = {}) => ({
   projectionHandler: {
     setReadModelCatchingUp: vi.fn(),
     clearCatchupState: vi.fn(),
+    setReadModelReplayState: vi.fn(),
+    clearReadModelReplayState: vi.fn(),
+  },
+  statusTracker: {
+    setState: vi.fn(),
+  },
+  catchupHandler: {
+    handleCatchupComplete: vi.fn().mockResolvedValue(),
   },
   ...overrides,
 });
@@ -32,14 +40,14 @@ describe('lifecycleManager', () => {
   });
 
   describe('initialize', () => {
-    test('sets all read models to waiting', () => {
+    test('sets all read models to stopped', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
 
       lm.initialize(['customers', 'orders']);
 
-      expect(lm.getState('customers')).toBe('waiting');
-      expect(lm.getState('orders')).toBe('waiting');
+      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('orders')).toBe('stopped');
     });
 
     test('returns unknown for uninitialized read model', () => {
@@ -60,10 +68,24 @@ describe('lifecycleManager', () => {
 
       expect(lm.getState('customers')).toBe('live');
     });
+
+    test('pushes status update via statusTracker', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+
+      lm.initialize(['customers']);
+      lm.setState('customers', 'live', 'corr-1');
+
+      expect(context.statusTracker.setState).toHaveBeenCalledWith(
+        'customers',
+        'live',
+        'corr-1',
+      );
+    });
   });
 
   describe('activate', () => {
-    test('transitions waiting -> activating -> catching-up', () => {
+    test('transitions stopped -> catchup', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
@@ -73,27 +95,24 @@ describe('lifecycleManager', () => {
         expect(
           context.projectionHandler.setReadModelCatchingUp,
         ).toHaveBeenCalledWith('customers');
-        expect(lm.getState('customers')).toBe('catching-up');
+        expect(lm.getState('customers')).toBe('catchup');
       });
     });
 
-    test('connects event bus only once across multiple activations', () => {
+    test('connects message bus only once across multiple activations', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers', 'orders']);
 
-      return lm
-        .activate('customers')
-        .then(() => {
-          lm.setState('orders', 'waiting');
-          return lm.activate('orders');
-        })
-        .then(() => {
-          expect(context.connectEventBus).toHaveBeenCalledOnce();
-        });
+      return Promise.all([
+        lm.activate('customers'),
+        lm.activate('orders'),
+      ]).then(() => {
+        expect(context.connectEventBus).toHaveBeenCalledOnce();
+      });
     });
 
-    test('reverts to waiting when event bus connection fails', () => {
+    test('reverts to stopped when message bus connection fails', () => {
       const context = createMockContext({
         connectEventBus: vi
           .fn()
@@ -107,7 +126,7 @@ describe('lifecycleManager', () => {
           throw new Error('should not resolve');
         },
         () => {
-          expect(lm.getState('customers')).toBe('waiting');
+          expect(lm.getState('customers')).toBe('stopped');
           expect(
             context.projectionHandler.clearCatchupState,
           ).toHaveBeenCalledWith('customers');
@@ -115,11 +134,11 @@ describe('lifecycleManager', () => {
       );
     });
 
-    test('rejects activation from catching-up state', () => {
+    test('rejects activation from catchup state', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
-      lm.setState('customers', 'catching-up');
+      lm.setState('customers', 'catchup');
 
       return lm.activate('customers').then(
         () => {
@@ -127,7 +146,7 @@ describe('lifecycleManager', () => {
         },
         (err) => {
           expect(err.message).toContain('Cannot activate');
-          expect(err.message).toContain('catching-up');
+          expect(err.message).toContain('catchup');
         },
       );
     });
@@ -149,11 +168,11 @@ describe('lifecycleManager', () => {
       );
     });
 
-    test('rejects activation from activating state', () => {
+    test('rejects activation from replay state', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
-      lm.setState('customers', 'activating');
+      lm.setState('customers', 'replay');
 
       return lm.activate('customers').then(
         () => {
@@ -161,20 +180,9 @@ describe('lifecycleManager', () => {
         },
         (err) => {
           expect(err.message).toContain('Cannot activate');
-          expect(err.message).toContain('activating');
+          expect(err.message).toContain('replay');
         },
       );
-    });
-
-    test('allows activation from stopped state', () => {
-      const context = createMockContext();
-      const lm = createLifecycleManager(context);
-      lm.initialize(['customers']);
-      lm.setState('customers', 'stopped');
-
-      return lm.activate('customers').then(() => {
-        expect(lm.getState('customers')).toBe('catching-up');
-      });
     });
 
     test('does not return fromTimestamp', () => {
@@ -197,8 +205,8 @@ describe('lifecycleManager', () => {
         lm.activate('orders'),
       ]).then(() => {
         expect(context.connectEventBus).toHaveBeenCalledOnce();
-        expect(lm.getState('customers')).toBe('catching-up');
-        expect(lm.getState('orders')).toBe('catching-up');
+        expect(lm.getState('customers')).toBe('catchup');
+        expect(lm.getState('orders')).toBe('catchup');
       });
     });
 
@@ -218,13 +226,13 @@ describe('lifecycleManager', () => {
             throw new Error('should not resolve');
           },
           () => {
-            expect(lm.getState('customers')).toBe('waiting');
+            expect(lm.getState('customers')).toBe('stopped');
             return lm.activate('customers');
           },
         )
         .then(() => {
           expect(connectEventBus).toHaveBeenCalledTimes(2);
-          expect(lm.getState('customers')).toBe('catching-up');
+          expect(lm.getState('customers')).toBe('catchup');
         });
     });
   });
@@ -239,6 +247,141 @@ describe('lifecycleManager', () => {
       lm.stop('customers');
 
       expect(lm.getState('customers')).toBe('stopped');
+    });
+
+    test('is no-op when already stopped', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      lm.stop('customers');
+
+      expect(lm.getState('customers')).toBe('stopped');
+    });
+
+    test('clears catchup state when stopping from catchup', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'catchup');
+
+      lm.stop('customers');
+
+      expect(context.projectionHandler.clearCatchupState).toHaveBeenCalledWith(
+        'customers',
+      );
+      expect(lm.getState('customers')).toBe('stopped');
+    });
+  });
+
+  describe('startReplay', () => {
+    test('transitions stopped -> replay', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      return lm.startReplay('customers', 'corr-1').then(() => {
+        expect(lm.getState('customers')).toBe('replay');
+        expect(
+          context.projectionHandler.setReadModelReplayState,
+        ).toHaveBeenCalledWith('customers', true);
+      });
+    });
+
+    test('rejects from non-stopped state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'live');
+
+      return lm.startReplay('customers', 'corr-1').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('Cannot start replay');
+          expect(err.message).toContain('live');
+        },
+      );
+    });
+  });
+
+  describe('replayDone', () => {
+    test('transitions replay -> stopped', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'replay');
+
+      lm.replayDone('customers', 'corr-1');
+
+      expect(lm.getState('customers')).toBe('stopped');
+      expect(
+        context.projectionHandler.clearReadModelReplayState,
+      ).toHaveBeenCalledWith('customers');
+    });
+
+    test('warns when not in replay state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      lm.replayDone('customers', 'corr-1');
+
+      // Should not crash, state unchanged
+      expect(lm.getState('customers')).toBe('stopped');
+    });
+  });
+
+  describe('catchupDone', () => {
+    test('drains FIFO and transitions catchup -> live', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'catchup');
+
+      return lm.catchupDone('customers', 100, 'corr-1').then(() => {
+        expect(
+          context.catchupHandler.handleCatchupComplete,
+        ).toHaveBeenCalledWith('customers', 100, 'corr-1');
+        expect(lm.getState('customers')).toBe('live');
+      });
+    });
+
+    test('resolves when not in catchup state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      return lm.catchupDone('customers', 100, 'corr-1').then(() => {
+        expect(
+          context.catchupHandler.handleCatchupComplete,
+        ).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  describe('isValidTransition', () => {
+    test('allows valid transitions', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+
+      expect(lm.isValidTransition('stopped', 'replay')).toBe(true);
+      expect(lm.isValidTransition('stopped', 'catchup')).toBe(true);
+      expect(lm.isValidTransition('live', 'stopped')).toBe(true);
+      expect(lm.isValidTransition('replay', 'stopped')).toBe(true);
+      expect(lm.isValidTransition('catchup', 'live')).toBe(true);
+      expect(lm.isValidTransition('catchup', 'stopped')).toBe(true);
+    });
+
+    test('rejects invalid transitions', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+
+      expect(lm.isValidTransition('stopped', 'live')).toBe(false);
+      expect(lm.isValidTransition('live', 'replay')).toBe(false);
+      expect(lm.isValidTransition('replay', 'live')).toBe(false);
+      expect(lm.isValidTransition('replay', 'catchup')).toBe(false);
     });
   });
 });

@@ -6,7 +6,7 @@ import { nanoid } from 'nanoid';
 // transports, for instance the project eventbus-rabbitmq,
 // there are "command-receiver" implementations which apply
 // to the command receiver component of the architecture in that
-// they allow that received to send events to the event bus.
+// they allow that received to send events to the message bus.
 // For this mqemitter implementation, the command receiver
 // is the component that receives commands and handles them --
 // in the case of rabbit etc such an implementation does not

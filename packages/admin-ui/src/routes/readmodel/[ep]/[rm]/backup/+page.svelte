@@ -15,7 +15,7 @@
     loading = true;
     error = null;
     api
-      .listBackups('', data.endpointName, data.name)
+      .listBackups(data.ep, data.rm)
       .then((result) => {
         backups = result;
         loading = false;
@@ -34,7 +34,7 @@
     creating = true;
     error = null;
     api
-      .createBackup('', data.endpointName, data.name)
+      .createBackup(data.ep, data.rm)
       .then(() => {
         creating = false;
         loadBackups();
@@ -48,7 +48,19 @@
   const handleDelete = (backupId) => {
     error = null;
     api
-      .deleteBackup('', backupId, data.endpointName, data.name)
+      .deleteBackup(data.ep, data.rm, backupId)
+      .then(() => {
+        loadBackups();
+      })
+      .catch((err) => {
+        error = err.error || String(err);
+      });
+  };
+
+  const handleRestore = (backupId) => {
+    error = null;
+    api
+      .restoreBackup(data.ep, data.rm, backupId)
       .then(() => {
         loadBackups();
       })
@@ -60,15 +72,15 @@
 
 <div class="mb-4">
   <a
-    href="/readmodels/{data.name}?service={data.service}"
-    class="text-sm text-blue-600 hover:underline">&larr; Back to {data.name}</a
+    href="/readmodel/{data.ep}/{data.rm}"
+    class="text-sm text-blue-600 hover:underline">&larr; Back to {data.rm}</a
   >
 </div>
 
 <div class="flex items-center justify-between mb-6">
   <div>
-    <h1 class="text-2xl font-bold text-gray-900">Backups: {data.name}</h1>
-    <p class="text-sm text-gray-500">Service: {data.service}</p>
+    <h1 class="text-2xl font-bold text-gray-900">Backups: {data.rm}</h1>
+    <p class="text-sm text-gray-500">Endpoint: {data.ep}</p>
   </div>
   <div class="flex space-x-2">
     <button
@@ -99,6 +111,6 @@
   <p class="text-gray-500">Loading backups...</p>
 {:else}
   <div class="bg-white rounded-lg shadow p-6">
-    <BackupList {backups} ondelete={handleDelete} />
+    <BackupList {backups} ondelete={handleDelete} onrestore={handleRestore} />
   </div>
 {/if}

@@ -39,17 +39,30 @@ describe('commandProcessorEventBusMqEmitter', () => {
     vi.clearAllMocks();
   });
 
-  test('factory returns publishEvent, publishReplayState, publishReplayEvent, and publishSystemMessage', () => {
+  test('factory returns publishEvent, publishReplayEvent, publishCatchupEvent, and publishAdminInstruction', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
         expect(bus).toHaveProperty('publishEvent');
-        expect(bus).toHaveProperty('publishReplayState');
         expect(bus).toHaveProperty('publishReplayEvent');
-        expect(bus).toHaveProperty('publishSystemMessage');
+        expect(bus).toHaveProperty('publishCatchupEvent');
+        expect(bus).toHaveProperty('publishAdminInstruction');
+        expect(bus).toHaveProperty('subscribeAdminMessages');
         expect(typeof bus.publishEvent).toBe('function');
-        expect(typeof bus.publishReplayState).toBe('function');
         expect(typeof bus.publishReplayEvent).toBe('function');
-        expect(typeof bus.publishSystemMessage).toBe('function');
+        expect(typeof bus.publishCatchupEvent).toBe('function');
+        expect(typeof bus.publishAdminInstruction).toBe('function');
+        expect(typeof bus.subscribeAdminMessages).toBe('function');
+      },
+    );
+  });
+
+  test('does not expose publishReplayState, publishSystemMessage, subscribeSystemMessages, or subscribeAdminReply', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        expect(bus).not.toHaveProperty('publishReplayState');
+        expect(bus).not.toHaveProperty('publishSystemMessage');
+        expect(bus).not.toHaveProperty('subscribeSystemMessages');
+        expect(bus).not.toHaveProperty('subscribeAdminReply');
       },
     );
   });
@@ -76,55 +89,6 @@ describe('commandProcessorEventBusMqEmitter', () => {
         bus.publishEvent('corr-99')(event);
 
         expect(event.correlationId).toBe('corr-99');
-      },
-    );
-  });
-
-  test('publishReplayState emits to __system topic with correct format', () => {
-    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
-      (bus) => {
-        const result = bus.publishReplayState('corr-1')(true);
-
-        expect(mockEmitter.emit).toHaveBeenCalledWith({
-          topic: '__system',
-          payload: {
-            correlationId: 'corr-1',
-            event: {
-              type: 'SET_REPLAY_STATE',
-              state: true,
-            },
-          },
-        });
-        expect(result).toBe(true);
-      },
-    );
-  });
-
-  test('publishReplayState with readModel includes readModel in event', () => {
-    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
-      (bus) => {
-        const result = bus.publishReplayState('corr-1')(true, 'items');
-
-        expect(mockEmitter.emit).toHaveBeenCalledWith({
-          topic: '__system',
-          payload: {
-            correlationId: 'corr-1',
-            event: {
-              type: 'SET_REPLAY_STATE',
-              state: true,
-              readModel: 'items',
-            },
-          },
-        });
-        expect(result).toBe(true);
-      },
-    );
-  });
-
-  test('publishReplayState returns the state value', () => {
-    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
-      (bus) => {
-        expect(bus.publishReplayState('corr-1')(false)).toBe(false);
       },
     );
   });
@@ -184,18 +148,34 @@ describe('commandProcessorEventBusMqEmitter', () => {
     );
   });
 
-  test('publishSystemMessage emits on __system topic with correct payload', () => {
+  test('publishCatchupEvent emits on __catchup topic with correct payload', () => {
     return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
       (bus) => {
-        const message = { type: 'REPLAY_EVENTS_DONE', readModel: 'items' };
-        bus.publishSystemMessage('corr-1')(message);
+        const event = { type: 'ORDER_PLACED', timestamp: 67890 };
+        bus.publishCatchupEvent('corr-2')('orders', event, 'ep1');
 
         expect(mockEmitter.emit).toHaveBeenCalledWith({
-          topic: '__system',
+          topic: '__catchup',
           payload: {
-            correlationId: 'corr-1',
-            event: message,
+            correlationId: 'corr-2',
+            targetReadModel: 'orders',
+            event,
+            targetEndpointName: 'ep1',
           },
+        });
+      },
+    );
+  });
+
+  test('publishAdminInstruction emits on __admin topic', () => {
+    return commandProcessorEventBusMqEmitter({ mqName: 'test-mq' })().then(
+      (bus) => {
+        const instruction = { type: 'replay', readModel: 'items' };
+        bus.publishAdminInstruction('corr-3')(instruction);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: '__admin',
+          payload: { correlationId: 'corr-3', instruction },
         });
       },
     );

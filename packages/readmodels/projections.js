@@ -183,7 +183,7 @@ export const createProjectionHandler = (context) => {
       );
       clearCatchupState(rmName);
       if (context.lifecycleManager) {
-        context.lifecycleManager.setState(rmName, 'waiting', correlationId);
+        context.lifecycleManager.stop(rmName, correlationId);
       }
       return;
     }
@@ -238,14 +238,22 @@ export const createProjectionHandler = (context) => {
           getProjectionContext(correlationId)(targetRmName)(true),
           event,
         )
-          .then(() =>
-            updateTimestamp(
-              correlationId,
-              context.storage,
-              targetRmName,
-              event.timestamp,
-            ),
-          )
+          .then(() => {
+            // During replay, do NOT update lastProjectedEventTimestamp.
+            // Replay re-projects historical events without side effects,
+            // and the timestamp should reflect the last real projection.
+            if (context.statusTracker) {
+              context.statusTracker.updateProgress(
+                targetRmName,
+                'replayProgress',
+                {
+                  eventsProcessed:
+                    (context.statusTracker.getStatus(targetRmName)
+                      ?.replayProgress?.eventsProcessed || 0) + 1,
+                },
+              );
+            }
+          })
           .catch((err) => {
             log.error(
               `Replay projection error for ${targetRmName}/${event.type}: ${err}`,
@@ -272,6 +280,21 @@ export const createProjectionHandler = (context) => {
           .then(() => {
             context.readModels[targetRmName].lastProjectedEventTimestamp =
               event.timestamp;
+            if (context.statusTracker) {
+              context.statusTracker.updateLastProjectedEventTimestamp(
+                targetRmName,
+                event.timestamp,
+              );
+              context.statusTracker.updateProgress(
+                targetRmName,
+                'catchupProgress',
+                {
+                  eventsProcessed:
+                    (context.statusTracker.getStatus(targetRmName)
+                      ?.catchupProgress?.eventsProcessed || 0) + 1,
+                },
+              );
+            }
             return updateTimestamp(
               correlationId,
               context.storage,
@@ -321,6 +344,7 @@ export const createProjectionHandler = (context) => {
     clearCatchupState,
     getFifoQueueSize,
     getCatchupState,
+    flushEventQueue: () => eventQueue.add(() => Promise.resolve()),
   };
 };
 
