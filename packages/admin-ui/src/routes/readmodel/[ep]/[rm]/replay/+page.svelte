@@ -21,12 +21,17 @@
     readModel?.endpointName || data.ep || '',
   );
 
+  // Track whether we initiated a replay in this page session
+  let replayInitiated = $state(false);
+
   // Derive replay step from store state
   let storeStep = $derived.by(() => {
     if (!readModel) return null;
-    const mode = readModel.projectionMode;
+    const mode = readModel.state;
     if (mode === 'replay') return 'replaying';
     if (mode === 'catchup') return 'catchup';
+    // If we initiated a replay and RM is now live, replay is complete
+    if (replayInitiated && mode === 'live') return 'done';
     return null;
   });
 
@@ -67,6 +72,7 @@
     if (fromTimestamp) options.fromTimestamp = fromTimestamp;
     if (toTimestamp) options.toTimestamp = toTimestamp;
 
+    replayInitiated = true;
     api
       .startReplay(endpointName, data.rm, options)
       .then(() => {
@@ -224,7 +230,7 @@
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span class="text-gray-500">Projection Mode:</span>
-          <StatusBadge status={readModel.projectionMode || 'unknown'} />
+          <StatusBadge status={readModel.state || 'unknown'} />
         </div>
         {#if readModel.lastProjectedEventTimestamp}
           <div>

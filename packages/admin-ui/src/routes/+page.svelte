@@ -22,7 +22,7 @@
           >
             {rm.name}
           </a>
-          <StatusBadge status={rm.projectionMode || rm.status || 'unknown'} />
+          <StatusBadge status={rm.state || 'unknown'} />
         </div>
         <p class="text-xs text-gray-500 mb-1">
           Endpoint: {rm.endpointName}

@@ -59,7 +59,7 @@
               >{formatTimestamp(rm.lastProjectedEventTimestamp)}</td
             >
             <td class="px-6 py-4">
-              <StatusBadge status={rm.projectionMode || rm.status || 'unknown'} />
+              <StatusBadge status={rm.state || 'unknown'} />
             </td>
             <td class="px-6 py-4 text-right space-x-3">
               <a

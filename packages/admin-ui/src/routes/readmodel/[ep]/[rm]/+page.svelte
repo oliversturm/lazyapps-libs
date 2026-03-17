@@ -35,7 +35,7 @@
       <h1 class="text-2xl font-bold text-gray-900">{readModel.name}</h1>
       <p class="text-sm text-gray-500">Endpoint: {readModel.endpointName}</p>
     </div>
-    <StatusBadge status={readModel.projectionMode || readModel.status || 'unknown'} />
+    <StatusBadge status={readModel.state || readModel.status || 'unknown'} />
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -48,10 +48,10 @@
             {formatTimestamp(readModel.lastProjectedEventTimestamp)}
           </dd>
         </div>
-        {#if readModel.projectionMode}
+        {#if readModel.state}
           <div>
             <dt class="text-xs text-gray-400">Projection Mode</dt>
-            <dd class="text-sm text-gray-900">{readModel.projectionMode}</dd>
+            <dd class="text-sm text-gray-900">{readModel.state}</dd>
           </div>
         {/if}
       </dl>
