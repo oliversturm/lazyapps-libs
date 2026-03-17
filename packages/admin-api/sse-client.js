@@ -187,31 +187,12 @@ const createSseClient = ({
       const serviceUrls = getServiceUrls();
       const epNames = getEndpointNames();
 
-      if (typeof readModelServiceUrl === 'string') {
-        // Single URL — we don't know endpoint names upfront, discover from cache
-        // Subscribe per-endpoint after initial fetch
-        const knownEps = new Set();
-        Object.values(cache.getAllReadModels()).forEach((rm) => {
-          if (rm.endpointName) knownEps.add(rm.endpointName);
-        });
-        knownEps.forEach((ep) => {
-          const sub = createSseSubscription(
-            `${readModelServiceUrl}/admin/events/${ep}`,
-            token,
-            (event) => {
-              if (event.type === 'status-change') {
-                cache.updateReadModel(event.data);
-                emitter.emit('readmodel-status', event.data);
-                emitter.emit('status-change', cache.get());
-              }
-            },
-          );
-          subscriptions.push(sub);
-        });
-      } else if (typeof readModelServiceUrl === 'object') {
-        // Object mapping ep→URL
-        epNames.forEach((ep) => {
-          const url = readModelServiceUrl[ep];
+      const subscribeToEps = (eps) => {
+        eps.forEach((ep) => {
+          const url =
+            typeof readModelServiceUrl === 'string'
+              ? readModelServiceUrl
+              : readModelServiceUrl[ep];
           const sub = createSseSubscription(
             `${url}/admin/events/${ep}`,
             token,
@@ -225,6 +206,40 @@ const createSseClient = ({
           );
           subscriptions.push(sub);
         });
+      };
+
+      if (typeof readModelServiceUrl === 'string') {
+        // Single URL — discover endpoint names from cache.
+        // If cache is empty (service not ready yet), retry with backoff.
+        const discoverAndSubscribe = (attempt, delay) => {
+          const knownEps = new Set();
+          Object.values(cache.getAllReadModels()).forEach((rm) => {
+            if (rm.endpointName) knownEps.add(rm.endpointName);
+          });
+          if (knownEps.size > 0) {
+            subscribeToEps(knownEps);
+            return;
+          }
+          if (attempt >= 15) {
+            log.warn(
+              'Could not discover RM endpoints for SSE after 15 attempts',
+            );
+            return;
+          }
+          log.debug(
+            `No RM endpoints discovered yet (attempt ${attempt + 1}/15), retrying in ${delay}ms`,
+          );
+          setTimeout(
+            () =>
+              fetchAllStatus().then(() =>
+                discoverAndSubscribe(attempt + 1, Math.min(delay * 2, 30000)),
+              ),
+            delay,
+          );
+        };
+        discoverAndSubscribe(0, 1000);
+      } else if (typeof readModelServiceUrl === 'object') {
+        subscribeToEps(epNames);
       }
 
       // Subscribe to CP SSE endpoint
