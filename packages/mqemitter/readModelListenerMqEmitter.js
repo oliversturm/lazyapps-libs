@@ -151,6 +151,47 @@ export const readModelListenerMqEmitter =
           cb();
         });
 
+        mq.on('adminBackupListQuery', ({ payload }, cb) => {
+          let { correlationId, replyTopic, readModelName } = payload;
+          if (!correlationId) {
+            correlationId = `${
+              context.correlationConfig?.serviceId || 'UNK'
+            }-${nanoid()}`;
+          }
+
+          const log = getLogger('RM/LS', correlationId);
+          log.debug(
+            `Admin backup list query for ${readModelName} (reply ${replyTopic})`,
+          );
+
+          if (!context.backup) {
+            mq.emit({
+              topic: replyTopic,
+              payload: { correlationId, result: [] },
+            });
+            cb();
+            return;
+          }
+
+          context.backup
+            .listBackups(readModelName)
+            .then((backups) => {
+              mq.emit({
+                topic: replyTopic,
+                payload: { correlationId, result: backups },
+              });
+            })
+            .catch((err) => {
+              log.error(`Failed to list backups for ${readModelName}: ${err}`);
+              mq.emit({
+                topic: replyTopic,
+                payload: { correlationId, result: [], error: err.message },
+              });
+            });
+
+          cb();
+        });
+
         mq.on('adminQuery', ({ payload }, cb) => {
           let { correlationId, replyTopic } = payload;
           if (!correlationId) {

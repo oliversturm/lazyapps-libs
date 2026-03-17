@@ -509,6 +509,68 @@ describe('readModelListenerMqEmitter', () => {
     );
   });
 
+  test('adminBackupListQuery returns backups', () => {
+    const mockBackups = [
+      { backupId: 'b1', timestamp: 1000 },
+      { backupId: 'b2', timestamp: 2000 },
+    ];
+    context.backup = {
+      listBackups: vi.fn().mockResolvedValue(mockBackups),
+    };
+    context.statusTracker = { onStatusChange: vi.fn() };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminBackupListQuery'](
+          {
+            payload: {
+              correlationId: 'corr-bk',
+              replyTopic: 'backup-reply-1',
+              readModelName: 'users',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        return new Promise((resolve) => setTimeout(resolve, 10)).then(() => {
+          expect(context.backup.listBackups).toHaveBeenCalledWith('users');
+          expect(mockEmitter.emit).toHaveBeenCalledWith({
+            topic: 'backup-reply-1',
+            payload: { correlationId: 'corr-bk', result: mockBackups },
+          });
+        });
+      },
+    );
+  });
+
+  test('adminBackupListQuery returns empty when no backup configured', () => {
+    context.statusTracker = { onStatusChange: vi.fn() };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminBackupListQuery'](
+          {
+            payload: {
+              correlationId: 'corr-bk',
+              replyTopic: 'backup-reply-2',
+              readModelName: 'users',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'backup-reply-2',
+          payload: { correlationId: 'corr-bk', result: [] },
+        });
+      },
+    );
+  });
+
   test('does not register onStatusChange when statusTracker is absent', () => {
     return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
       () => {
