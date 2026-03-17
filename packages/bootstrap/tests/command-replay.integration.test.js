@@ -87,7 +87,7 @@ const waitForCondition = async (fn, timeout = 10000, interval = 100) => {
 
 const jwtSecret = 'test-secret-for-integration-tests';
 
-describe('command replay full-stack integration', { timeout: 120000 }, () => {
+describe('command replay full-stack integration', { timeout: 30000 }, () => {
   let container;
   let connectionString;
   let cleanupClient;

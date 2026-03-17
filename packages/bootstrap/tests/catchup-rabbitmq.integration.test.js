@@ -36,7 +36,7 @@ const { startAdmin } = await import('../admin.js');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const waitForCondition = (fn, timeout = 60000, interval = 500) => {
+const waitForCondition = (fn, timeout = 5000, interval = 100) => {
   const start = Date.now();
   const poll = () =>
     Promise.resolve()
@@ -150,7 +150,7 @@ const createInlineAdminInstructionHandler = (context) => {
 
 // ── Full lifecycle with RabbitMQ message bus ───────────────────────────────
 
-describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
+describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
   let mongoContainer;
   let rabbitContainer;
   let connectionString;
@@ -422,7 +422,17 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 180000 }, () => {
           }),
         ),
       )
-      // Verify all 5 events projected
+      // Wait for all 5 events to be projected (RabbitMQ delivery may lag state transition)
+      .then(() =>
+        waitForCondition(() =>
+          cleanupClient
+            .db('rmq-rm')
+            .collection('items_overview')
+            .find({})
+            .toArray()
+            .then((items) => items.length === 5),
+        ),
+      )
       .then(() =>
         cleanupClient
           .db('rmq-rm')

@@ -36,7 +36,7 @@ const { startAdmin } = await import('../admin.js');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const waitForCondition = (fn, timeout = 60000, interval = 500) => {
+const waitForCondition = (fn, timeout = 5000, interval = 100) => {
   const start = Date.now();
   const poll = () =>
     Promise.resolve()
@@ -150,7 +150,7 @@ const createInlineAdminInstructionHandler = (context) => {
 
 // ── Full lifecycle with Redis message bus ──────────────────────────────────
 
-describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
+describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
   let mongoContainer;
   let redisContainer;
   let connectionString;

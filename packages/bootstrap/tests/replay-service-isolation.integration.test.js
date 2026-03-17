@@ -168,7 +168,7 @@ const createInlineAdminInstructionHandler = (context) => {
   };
 };
 
-const waitForCondition = (fn, timeout = 30000, interval = 100) => {
+const waitForCondition = (fn, timeout = 5000, interval = 100) => {
   const start = Date.now();
   const poll = () =>
     Promise.resolve()
@@ -184,7 +184,7 @@ const waitForCondition = (fn, timeout = 30000, interval = 100) => {
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-describe('replay service isolation integration', { timeout: 120000 }, () => {
+describe('replay service isolation integration', { timeout: 30000 }, () => {
   let container;
   let connectionString;
   let cleanupClient;

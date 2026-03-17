@@ -82,7 +82,7 @@ const testReadModels = {
   },
 };
 
-const waitForCondition = (fn, timeout = 30000, interval = 200) => {
+const waitForCondition = (fn, timeout = 5000, interval = 100) => {
   const start = Date.now();
   const poll = () =>
     Promise.resolve()
@@ -388,7 +388,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
 
 // ── Scenario 1 & 2: Full lifecycle + activate-all ──────────────────────────
 
-describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
+describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
   const { env, setup, teardown } = setupTestEnv('catchup', 'catchup');
 
   beforeAll(setup);
@@ -548,7 +548,7 @@ describe('catch-up lifecycle integration', { timeout: 120000 }, () => {
 
 // ── Scenario 2: Catch-up after gap ─────────────────────────────────────────
 
-describe('catch-up after gap', { timeout: 120000 }, () => {
+describe('catch-up after gap', { timeout: 30000 }, () => {
   const { env, setup, teardown } = setupTestEnv('gap', 'gap');
 
   beforeAll(setup);
@@ -667,7 +667,7 @@ describe('catch-up after gap', { timeout: 120000 }, () => {
 
 describe(
   'catch-up with live events during catch-up',
-  { timeout: 120000 },
+  { timeout: 30000 },
   () => {
     const { env, setup, teardown } = setupTestEnv('liveev', 'liveev');
 
@@ -771,7 +771,7 @@ describe(
 
 // ── Scenario 8: Backward compatibility ────────────────────────────────────
 
-describe('catch-up backward compatibility', { timeout: 120000 }, () => {
+describe('catch-up backward compatibility', { timeout: 30000 }, () => {
   let container;
   let connectionString;
   let cleanupClient;
@@ -870,7 +870,7 @@ describe('catch-up backward compatibility', { timeout: 120000 }, () => {
 
 // ── Scenario 10: Admin instructions via message bus ───────────────────────
 
-describe('admin instructions via message bus', { timeout: 120000 }, () => {
+describe('admin instructions via message bus', { timeout: 30000 }, () => {
   const { env, setup, teardown } = setupTestEnv('adminmsg', 'adminmsg');
 
   beforeAll(setup);
@@ -946,7 +946,7 @@ describe('admin instructions via message bus', { timeout: 120000 }, () => {
 
 // ── Scenario: Admin token auth rejection ──────────────────────────────────
 
-describe('admin token auth', { timeout: 120000 }, () => {
+describe('admin token auth', { timeout: 30000 }, () => {
   const adminToken = 'test-secret-token-12345';
   const { env, setup, teardown } = setupTestEnv('authtest', 'authtest', {
     token: adminToken,
