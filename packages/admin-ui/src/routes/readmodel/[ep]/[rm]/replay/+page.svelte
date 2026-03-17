@@ -30,8 +30,13 @@
     const mode = readModel.state;
     if (mode === 'replay') return 'replaying';
     if (mode === 'catchup') return 'catchup';
-    // If we initiated a replay and RM is now live, replay is complete
-    if (replayInitiated && mode === 'live') return 'done';
+    if (replayInitiated) {
+      // Replay was initiated — track the orchestration lifecycle
+      if (mode === 'live') return 'done';
+      // stopped is a transient state during orchestration (between
+      // replayDone and activate) — show as replaying to avoid flicker
+      if (mode === 'stopped') return 'replaying';
+    }
     return null;
   });
 
