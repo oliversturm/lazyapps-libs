@@ -226,6 +226,13 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
 
   const activateRm = (req, res) => {
     const { ep, rm } = req.params;
+    // Validate if cache is populated (skip during initial activation
+    // when cache may be empty before RM discovery)
+    const allRms = sseClient.cache.getAllReadModels();
+    if (Object.keys(allRms).length > 0 && !allRms[`${ep}/${rm}`]) {
+      res.status(404).json({ error: `Read model ${ep}/${rm} not found` });
+      return;
+    }
     const correlationId = nanoid();
 
     orchestrator.activationOrchestration(ep, rm).catch((err) => {
