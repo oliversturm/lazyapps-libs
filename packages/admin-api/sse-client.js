@@ -208,9 +208,30 @@ const createSseClient = ({
         });
       };
 
+      // Subscribe to CP SSE endpoint
+      const subscribeToCp = () => {
+        if (commandProcessorUrl) {
+          const sub = createSseSubscription(
+            `${commandProcessorUrl}/admin/commandprocessor/events`,
+            token,
+            (event) => {
+              if (event.type === 'status-change') {
+                cache.updateCommandProcessor(event.data);
+                emitter.emit('commandprocessor-status', event.data);
+                emitter.emit('status-change', cache.get());
+              }
+            },
+          );
+          subscriptions.push(sub);
+        }
+      };
+
+      subscribeToCp();
+
       if (typeof readModelServiceUrl === 'string') {
         // Single URL — discover endpoint names from cache.
         // If cache is empty (service not ready yet), retry with backoff.
+        // Returns a Promise that resolves when subscriptions are established.
         const discoverAndSubscribe = (attempt, delay) => {
           const knownEps = new Set();
           Object.values(cache.getAllReadModels()).forEach((rm) => {
@@ -218,44 +239,35 @@ const createSseClient = ({
           });
           if (knownEps.size > 0) {
             subscribeToEps(knownEps);
-            return;
+            return Promise.resolve();
           }
           if (attempt >= 15) {
             log.warn(
               'Could not discover RM endpoints for SSE after 15 attempts',
             );
-            return;
+            return Promise.resolve();
           }
           log.debug(
             `No RM endpoints discovered yet (attempt ${attempt + 1}/15), retrying in ${delay}ms`,
           );
-          setTimeout(
-            () =>
-              fetchAllStatus().then(() =>
-                discoverAndSubscribe(attempt + 1, Math.min(delay * 2, 30000)),
-              ),
-            delay,
-          );
+          return new Promise((resolve) => {
+            setTimeout(
+              () =>
+                fetchAllStatus()
+                  .then(() =>
+                    discoverAndSubscribe(
+                      attempt + 1,
+                      Math.min(delay * 2, 30000),
+                    ),
+                  )
+                  .then(resolve),
+              delay,
+            );
+          });
         };
-        discoverAndSubscribe(0, 1000);
+        return discoverAndSubscribe(0, 1000);
       } else if (typeof readModelServiceUrl === 'object') {
         subscribeToEps(epNames);
-      }
-
-      // Subscribe to CP SSE endpoint
-      if (commandProcessorUrl) {
-        const sub = createSseSubscription(
-          `${commandProcessorUrl}/admin/commandprocessor/events`,
-          token,
-          (event) => {
-            if (event.type === 'status-change') {
-              cache.updateCommandProcessor(event.data);
-              emitter.emit('commandprocessor-status', event.data);
-              emitter.emit('status-change', cache.get());
-            }
-          },
-        );
-        subscriptions.push(sub);
       }
     });
   };
