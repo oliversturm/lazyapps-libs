@@ -316,6 +316,211 @@ describe('readModelListenerMqEmitter', () => {
     );
   });
 
+  test('subscribes to adminStatusQuery topic', () => {
+    context.statusTracker = {
+      getStatus: vi.fn(),
+      onStatusChange: vi.fn(),
+    };
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        expect(mockEmitter.on).toHaveBeenCalledWith(
+          'adminStatusQuery',
+          expect.any(Function),
+        );
+      },
+    );
+  });
+
+  test('adminStatusQuery returns status for specific read model', () => {
+    const mockStatus = {
+      endpointName: 'TEST',
+      readModelName: 'users',
+      state: 'live',
+      lastProjectedEventTimestamp: 1234,
+    };
+    context.statusTracker = {
+      getStatus: vi.fn().mockReturnValue(mockStatus),
+      onStatusChange: vi.fn(),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminStatusQuery'](
+          {
+            payload: {
+              correlationId: 'corr-st',
+              replyTopic: 'status-reply-1',
+              endpointName: 'TEST',
+              readModelName: 'users',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        expect(context.statusTracker.getStatus).toHaveBeenCalledWith('users');
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'status-reply-1',
+          payload: { correlationId: 'corr-st', result: mockStatus },
+        });
+      },
+    );
+  });
+
+  test('adminStatusQuery returns null for unknown read model', () => {
+    context.statusTracker = {
+      getStatus: vi.fn().mockReturnValue(null),
+      onStatusChange: vi.fn(),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminStatusQuery'](
+          {
+            payload: {
+              correlationId: 'corr-st',
+              replyTopic: 'status-reply-2',
+              endpointName: 'TEST',
+              readModelName: 'nonexistent',
+            },
+          },
+          cb,
+        );
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'status-reply-2',
+          payload: { correlationId: 'corr-st', result: null },
+        });
+      },
+    );
+  });
+
+  test('subscribes to adminReplayRelevantEventsQuery topic', () => {
+    context.statusTracker = {
+      onStatusChange: vi.fn(),
+    };
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        expect(mockEmitter.on).toHaveBeenCalledWith(
+          'adminReplayRelevantEventsQuery',
+          expect.any(Function),
+        );
+      },
+    );
+  });
+
+  test('adminReplayRelevantEventsQuery returns event types', () => {
+    context.readModels.users.replayRelevantEvents = [
+      'USER_CREATED',
+      'USER_UPDATED',
+    ];
+    context.statusTracker = {
+      onStatusChange: vi.fn(),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminReplayRelevantEventsQuery'](
+          {
+            payload: {
+              correlationId: 'corr-rre',
+              replyTopic: 'rre-reply-1',
+              readModelName: 'users',
+            },
+          },
+          cb,
+        );
+
+        expect(cb).toHaveBeenCalled();
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'rre-reply-1',
+          payload: {
+            correlationId: 'corr-rre',
+            result: ['USER_CREATED', 'USER_UPDATED'],
+          },
+        });
+      },
+    );
+  });
+
+  test('adminReplayRelevantEventsQuery returns null for unknown RM', () => {
+    context.statusTracker = {
+      onStatusChange: vi.fn(),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const cb = vi.fn();
+        mockHandlers['adminReplayRelevantEventsQuery'](
+          {
+            payload: {
+              correlationId: 'corr-rre',
+              replyTopic: 'rre-reply-2',
+              readModelName: 'nonexistent',
+            },
+          },
+          cb,
+        );
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'rre-reply-2',
+          payload: { correlationId: 'corr-rre', result: null },
+        });
+      },
+    );
+  });
+
+  test('registers onStatusChange listener when statusTracker exists', () => {
+    const onStatusChange = vi.fn();
+    context.statusTracker = { onStatusChange };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        expect(onStatusChange).toHaveBeenCalledWith(expect.any(Function));
+      },
+    );
+  });
+
+  test('publishes status changes on adminStatusUpdate topic', () => {
+    let capturedListener;
+    context.statusTracker = {
+      onStatusChange: vi.fn((listener) => {
+        capturedListener = listener;
+      }),
+    };
+
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        const statusData = {
+          endpointName: 'TEST',
+          readModelName: 'users',
+          state: 'replay',
+        };
+        capturedListener(statusData);
+
+        expect(mockEmitter.emit).toHaveBeenCalledWith({
+          topic: 'adminStatusUpdate',
+          payload: statusData,
+        });
+      },
+    );
+  });
+
+  test('does not register onStatusChange when statusTracker is absent', () => {
+    return readModelListenerMqEmitter({ mqName: 'test-mq' })(context).then(
+      () => {
+        // No error thrown, no onStatusChange called
+        expect(mockEmitter.on).not.toHaveBeenCalledWith(
+          'adminStatusUpdate',
+          expect.any(Function),
+        );
+      },
+    );
+  });
+
   test('resolver error is caught and logged', () => {
     mockResolver.mockRejectedValue(new Error('resolver failed'));
 

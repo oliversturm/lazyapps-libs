@@ -86,6 +86,68 @@ export const readModelListenerMqEmitter =
           cb();
         });
 
+        // Publish RM status changes on the shared mqemitter so that
+        // in-process bridges (e.g. SvelteKit in monolith mode) can
+        // subscribe and serve them as SSE to the admin API.
+        if (context.statusTracker) {
+          context.statusTracker.onStatusChange((statusData) => {
+            mq.emit({
+              topic: 'adminStatusUpdate',
+              payload: statusData,
+            });
+          });
+        }
+
+        mq.on('adminStatusQuery', ({ payload }, cb) => {
+          let { correlationId, replyTopic, endpointName, readModelName } =
+            payload;
+          if (!correlationId) {
+            correlationId = `${
+              context.correlationConfig?.serviceId || 'UNK'
+            }-${nanoid()}`;
+          }
+
+          const log = getLogger('RM/LS', correlationId);
+          log.debug(
+            `Admin status query for ${endpointName}/${readModelName} (reply ${replyTopic})`,
+          );
+
+          const result = context.statusTracker
+            ? context.statusTracker.getStatus(readModelName)
+            : null;
+
+          mq.emit({
+            topic: replyTopic,
+            payload: { correlationId, result },
+          });
+
+          cb();
+        });
+
+        mq.on('adminReplayRelevantEventsQuery', ({ payload }, cb) => {
+          let { correlationId, replyTopic, readModelName } = payload;
+          if (!correlationId) {
+            correlationId = `${
+              context.correlationConfig?.serviceId || 'UNK'
+            }-${nanoid()}`;
+          }
+
+          const log = getLogger('RM/LS', correlationId);
+          log.debug(
+            `Admin replayRelevantEvents query for ${readModelName} (reply ${replyTopic})`,
+          );
+
+          const rm = context.readModels[readModelName];
+          const result = rm?.replayRelevantEvents || null;
+
+          mq.emit({
+            topic: replyTopic,
+            payload: { correlationId, result },
+          });
+
+          cb();
+        });
+
         mq.on('adminQuery', ({ payload }, cb) => {
           let { correlationId, replyTopic } = payload;
           if (!correlationId) {

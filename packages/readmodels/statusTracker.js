@@ -6,6 +6,7 @@ const DEBOUNCE_EVENT_COUNT = 100;
 export const createStatusTracker = (readModels, endpointName) => {
   const log = getLogger('RM/Status', 'SYS');
   const sseClients = new Set();
+  const statusChangeListeners = [];
   const status = {};
   let debounceTimers = {};
   let eventCounters = {};
@@ -35,6 +36,13 @@ export const createStatusTracker = (readModels, endpointName) => {
   const formatSseEvent = (data) =>
     `event: status-change\ndata: ${JSON.stringify(data)}\n\n`;
 
+  const notifyListeners = (readModelName) => {
+    const statusData = status[readModelName];
+    if (!statusData) return;
+    const snapshot = { ...statusData };
+    statusChangeListeners.forEach((listener) => listener(snapshot));
+  };
+
   const pushToClients = (readModelName) => {
     const statusData = status[readModelName];
     if (!statusData) return;
@@ -42,6 +50,7 @@ export const createStatusTracker = (readModels, endpointName) => {
     sseClients.forEach((res) => {
       res.write(message);
     });
+    notifyListeners(readModelName);
   };
 
   const debouncedPush = (readModelName) => {
@@ -112,6 +121,10 @@ export const createStatusTracker = (readModels, endpointName) => {
     sseClients.delete(res);
   };
 
+  const onStatusChange = (listener) => {
+    statusChangeListeners.push(listener);
+  };
+
   return {
     initialize,
     getStatus,
@@ -122,6 +135,7 @@ export const createStatusTracker = (readModels, endpointName) => {
     updateStatus,
     addSseClient,
     removeSseClient,
+    onStatusChange,
     immediatePush,
     debouncedPush,
   };

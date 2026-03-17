@@ -215,4 +215,64 @@ describe('statusTracker', () => {
       expect(mockRes.write).toHaveBeenCalledOnce();
     });
   });
+
+  describe('onStatusChange', () => {
+    test('notifies listeners on state change', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.setState('customers', 'replay', 'corr-1');
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          readModelName: 'customers',
+          state: 'replay',
+          correlationId: 'corr-1',
+        }),
+      );
+    });
+
+    test('notifies listeners on debounced push', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.updateProgress('customers', 'replayProgress', {
+        eventsProcessed: 50,
+      });
+
+      // Not called yet (debounced)
+      expect(listener).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(100);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          readModelName: 'customers',
+          replayProgress: { eventsProcessed: 50 },
+        }),
+      );
+    });
+
+    test('supports multiple listeners', () => {
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
+      tracker.onStatusChange(listener1);
+      tracker.onStatusChange(listener2);
+
+      tracker.setState('orders', 'live');
+
+      expect(listener1).toHaveBeenCalled();
+      expect(listener2).toHaveBeenCalled();
+    });
+
+    test('provides a snapshot, not a reference', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.setState('customers', 'replay');
+      const snapshot = listener.mock.calls[0][0];
+
+      tracker.setState('customers', 'stopped');
+      expect(snapshot.state).toBe('replay');
+    });
+  });
 });
