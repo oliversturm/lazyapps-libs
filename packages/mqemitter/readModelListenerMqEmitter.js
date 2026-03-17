@@ -9,7 +9,22 @@ export const readModelListenerMqEmitter =
   ({ mqName }) =>
   (context) => {
     const initLog = getLogger('RM/LS', 'INIT');
-    return Promise.resolve(getSharedMqEmitter('INIT', mqName))
+    const mq = getSharedMqEmitter('INIT', mqName);
+
+    // Register status change publisher immediately (synchronously)
+    // so it's ready before async initialization completes.
+    // This prevents a race where the admin activator sends commands
+    // before the listener's async setup finishes.
+    if (context.statusTracker) {
+      context.statusTracker.onStatusChange((statusData) => {
+        mq.emit({
+          topic: 'adminStatusUpdate',
+          payload: statusData,
+        });
+      });
+    }
+
+    return Promise.resolve(mq)
       .then((mq) => {
         mq.on('query', ({ payload }, cb) => {
           const { readModelName, resolverName, args, replyTopic } = payload;
@@ -85,18 +100,6 @@ export const readModelListenerMqEmitter =
 
           cb();
         });
-
-        // Publish RM status changes on the shared mqemitter so that
-        // in-process bridges (e.g. SvelteKit in monolith mode) can
-        // subscribe and serve them as SSE to the admin API.
-        if (context.statusTracker) {
-          context.statusTracker.onStatusChange((statusData) => {
-            mq.emit({
-              topic: 'adminStatusUpdate',
-              payload: statusData,
-            });
-          });
-        }
 
         mq.on('adminStatusQuery', ({ payload }, cb) => {
           let { correlationId, replyTopic, endpointName, readModelName } =
