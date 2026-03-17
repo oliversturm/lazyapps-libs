@@ -347,13 +347,13 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 180000 }, () => {
     suppressErrors = true;
     return Promise.resolve()
       .then(() =>
+        adminServer ? new Promise((r) => adminServer.close(r)) : undefined,
+      )
+      .then(() =>
         rmAdminServer ? new Promise((r) => rmAdminServer.close(r)) : undefined,
       )
       .then(() =>
         cpServer ? new Promise((r) => cpServer.close(r)) : undefined,
-      )
-      .then(() =>
-        adminServer ? new Promise((r) => adminServer.close(r)) : undefined,
       )
       .then(() => (cpEventStore ? cpEventStore.close() : undefined))
       .then(() => (cleanupClient ? cleanupClient.close() : undefined))

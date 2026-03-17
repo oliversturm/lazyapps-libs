@@ -10,6 +10,16 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     });
   };
 
+  const validateReadModel = (req, res) => {
+    const { ep, rm } = req.params;
+    const status = sseClient.cache.getReadModel(ep, rm);
+    if (!status) {
+      res.status(404).json({ error: `Read model ${ep}/${rm} not found` });
+      return false;
+    }
+    return true;
+  };
+
   // --- Status endpoints (serve from cache) ---
 
   const readModelStatusAll = (req, res) => {
@@ -112,6 +122,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   // --- Backup endpoints ---
 
   const createBackup = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const correlationId = nanoid();
 
@@ -130,6 +141,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const cancelBackup = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const correlationId = nanoid();
 
@@ -143,6 +155,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const restoreBackup = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const { backupId } = req.body || {};
     const correlationId = nanoid();
@@ -163,6 +176,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const deleteBackup = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const { backupId } = req.body || {};
     const correlationId = nanoid();
@@ -183,6 +197,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const listBackups = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
 
     return sseClient
@@ -226,6 +241,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const stopRm = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const correlationId = nanoid();
 
@@ -239,6 +255,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   const resetRm = (req, res) => {
+    if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
     const correlationId = nanoid();
 

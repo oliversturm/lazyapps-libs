@@ -331,6 +331,16 @@ describe('createRoutes', () => {
       );
       expect(res.status).toHaveBeenCalledWith(202);
     });
+
+    test('returns 404 for unknown RM', () => {
+      const req = mockReq({}, { ep: 'ep1', rm: 'unknown' });
+      const res = mockRes();
+
+      routes.createBackup(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(eventBus.publishAdminInstruction).not.toHaveBeenCalled();
+    });
   });
 
   describe('restoreBackup', () => {
@@ -456,6 +466,16 @@ describe('createRoutes', () => {
         }),
       );
     });
+
+    test('returns 404 for unknown RM', () => {
+      const req = mockReq({}, { ep: 'ep1', rm: 'unknown' });
+      const res = mockRes();
+
+      routes.stopRm(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(eventBus.publishAdminInstruction).not.toHaveBeenCalled();
+    });
   });
 
   describe('resetRm', () => {
@@ -475,6 +495,16 @@ describe('createRoutes', () => {
           targetReadModel: 'customers',
         }),
       );
+    });
+
+    test('returns 404 for unknown RM', () => {
+      const req = mockReq({}, { ep: 'ep1', rm: 'unknown' });
+      const res = mockRes();
+
+      routes.resetRm(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(eventBus.publishAdminInstruction).not.toHaveBeenCalled();
     });
   });
 });

@@ -23,6 +23,7 @@ const createSseSubscription = (url, token, onEvent, onError) => {
   let closed = false;
   let controller = null;
   let retryDelay = 1000;
+  let retryTimer = null;
   const maxRetryDelay = 30000;
 
   const connect = () => {
@@ -89,12 +90,13 @@ const createSseSubscription = (url, token, onEvent, onError) => {
   const scheduleReconnect = () => {
     if (closed) return;
     log.debug(`Reconnecting to ${url} in ${retryDelay}ms`);
-    setTimeout(connect, retryDelay);
+    retryTimer = setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, maxRetryDelay);
   };
 
   const close = () => {
     closed = true;
+    if (retryTimer) clearTimeout(retryTimer);
     if (controller) controller.abort();
   };
 
@@ -303,10 +305,7 @@ const createSseClient = ({
   };
 
   const removeBrowserClient = () => {
-    browserClients--;
-    if (browserClients <= 0 && activeOperations <= 0) {
-      disconnectAll();
-    }
+    browserClients = Math.max(0, browserClients - 1);
   };
 
   const startOperation = () => {
@@ -315,10 +314,7 @@ const createSseClient = ({
   };
 
   const endOperation = () => {
-    activeOperations--;
-    if (activeOperations <= 0 && browserClients <= 0) {
-      disconnectAll();
-    }
+    activeOperations = Math.max(0, activeOperations - 1);
   };
 
   const waitForStatus = (predicate, timeoutMs = 10000) =>

@@ -56,6 +56,45 @@ export const installAdminEndpoints = (context, app) => {
     res.json(status);
   });
 
+  // GET /admin/readmodel — list all read models with status
+  app.get('/admin/readmodel', auth, (req, res) => {
+    const statuses = context.statusTracker.getAllStatuses();
+    res.json(
+      statuses.map((s) => ({
+        name: s.readModelName,
+        endpointName: s.endpointName,
+        state: s.state,
+        lastProjectedEventTimestamp: s.lastProjectedEventTimestamp || 0,
+      })),
+    );
+  });
+
+  // GET /admin/backup/list/:ep/:rm — list backups for a specific RM
+  app.get('/admin/backup/list/:ep/:rm', auth, (req, res) => {
+    const { ep, rm } = req.params;
+    if (context.endpointName && ep !== context.endpointName) {
+      res.status(404).json({ error: 'Unknown endpoint' });
+      return;
+    }
+    if (!context.readModels[rm]) {
+      res.status(404).json({ error: `Read model '${rm}' not found` });
+      return;
+    }
+    if (!context.backup) {
+      res.json([]);
+      return;
+    }
+    context.backup
+      .listBackups(rm)
+      .then((backups) => {
+        res.json(backups);
+      })
+      .catch((err) => {
+        log.error(`Failed to list backups for ${rm}: ${err.message}`);
+        res.status(500).json({ error: 'Failed to list backups' });
+      });
+  });
+
   // GET /admin/replayRelevantEvents/:ep/:rm — event types for replay
   app.get('/admin/replayRelevantEvents/:ep/:rm', auth, (req, res) => {
     const { ep, rm } = req.params;

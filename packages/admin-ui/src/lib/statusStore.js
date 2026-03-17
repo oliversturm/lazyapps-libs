@@ -14,13 +14,17 @@ const createStatusStore = () => {
   const updateReadModelStatus = (data) => {
     update((s) => {
       const readModels = [...s.readModels];
+      const name = data.readModelName || data.name;
+      const normalized = { ...data, name, readModelName: name };
       const idx = readModels.findIndex(
-        (rm) => rm.name === data.name && rm.endpointName === data.endpointName,
+        (rm) =>
+          (rm.readModelName || rm.name) === name &&
+          rm.endpointName === data.endpointName,
       );
       if (idx >= 0) {
-        readModels[idx] = { ...readModels[idx], ...data };
+        readModels[idx] = { ...readModels[idx], ...normalized };
       } else {
-        readModels.push(data);
+        readModels.push(normalized);
       }
       return { ...s, readModels };
     });

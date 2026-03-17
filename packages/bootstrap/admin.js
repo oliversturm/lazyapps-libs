@@ -83,6 +83,20 @@ export const startAdmin = (
                   eventBus: eventBusInstance,
                 };
 
+                // Wrap close to disconnect SSE before shutting down
+                if (typeof server.close === 'function') {
+                  const originalClose = server.close.bind(server);
+                  server.close = (cb) => {
+                    sseClient.disconnectAll();
+                    return originalClose(cb);
+                  };
+                }
+
+                // Always connect SSE to maintain live cache
+                sseClient.ensureConnected().catch((err) => {
+                  log.warn(`Initial SSE connection failed: ${err.message}`);
+                });
+
                 // Auto-activate read models after server is listening
                 if (autoActivate && readModelServiceUrl) {
                   const activator = createActivator({

@@ -93,6 +93,22 @@ describe('adminEndpoints', () => {
         expect.any(Function),
       );
     });
+
+    test('installs readmodel list endpoint', () => {
+      expect(app.get).toHaveBeenCalledWith(
+        '/admin/readmodel',
+        expect.any(Function),
+        expect.any(Function),
+      );
+    });
+
+    test('installs backup list endpoint', () => {
+      expect(app.get).toHaveBeenCalledWith(
+        '/admin/backup/list/:ep/:rm',
+        expect.any(Function),
+        expect.any(Function),
+      );
+    });
   });
 
   describe('token auth', () => {
@@ -237,6 +253,107 @@ describe('adminEndpoints', () => {
     test('returns 404 for wrong endpoint', () => {
       const handler = getHandler();
       const req = createMockReq({ ep: 'wrong-ep', rm: 'customers' });
+      const res = createMockRes();
+
+      handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+  });
+
+  describe('GET /admin/readmodel', () => {
+    const getHandler = () => {
+      const handlers = app.routes['GET /admin/readmodel'];
+      return handlers[handlers.length - 1];
+    };
+
+    test('returns all read model statuses', () => {
+      context.statusTracker.getAllStatuses = vi.fn().mockReturnValue([
+        {
+          endpointName: 'ep1',
+          readModelName: 'customers',
+          state: 'live',
+          lastProjectedEventTimestamp: 500,
+        },
+        {
+          endpointName: 'ep1',
+          readModelName: 'orders',
+          state: 'stopped',
+          lastProjectedEventTimestamp: 0,
+        },
+      ]);
+      const handler = getHandler();
+      const req = createMockReq();
+      const res = createMockRes();
+
+      handler(req, res);
+
+      expect(res.json).toHaveBeenCalledWith([
+        {
+          name: 'customers',
+          endpointName: 'ep1',
+          state: 'live',
+          lastProjectedEventTimestamp: 500,
+        },
+        {
+          name: 'orders',
+          endpointName: 'ep1',
+          state: 'stopped',
+          lastProjectedEventTimestamp: 0,
+        },
+      ]);
+    });
+  });
+
+  describe('GET /admin/backup/list/:ep/:rm', () => {
+    const getHandler = () => {
+      const handlers = app.routes['GET /admin/backup/list/:ep/:rm'];
+      return handlers[handlers.length - 1];
+    };
+
+    test('returns empty array when backup not configured', () => {
+      const handler = getHandler();
+      const req = createMockReq({ ep: 'ep1', rm: 'customers' });
+      const res = createMockRes();
+
+      handler(req, res);
+
+      expect(res.json).toHaveBeenCalledWith([]);
+    });
+
+    test('returns backup list when backup configured', async () => {
+      const backups = [{ backupId: 'b1', timestamp: 100 }];
+      context.backup = {
+        listBackups: vi.fn().mockResolvedValue(backups),
+      };
+      // Reinstall with backup context
+      const backupApp = createMockApp();
+      installAdminEndpoints(context, backupApp);
+      const handlers = backupApp.routes['GET /admin/backup/list/:ep/:rm'];
+      const handler = handlers[handlers.length - 1];
+      const req = createMockReq({ ep: 'ep1', rm: 'customers' });
+      const res = createMockRes();
+
+      handler(req, res);
+      await vi.waitFor(() => {
+        expect(context.backup.listBackups).toHaveBeenCalledWith('customers');
+        expect(res.json).toHaveBeenCalledWith(backups);
+      });
+    });
+
+    test('returns 404 for wrong endpoint', () => {
+      const handler = getHandler();
+      const req = createMockReq({ ep: 'wrong-ep', rm: 'customers' });
+      const res = createMockRes();
+
+      handler(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    test('returns 404 for unknown read model', () => {
+      const handler = getHandler();
+      const req = createMockReq({ ep: 'ep1', rm: 'nonexistent' });
       const res = createMockRes();
 
       handler(req, res);
