@@ -150,6 +150,77 @@ describe('createStatusCache', () => {
 
     expect(cache.getReadModel('ep1', 'customers').state).toBe('replay');
   });
+
+  test('updateReadModel rejects stale updates with lower stateVersion', () => {
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'live',
+      stateVersion: 5,
+    });
+    // Stale HTTP response arrives with lower version
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'catchup',
+      stateVersion: 3,
+    });
+
+    expect(cache.getReadModel('ep1', 'customers').state).toBe('live');
+    expect(cache.getReadModel('ep1', 'customers').stateVersion).toBe(5);
+  });
+
+  test('updateReadModel accepts updates with equal stateVersion', () => {
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'catchup',
+      stateVersion: 3,
+    });
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'catchup',
+      stateVersion: 3,
+      lastProjectedEventTimestamp: 999,
+    });
+
+    expect(
+      cache.getReadModel('ep1', 'customers').lastProjectedEventTimestamp,
+    ).toBe(999);
+  });
+
+  test('updateReadModel accepts updates with higher stateVersion', () => {
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'catchup',
+      stateVersion: 3,
+    });
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'live',
+      stateVersion: 4,
+    });
+
+    expect(cache.getReadModel('ep1', 'customers').state).toBe('live');
+  });
+
+  test('updateReadModel allows updates without stateVersion (backwards compat)', () => {
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'stopped',
+    });
+    cache.updateReadModel({
+      endpointName: 'ep1',
+      readModelName: 'customers',
+      state: 'live',
+    });
+
+    expect(cache.getReadModel('ep1', 'customers').state).toBe('live');
+  });
 });
 
 describe('createSseClient', () => {

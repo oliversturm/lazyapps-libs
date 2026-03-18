@@ -206,16 +206,28 @@ export const readModelListenerMqEmitter =
           const replayStates =
             context.projectionHandler?.getReadModelReplayStates() || {};
 
+          // Use statusTracker as the single source of truth for state
+          // and stateVersion, falling back to lifecycleManager for
+          // backwards compatibility.
           const result = Object.entries(context.readModels).map(
-            ([name, rm]) => ({
-              name,
-              endpointName: context.endpointName,
-              lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
-              status: replayStates[name] ? 'replaying' : 'active',
-              state: context.lifecycleManager?.getState(name),
-              fifoQueueSize:
-                context.projectionHandler?.getFifoQueueSize?.(name),
-            }),
+            ([name, rm]) => {
+              const trackerStatus = context.statusTracker?.getStatus(name);
+              return {
+                name,
+                endpointName: context.endpointName,
+                lastProjectedEventTimestamp:
+                  trackerStatus?.lastProjectedEventTimestamp ??
+                  rm.lastProjectedEventTimestamp ??
+                  0,
+                status: replayStates[name] ? 'replaying' : 'active',
+                state:
+                  trackerStatus?.state ??
+                  context.lifecycleManager?.getState(name),
+                stateVersion: trackerStatus?.stateVersion ?? 0,
+                fifoQueueSize:
+                  context.projectionHandler?.getFifoQueueSize?.(name),
+              };
+            },
           );
 
           mq.emit({

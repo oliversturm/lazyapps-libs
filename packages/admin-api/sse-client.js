@@ -117,6 +117,19 @@ const createStatusCache = () => {
 
   const updateReadModel = (status) => {
     const key = `${status.endpointName}/${status.readModelName}`;
+    const existing = data.readModels[key];
+    // Reject stale updates: if both have a stateVersion, only accept
+    // the update if it carries a version >= the cached version.
+    // This prevents HTTP poll responses (which may be delayed) from
+    // overwriting more recent SSE-delivered state transitions.
+    if (
+      existing &&
+      typeof existing.stateVersion === 'number' &&
+      typeof status.stateVersion === 'number' &&
+      status.stateVersion < existing.stateVersion
+    ) {
+      return;
+    }
     data.readModels[key] = status;
   };
 
@@ -294,6 +307,7 @@ const createSseClient = ({
                 endpointName: rm.endpointName,
                 readModelName: rm.name,
                 state: rm.state || 'stopped',
+                stateVersion: rm.stateVersion || 0,
                 lastProjectedEventTimestamp:
                   rm.lastProjectedEventTimestamp || 0,
               });

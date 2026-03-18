@@ -36,6 +36,7 @@ describe('statusTracker', () => {
         endpointName: 'ep1',
         readModelName: 'customers',
         state: 'stopped',
+        stateVersion: 0,
         lastProjectedEventTimestamp: 500,
         correlationId: null,
         replayProgress: null,

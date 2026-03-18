@@ -10,6 +10,7 @@ export const createStatusTracker = (readModels, endpointName) => {
   const status = {};
   let debounceTimers = {};
   let eventCounters = {};
+  let globalVersion = 0;
 
   const initialize = (readModelNames) => {
     readModelNames.forEach((name) => {
@@ -17,6 +18,7 @@ export const createStatusTracker = (readModels, endpointName) => {
         endpointName: endpointName || 'default',
         readModelName: name,
         state: 'stopped',
+        stateVersion: 0,
         lastProjectedEventTimestamp:
           readModels[name]?.lastProjectedEventTimestamp || 0,
         correlationId: null,
@@ -90,7 +92,12 @@ export const createStatusTracker = (readModels, endpointName) => {
   const setState = (readModelName, state, correlationId) => {
     if (!status[readModelName]) return;
     const prev = status[readModelName].state;
-    updateStatus(readModelName, { state, correlationId });
+    globalVersion++;
+    updateStatus(readModelName, {
+      state,
+      correlationId,
+      stateVersion: globalVersion,
+    });
     immediatePush(readModelName);
     log.info(
       `Status: ${readModelName} ${prev} -> ${state}` +

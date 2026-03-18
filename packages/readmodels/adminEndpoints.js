@@ -64,6 +64,7 @@ export const installAdminEndpoints = (context, app) => {
         name: s.readModelName,
         endpointName: s.endpointName,
         state: s.state,
+        stateVersion: s.stateVersion || 0,
         lastProjectedEventTimestamp: s.lastProjectedEventTimestamp || 0,
       })),
     );

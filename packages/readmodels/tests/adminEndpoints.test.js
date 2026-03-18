@@ -293,12 +293,14 @@ describe('adminEndpoints', () => {
           name: 'customers',
           endpointName: 'ep1',
           state: 'live',
+          stateVersion: expect.any(Number),
           lastProjectedEventTimestamp: 500,
         },
         {
           name: 'orders',
           endpointName: 'ep1',
           state: 'stopped',
+          stateVersion: expect.any(Number),
           lastProjectedEventTimestamp: 0,
         },
       ]);

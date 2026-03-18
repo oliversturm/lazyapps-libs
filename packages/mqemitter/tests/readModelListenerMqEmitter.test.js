@@ -241,6 +241,7 @@ describe('readModelListenerMqEmitter', () => {
                 lastProjectedEventTimestamp: 999,
                 status: 'active',
                 state: 'live',
+                stateVersion: 0,
                 fifoQueueSize: 0,
               },
             ],
