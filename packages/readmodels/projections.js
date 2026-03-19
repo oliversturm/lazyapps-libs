@@ -81,6 +81,14 @@ const handleProjections =
               event.timestamp,
             ),
           )
+          .then(() => {
+            if (!inReplay && context.statusTracker) {
+              context.statusTracker.updateLastProjectedEventTimestamp(
+                rmName,
+                event.timestamp,
+              );
+            }
+          })
           .catch((err) => {
             log.error(
               `Error occurred projecting event ${JSON.stringify(
@@ -164,11 +172,12 @@ export const createProjectionHandler = (context) => {
     readModelCatchupState[rmName]?.active === true;
 
   const setReadModelCatchingUp = (rmName) => {
+    const rm = context.readModels[rmName];
     readModelCatchupState[rmName] = {
       active: true,
       fifoQueue: [],
       catchupEventFingerprints: new Set(),
-      lastCatchupTimestamp: 0,
+      lastCatchupTimestamp: rm?.lastProjectedEventTimestamp || 0,
     };
   };
 

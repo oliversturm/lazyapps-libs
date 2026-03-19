@@ -708,4 +708,64 @@ describe('createProjectionHandler', () => {
         });
     });
   });
+
+  describe('statusTracker synchronization', () => {
+    test('live projection updates statusTracker.lastProjectedEventTimestamp', () => {
+      const context = makeContext();
+      context.statusTracker = {
+        updateLastProjectedEventTimestamp: vi.fn(),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 1000 };
+
+      return handler
+        .projectEvent('corr-1')(event, false)
+        .then(() => {
+          expect(
+            context.statusTracker.updateLastProjectedEventTimestamp,
+          ).toHaveBeenCalledWith('items', 1000);
+        });
+    });
+
+    test('replay projection does NOT update statusTracker.lastProjectedEventTimestamp', () => {
+      const context = makeContext();
+      context.statusTracker = {
+        updateLastProjectedEventTimestamp: vi.fn(),
+        updateProgress: vi.fn(),
+        getStatus: vi.fn().mockReturnValue(null),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 1000 };
+
+      return handler
+        .projectEventForReadModel('corr-1', 'items')(event)
+        .then(() => {
+          expect(
+            context.statusTracker.updateLastProjectedEventTimestamp,
+          ).not.toHaveBeenCalled();
+        });
+    });
+
+    test('live projection keeps statusTracker in sync with readModel object', () => {
+      const context = makeContext();
+      context.statusTracker = {
+        updateLastProjectedEventTimestamp: vi.fn(),
+      };
+      const handler = createProjectionHandler(context);
+      const event1 = { type: 'ITEM_CREATED', timestamp: 1000 };
+      const event2 = { type: 'ITEM_CREATED', timestamp: 2000 };
+
+      return handler
+        .projectEvent('corr-1')(event1, false)
+        .then(() => handler.projectEvent('corr-2')(event2, false))
+        .then(() => {
+          expect(context.readModels.items.lastProjectedEventTimestamp).toBe(
+            2000,
+          );
+          expect(
+            context.statusTracker.updateLastProjectedEventTimestamp,
+          ).toHaveBeenCalledWith('items', 2000);
+        });
+    });
+  });
 });
