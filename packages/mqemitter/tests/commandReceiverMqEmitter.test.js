@@ -34,7 +34,9 @@ describe('commandReceiverMqEmitter', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.keys(mockHandlers).forEach((k) => delete mockHandlers[k]);
+    Object.keys(mockHandlers).forEach((k) => {
+      mockHandlers[k] = undefined;
+    });
     mockEmitter.on.mockImplementation((topic, handler, cb) => {
       mockHandlers[topic] = handler;
       if (cb) cb();

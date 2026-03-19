@@ -89,10 +89,7 @@ const createSelfSignedToken = async (auth, jwtsecretPath, issuer) => {
   if (cachedToken) return cachedToken;
 
   const jwtsecret = (await fs.readFile(jwtsecretPath, 'utf8')).trim();
-  const tokenPayload = { ...auth };
-  delete tokenPayload.iat;
-  delete tokenPayload.exp;
-  delete tokenPayload.iss;
+  const { iat, exp, iss, ...tokenPayload } = auth;
 
   const token = jwt.sign(tokenPayload, jwtsecret, {
     expiresIn: '6h',

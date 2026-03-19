@@ -2,8 +2,8 @@ import { getLogger } from '@lazyapps/logger';
 
 export const createCpStatusTracker = () => {
   const log = getLogger('CP/Status', 'SYS');
-  const activeReplays = {};
-  const activeCatchUps = {};
+  const activeReplays = new Map();
+  const activeCatchUps = new Map();
   const sseClients = new Set();
 
   let debounceTimer = null;
@@ -12,8 +12,8 @@ export const createCpStatusTracker = () => {
   const DEBOUNCE_EVENTS = 100;
 
   const getStatus = () => {
-    const replays = Object.values(activeReplays);
-    const catchUps = Object.values(activeCatchUps);
+    const replays = [...activeReplays.values()];
+    const catchUps = [...activeCatchUps.values()];
     return {
       state:
         replays.length > 0
@@ -96,20 +96,20 @@ export const createCpStatusTracker = () => {
 
   const trackReplayStart = (readModel, targetEndpointName, correlationId) => {
     const key = replayKey(readModel, targetEndpointName);
-    activeReplays[key] = {
+    activeReplays.set(key, {
       readModel,
       targetEndpointName,
       eventsSent: 0,
       lastSentTimestamp: 0,
       correlationId,
-    };
+    });
     log.info(`Replay started: ${key}`);
     forcePush();
   };
 
   const trackReplayEvent = (readModel, targetEndpointName, eventTimestamp) => {
     const key = replayKey(readModel, targetEndpointName);
-    const entry = activeReplays[key];
+    const entry = activeReplays.get(key);
     if (entry) {
       entry.eventsSent++;
       entry.lastSentTimestamp = eventTimestamp;
@@ -119,27 +119,27 @@ export const createCpStatusTracker = () => {
 
   const trackReplayEnd = (readModel, targetEndpointName) => {
     const key = replayKey(readModel, targetEndpointName);
-    delete activeReplays[key];
+    activeReplays.delete(key);
     log.info(`Replay ended: ${key}`);
     forcePush();
   };
 
   const trackCatchUpStart = (readModel, targetEndpointName, correlationId) => {
     const key = replayKey(readModel, targetEndpointName);
-    activeCatchUps[key] = {
+    activeCatchUps.set(key, {
       readModel,
       targetEndpointName,
       eventsSent: 0,
       lastSentTimestamp: 0,
       correlationId,
-    };
+    });
     log.info(`Catch-up started: ${key}`);
     forcePush();
   };
 
   const trackCatchUpEvent = (readModel, targetEndpointName, eventTimestamp) => {
     const key = replayKey(readModel, targetEndpointName);
-    const entry = activeCatchUps[key];
+    const entry = activeCatchUps.get(key);
     if (entry) {
       entry.eventsSent++;
       entry.lastSentTimestamp = eventTimestamp;
@@ -153,7 +153,7 @@ export const createCpStatusTracker = () => {
     toTimestamp,
   ) => {
     const key = replayKey(readModel, targetEndpointName);
-    const entry = activeCatchUps[key];
+    const entry = activeCatchUps.get(key);
     if (entry) {
       entry.toTimestamp = toTimestamp;
     }
@@ -161,7 +161,7 @@ export const createCpStatusTracker = () => {
 
   const trackCatchUpEnd = (readModel, targetEndpointName) => {
     const key = replayKey(readModel, targetEndpointName);
-    delete activeCatchUps[key];
+    activeCatchUps.delete(key);
     log.info(`Catch-up ended: ${key}`);
     forcePush();
   };

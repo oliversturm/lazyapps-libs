@@ -3,16 +3,18 @@ import { getLogger } from '@lazyapps/logger';
 const initLogger = getLogger('CmdProc/AS', 'INIT');
 
 export const inmemory = () => (aggregates) => {
-  const store = {};
+  const store = new Map();
   let lastProjectedEventTimestamp = 0;
   let inReplay = false;
 
-  const getAggregateState = (name, id) =>
-    (store[name] && store[name][id]) || aggregates[name].initial();
+  const getAggregateState = (name, id) => {
+    const bucket = store.get(name);
+    return (bucket && bucket.get(id)) || aggregates[name].initial();
+  };
 
   const setAggregateState = (name, id, state) => {
-    if (!store[name]) store[name] = {};
-    store[name][id] = state;
+    if (!store.has(name)) store.set(name, new Map());
+    store.get(name).set(id, state);
   };
 
   const applyAggregateProjection = (correlationId) => (event) => {
@@ -58,7 +60,7 @@ export const inmemory = () => (aggregates) => {
 
   const clear = () => {
     initLogger.debug('Clearing aggregate store');
-    Object.keys(store).forEach((key) => delete store[key]);
+    store.clear();
     lastProjectedEventTimestamp = 0;
   };
 

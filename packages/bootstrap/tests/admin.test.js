@@ -142,8 +142,7 @@ describe('startAdmin', () => {
     }));
 
   test('uses default port 3005 when not specified', () => {
-    const configNoPort = { ...config };
-    delete configNoPort.port;
+    const { port, ...configNoPort } = config;
     return startAdmin({ serviceId: 'TEST' }, configNoPort).then(() => {
       expect(mockListen).toHaveBeenCalledWith(3005, '0.0.0.0');
     });

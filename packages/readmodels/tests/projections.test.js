@@ -738,7 +738,10 @@ describe('createProjectionHandler', () => {
       const event = { type: 'ITEM_CREATED', timestamp: 1000 };
 
       return handler
-        .projectEventForReadModel('corr-1', 'items')(event)
+        .projectEventForReadModel(
+          'corr-1',
+          'items',
+        )(event)
         .then(() => {
           expect(
             context.statusTracker.updateLastProjectedEventTimestamp,

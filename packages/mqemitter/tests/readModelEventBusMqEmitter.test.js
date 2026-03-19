@@ -28,8 +28,10 @@ const { readModelEventBusMqEmitter } =
 describe('readModelEventBusMqEmitter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Clear handlers
-    Object.keys(mockHandlers).forEach((k) => delete mockHandlers[k]);
+    // Clear handlers (set to undefined; re-registered by mockImplementation below)
+    Object.keys(mockHandlers).forEach((k) => {
+      mockHandlers[k] = undefined;
+    });
     // Re-setup the on mock
     mockEmitter.on.mockImplementation((topic, handler, cb) => {
       mockHandlers[topic] = handler;
