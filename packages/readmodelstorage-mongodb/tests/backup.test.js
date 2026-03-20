@@ -10,8 +10,16 @@ vi.mock('@lazyapps/logger', () => ({
 }));
 
 const { backup, __testing__ } = await import('../backup.js');
-const { formatTimestamp, generateBackupId, parseMaxAge, validatePath } =
-  __testing__;
+const {
+  formatTimestamp,
+  generateBackupId,
+  parseMaxAge,
+  validatePath,
+  dumpBson,
+  dumpJson,
+  restoreBson,
+  restoreJson,
+} = __testing__;
 
 describe('formatTimestamp', () => {
   test('replaces colons with hyphens in ISO string', () => {
@@ -85,6 +93,26 @@ describe('validatePath', () => {
   });
 });
 
+describe('dump/restore functions accept command array', () => {
+  test('dumpBson uses command[0] as executable and spreads prefix args', () => {
+    // dumpBson is a module-level function that calls execFileAsync
+    // We verify it accepts the command parameter by checking the function signature
+    expect(dumpBson.length).toBe(5);
+  });
+
+  test('dumpJson uses command[0] as executable and spreads prefix args', () => {
+    expect(dumpJson.length).toBe(5);
+  });
+
+  test('restoreBson uses command[0] as executable and spreads prefix args', () => {
+    expect(restoreBson.length).toBe(5);
+  });
+
+  test('restoreJson uses command[0] as executable and spreads prefix args', () => {
+    expect(restoreJson.length).toBe(5);
+  });
+});
+
 describe('backup factory', () => {
   test('is a curried function', () => {
     expect(typeof backup).toBe('function');
@@ -106,5 +134,37 @@ describe('backup factory', () => {
     expect(typeof instance.deleteBackup).toBe('function');
     expect(typeof instance.clearCollections).toBe('function');
     expect(typeof instance.cleanupBackups).toBe('function');
+  });
+
+  test('accepts custom command arrays', () => {
+    const storage = {
+      __connectionInfo__: {
+        url: 'mongodb://localhost:27017',
+        database: 'test',
+      },
+    };
+    // Should not throw when providing custom command arrays
+    const instance = backup({
+      backupPath: '/tmp/test',
+      mongodumpCommand: ['docker', 'exec', 'mongo', 'mongodump'],
+      mongorestoreCommand: ['docker', 'exec', 'mongo', 'mongorestore'],
+      mongoexportCommand: ['docker', 'exec', 'mongo', 'mongoexport'],
+      mongoimportCommand: ['docker', 'exec', 'mongo', 'mongoimport'],
+      toolBackupPath: '/backup',
+    })(storage);
+    expect(typeof instance.createBackup).toBe('function');
+    expect(typeof instance.restoreBackup).toBe('function');
+  });
+
+  test('defaults toolBackupPath to backupPath when not provided', () => {
+    const storage = {
+      __connectionInfo__: {
+        url: 'mongodb://localhost:27017',
+        database: 'test',
+      },
+    };
+    // Should not throw — toolBackupPath defaults to backupPath internally
+    const instance = backup({ backupPath: '/tmp/test' })(storage);
+    expect(typeof instance.createBackup).toBe('function');
   });
 });

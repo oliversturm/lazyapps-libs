@@ -39,11 +39,12 @@ const parseMaxAge = (maxAge) => {
   return 0;
 };
 
-const dumpBson = (url, database, collectionNames, backupDir) =>
+const dumpBson = (command, url, database, collectionNames, backupDir) =>
   collectionNames.reduce(
     (chain, col) =>
       chain.then(() =>
-        execFileAsync('mongodump', [
+        execFileAsync(command[0], [
+          ...command.slice(1),
           `--uri=${url}`,
           `--db=${database}`,
           `--collection=${col}`,
@@ -54,11 +55,12 @@ const dumpBson = (url, database, collectionNames, backupDir) =>
     Promise.resolve(),
   );
 
-const dumpJson = (url, database, collectionNames, backupDir) =>
+const dumpJson = (command, url, database, collectionNames, backupDir) =>
   collectionNames.reduce(
     (chain, col) =>
       chain.then(() =>
-        execFileAsync('mongoexport', [
+        execFileAsync(command[0], [
+          ...command.slice(1),
           `--uri=${url}`,
           `--db=${database}`,
           `--collection=${col}`,
@@ -69,11 +71,12 @@ const dumpJson = (url, database, collectionNames, backupDir) =>
     Promise.resolve(),
   );
 
-const restoreBson = (url, database, collectionNames, backupDir) =>
+const restoreBson = (command, url, database, collectionNames, backupDir) =>
   collectionNames.reduce(
     (chain, col) =>
       chain.then(() =>
-        execFileAsync('mongorestore', [
+        execFileAsync(command[0], [
+          ...command.slice(1),
           `--uri=${url}`,
           '--drop',
           '--gzip',
@@ -84,11 +87,12 @@ const restoreBson = (url, database, collectionNames, backupDir) =>
     Promise.resolve(),
   );
 
-const restoreJson = (url, database, collectionNames, backupDir) =>
+const restoreJson = (command, url, database, collectionNames, backupDir) =>
   collectionNames.reduce(
     (chain, col) =>
       chain.then(() =>
-        execFileAsync('mongoimport', [
+        execFileAsync(command[0], [
+          ...command.slice(1),
           `--uri=${url}`,
           `--db=${database}`,
           `--collection=${col}`,
@@ -101,10 +105,19 @@ const restoreJson = (url, database, collectionNames, backupDir) =>
   );
 
 export const backup =
-  ({ backupPath, format = 'bson' } = {}) =>
+  ({
+    backupPath,
+    format = 'bson',
+    mongodumpCommand = ['mongodump'],
+    mongorestoreCommand = ['mongorestore'],
+    mongoexportCommand = ['mongoexport'],
+    mongoimportCommand = ['mongoimport'],
+    toolBackupPath,
+  } = {}) =>
   (storage) => {
     const { url: rawUrl, database } = storage.__connectionInfo__;
     const url = normalizeUri(rawUrl);
+    const effectiveToolBackupPath = toolBackupPath || backupPath;
 
     return {
       createBackup: (correlationId, readModelName, collectionNames) => {
@@ -114,6 +127,12 @@ export const backup =
         const backupDir = join(backupPath, readModelName, backupId);
 
         log.debug(`Creating backup ${backupId} (format: ${format})`);
+
+        const toolBackupDir = join(
+          effectiveToolBackupPath,
+          readModelName,
+          backupId,
+        );
 
         return mkdir(backupDir, { recursive: true })
           .then(() =>
@@ -127,8 +146,20 @@ export const backup =
 
             const dumpPromise =
               format === 'json'
-                ? dumpJson(url, database, collectionNames, backupDir)
-                : dumpBson(url, database, collectionNames, backupDir);
+                ? dumpJson(
+                    mongoexportCommand,
+                    url,
+                    database,
+                    collectionNames,
+                    toolBackupDir,
+                  )
+                : dumpBson(
+                    mongodumpCommand,
+                    url,
+                    database,
+                    collectionNames,
+                    toolBackupDir,
+                  );
 
             return dumpPromise.then(() => {
               const metadata = {
@@ -174,19 +205,27 @@ export const backup =
         const log = getLogger('RM/Backup', correlationId);
         const backupDir = join(backupPath, readModelName, backupId);
         validatePath(backupPath, backupDir);
+        const toolBackupDir = join(
+          effectiveToolBackupPath,
+          readModelName,
+          backupId,
+        );
 
         log.debug(`Restoring backup ${backupId} for ${readModelName}`);
 
         return readFile(join(backupDir, 'metadata.json'), 'utf8')
           .then(JSON.parse)
           .then((metadata) => {
-            const restoreFn =
-              metadata.format === 'json' ? restoreJson : restoreBson;
+            const [restoreFn, restoreCmd] =
+              metadata.format === 'json'
+                ? [restoreJson, mongoimportCommand]
+                : [restoreBson, mongorestoreCommand];
             return restoreFn(
+              restoreCmd,
               url,
               database,
               metadata.collections,
-              backupDir,
+              toolBackupDir,
             ).then(() =>
               storage.updateLastProjectedEventTimestamps(
                 correlationId,
