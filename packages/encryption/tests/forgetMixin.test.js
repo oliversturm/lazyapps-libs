@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from 'vitest';
+import { AuthorizationError } from '../../command-processor/validation.js';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -202,6 +203,126 @@ describe('createForgetMixin', () => {
           },
         ),
       ).toThrow(/Missing contexts/);
+    });
+  });
+
+  describe('authorization', () => {
+    const authContexts = {
+      personal: { roles: ['admin', 'support'], autoForget: true },
+      financial: { roles: ['admin'] },
+    };
+    const auth = { roles: ['admin'], userId: 'user-1' };
+
+    test('commands work without authorizeForget (backwards compat)', () => {
+      const m = createForgetMixin(authContexts);
+      const result = m.commands.FORGET_SUBJECT(
+        {},
+        { subjectId: 'sub-1' },
+        auth,
+      );
+      expect(result.type).toBe('SUBJECT_FORGOTTEN');
+    });
+
+    test('authorizeForget is called with (aggregate, payload, auth) for FORGET_SUBJECT', () => {
+      const authorizeForget = vi.fn();
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      const aggregate = {};
+      const payload = { subjectId: 'sub-1' };
+      m.commands.FORGET_SUBJECT(aggregate, payload, auth);
+      expect(authorizeForget).toHaveBeenCalledWith(aggregate, payload, auth);
+    });
+
+    test('authorizeForget is called with (aggregate, payload, auth) for FORGET_SUBJECT_CONTEXT', () => {
+      const authorizeForget = vi.fn();
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      const aggregate = {};
+      const payload = { contextName: 'personal' };
+      m.commands.FORGET_SUBJECT_CONTEXT(aggregate, payload, auth);
+      expect(authorizeForget).toHaveBeenCalledWith(aggregate, payload, auth);
+    });
+
+    test('authorizeForget is called with (aggregate, payload, auth) for FORGET_RELATED_SUBJECT', () => {
+      const authorizeForget = vi.fn();
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      const aggregate = {};
+      const payload = {
+        relatedSubjectId: 'rel-1',
+        relatedSubjectType: 'order',
+        contexts: ['personal'],
+      };
+      m.commands.FORGET_RELATED_SUBJECT(aggregate, payload, auth);
+      expect(authorizeForget).toHaveBeenCalledWith(aggregate, payload, auth);
+    });
+
+    test('AuthorizationError from authorizeForget propagates for FORGET_SUBJECT', () => {
+      const authorizeForget = () => {
+        throw new AuthorizationError('Not authorized to forget');
+      };
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      expect(() =>
+        m.commands.FORGET_SUBJECT({}, { subjectId: 'sub-1' }, auth),
+      ).toThrow(AuthorizationError);
+    });
+
+    test('AuthorizationError from authorizeForget propagates for FORGET_SUBJECT_CONTEXT', () => {
+      const authorizeForget = () => {
+        throw new AuthorizationError('Not authorized to forget');
+      };
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      expect(() =>
+        m.commands.FORGET_SUBJECT_CONTEXT(
+          {},
+          { contextName: 'personal' },
+          auth,
+        ),
+      ).toThrow(AuthorizationError);
+    });
+
+    test('AuthorizationError from authorizeForget propagates for FORGET_RELATED_SUBJECT', () => {
+      const authorizeForget = () => {
+        throw new AuthorizationError('Not authorized to forget');
+      };
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      expect(() =>
+        m.commands.FORGET_RELATED_SUBJECT(
+          {},
+          {
+            relatedSubjectId: 'rel-1',
+            relatedSubjectType: 'order',
+            contexts: ['personal'],
+          },
+          auth,
+        ),
+      ).toThrow(AuthorizationError);
+    });
+
+    test('AuthorizationError has correct name property', () => {
+      const authorizeForget = () => {
+        throw new AuthorizationError('Forbidden');
+      };
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      try {
+        m.commands.FORGET_SUBJECT({}, { subjectId: 'sub-1' }, auth);
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        expect(err.name).toBe('AuthorizationError');
+        expect(err.message).toBe('Forbidden');
+      }
+    });
+
+    test('authorization check runs before validation checks', () => {
+      const authorizeForget = () => {
+        throw new AuthorizationError('Denied');
+      };
+      const m = createForgetMixin(authContexts, { authorizeForget });
+      // Even though aggregate is already forgotten, auth check comes first
+      expect(() =>
+        m.commands.FORGET_SUBJECT(
+          { forgotten: true },
+          { subjectId: 'sub-1' },
+          auth,
+        ),
+      ).toThrow(AuthorizationError);
     });
   });
 

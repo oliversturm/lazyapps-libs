@@ -11,7 +11,7 @@ export const inmemory = () => (aggregates) => {
 
   const reconstructFromEvents = (name, id) =>
     eventStoreRef(name, id).then((events) => {
-      let state = aggregates[name].initial();
+      let state = aggregates[name].initial(id);
       for (const event of events) {
         const projection =
           aggregates[name].projections &&
@@ -27,7 +27,7 @@ export const inmemory = () => (aggregates) => {
       ? Promise.resolve(store[name][id])
       : eventStoreRef
         ? reconstructFromEvents(name, id)
-        : Promise.resolve(aggregates[name].initial());
+        : Promise.resolve(aggregates[name].initial(id));
 
   const setAggregateState = (name, id, state) => {
     if (!store[name]) store[name] = {};

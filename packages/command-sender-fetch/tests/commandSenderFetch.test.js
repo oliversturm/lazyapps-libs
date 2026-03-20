@@ -69,6 +69,53 @@ describe('commandSenderFetch', () => {
       });
   });
 
+  test('accepts jwt as a sync function', () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    const sender = commandSenderFetch({
+      url: 'http://localhost:3000/api',
+      jwt: () => 'dynamic-token',
+    });
+    const cmd = { command: 'CREATE' };
+
+    return sender.sendCommand('corr-1', cmd).then(() => {
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.headers.Authorization).toBe('Bearer dynamic-token');
+    });
+  });
+
+  test('accepts jwt as an async function', () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    const sender = commandSenderFetch({
+      url: 'http://localhost:3000/api',
+      jwt: () => Promise.resolve('async-token'),
+    });
+    const cmd = { command: 'CREATE' };
+
+    return sender.sendCommand('corr-1', cmd).then(() => {
+      const [, opts] = mockFetch.mock.calls[0];
+      expect(opts.headers.Authorization).toBe('Bearer async-token');
+    });
+  });
+
+  test('calls jwt function on each sendCommand invocation', () => {
+    mockFetch.mockResolvedValue({ ok: true });
+    let callCount = 0;
+    const sender = commandSenderFetch({
+      url: 'http://localhost:3000/api',
+      jwt: () => `token-${++callCount}`,
+    });
+
+    return sender
+      .sendCommand('corr-1', { command: 'A' })
+      .then(() => sender.sendCommand('corr-2', { command: 'B' }))
+      .then(() => {
+        const [, opts1] = mockFetch.mock.calls[0];
+        const [, opts2] = mockFetch.mock.calls[1];
+        expect(opts1.headers.Authorization).toBe('Bearer token-1');
+        expect(opts2.headers.Authorization).toBe('Bearer token-2');
+      });
+  });
+
   test('sets correlationId on cmd object', () => {
     mockFetch.mockResolvedValue({ ok: true });
     const sender = commandSenderFetch({ url: 'http://localhost:3000/api' });

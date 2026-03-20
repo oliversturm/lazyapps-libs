@@ -4,14 +4,17 @@ const validationError = (message) => {
   return err;
 };
 
-export const createForgetMixin = (contexts) => {
+export const createForgetMixin = (contexts, { authorizeForget } = {}) => {
   const autoForgetContexts = Object.entries(contexts)
     .filter(([, cfg]) => cfg.autoForget)
     .map(([name]) => name);
 
   return {
     commands: {
-      FORGET_SUBJECT: (aggregate, payload) => {
+      FORGET_SUBJECT: (aggregate, payload, auth) => {
+        if (authorizeForget) {
+          authorizeForget(aggregate, payload, auth);
+        }
         if (aggregate.forgotten) {
           throw validationError(
             `Subject ${payload.subjectId || 'unknown'} has already been forgotten`,
@@ -32,7 +35,10 @@ export const createForgetMixin = (contexts) => {
         };
       },
 
-      FORGET_SUBJECT_CONTEXT: (aggregate, payload) => {
+      FORGET_SUBJECT_CONTEXT: (aggregate, payload, auth) => {
+        if (authorizeForget) {
+          authorizeForget(aggregate, payload, auth);
+        }
         if (!payload.contextName) {
           throw validationError('Missing contextName in payload');
         }
@@ -51,7 +57,10 @@ export const createForgetMixin = (contexts) => {
         };
       },
 
-      FORGET_RELATED_SUBJECT: (aggregate, payload) => {
+      FORGET_RELATED_SUBJECT: (aggregate, payload, auth) => {
+        if (authorizeForget) {
+          authorizeForget(aggregate, payload, auth);
+        }
         if (!payload.relatedSubjectId) {
           throw validationError('Missing relatedSubjectId in payload');
         }

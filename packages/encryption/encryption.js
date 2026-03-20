@@ -14,6 +14,7 @@ export const createEncryption = ({
   subjects,
   readModelEncryption,
   cache = { maxSize: 10000, ttlMs: 300000 },
+  authorizeForget,
 }) => {
   const log = getLogger('Encryption', 'INIT');
 
@@ -203,7 +204,8 @@ export const createEncryption = ({
 
         getSubjects: () => subjects,
 
-        createForgetMixin: () => createForgetMixinImpl(contexts),
+        createForgetMixin: () =>
+          createForgetMixinImpl(contexts, { authorizeForget }),
       };
     });
 };
