@@ -114,6 +114,7 @@ export const createStatusTracker = (readModels, endpointName) => {
   const updateLastProjectedEventTimestamp = (readModelName, timestamp) => {
     if (!status[readModelName]) return;
     status[readModelName].lastProjectedEventTimestamp = timestamp;
+    debouncedPush(readModelName);
   };
 
   const addSseClient = (res) => {
