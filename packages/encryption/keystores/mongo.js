@@ -123,6 +123,19 @@ export const mongoKeyStore = ({
               })),
             ),
 
+        isForgotten: (subjectId, contextName) =>
+          db
+            .collection(forgottenCollection)
+            .findOne({
+              subjectId,
+              $or: [
+                { context: contextName },
+                { context: '*' },
+                { context: { $exists: false } },
+              ],
+            })
+            .then((doc) => !!doc),
+
         deleteKeysForSubjectContext: (subjectId, contextName) => {
           const ksLog = getLogger('Encryption/KS', 'ADMIN');
           ksLog.info(

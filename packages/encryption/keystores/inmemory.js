@@ -87,6 +87,16 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
             .map(([k, v]) => ({ subjectId: k.split(':')[0], ...v })),
         ),
 
+      isForgotten: (subjectId, contextName) => {
+        const subjectForgotten = forgotten.get(subjectId);
+        if (
+          subjectForgotten &&
+          (subjectForgotten.has(contextName) || subjectForgotten.has('*'))
+        )
+          return Promise.resolve(true);
+        return Promise.resolve(false);
+      },
+
       deleteKeysForSubjectContext: (subjectId, contextName) => {
         const key = `${subjectId}:${contextName}`;
         deks.delete(key);

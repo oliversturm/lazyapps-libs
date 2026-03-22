@@ -42,10 +42,16 @@ export const createEncryption = ({
                 const encLog = getLogger('Encryption/Store', correlationId);
 
                 const shredIfForget = (evt) => {
-                  if (evt.type !== 'SUBJECT_FORGOTTEN')
+                  if (
+                    evt.type !== 'SUBJECT_FORGOTTEN' &&
+                    evt.type !== 'RELATED_SUBJECT_FORGOTTEN'
+                  )
                     return Promise.resolve(evt);
                   const { contexts: ctxs } = evt.payload;
-                  const subjectId = evt.payload.subjectId || evt.aggregateId;
+                  const subjectId =
+                    evt.payload.relatedSubjectId ||
+                    evt.payload.subjectId ||
+                    evt.aggregateId;
                   if (!ctxs || !ctxs.length) return Promise.resolve(evt);
                   return Promise.all(
                     ctxs.map((ctx) => {

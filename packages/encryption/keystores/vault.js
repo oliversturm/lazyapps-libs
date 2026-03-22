@@ -51,6 +51,15 @@ const initDekInMemory = () => {
       const key = `${subjectId}:${contextName}`;
       return Promise.resolve(deks.get(key) || null);
     },
+    isForgotten: (subjectId, contextName) => {
+      const subjectForgotten = forgotten.get(subjectId);
+      if (
+        subjectForgotten &&
+        (subjectForgotten.has(contextName) || subjectForgotten.has('*'))
+      )
+        return Promise.resolve(true);
+      return Promise.resolve(false);
+    },
     storeDEK: (subjectId, contextName, dekInfo) => {
       deks.set(`${subjectId}:${contextName}`, {
         wrappedKey: dekInfo.wrappedKey,
@@ -135,6 +144,17 @@ const initDekMongo = ({ url, database, collection }) =>
                 version: d.version,
               })),
             ),
+        isForgotten: (subjectId, contextName) =>
+          forgottenColl
+            .findOne({
+              subjectId,
+              $or: [
+                { context: contextName },
+                { context: '*' },
+                { context: { $exists: false } },
+              ],
+            })
+            .then((doc) => !!doc),
         deleteKeysForSubjectContext: (subjectId, contextName) =>
           forgottenColl
             .updateOne(
@@ -200,6 +220,7 @@ export const vaultKeyStore = ({ vaultUrl, token, authMethod, dekBackend }) => ({
           }).then((res) => Buffer.from(res.data.plaintext, 'base64')),
 
         getDEK: deks.getDEK,
+        isForgotten: deks.isForgotten,
         storeDEK: deks.storeDEK,
         getAllDEKsForContext: deks.getAllDEKsForContext,
         deleteKeysForSubjectContext: deks.deleteKeysForSubjectContext,

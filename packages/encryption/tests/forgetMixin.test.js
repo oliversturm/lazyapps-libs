@@ -21,11 +21,10 @@ describe('createForgetMixin', () => {
   const mixin = createForgetMixin(contexts);
 
   describe('structure', () => {
-    test('returns commands object with FORGET_SUBJECT, FORGET_SUBJECT_CONTEXT, FORGET_RELATED_SUBJECT', () => {
+    test('returns commands object with FORGET_SUBJECT and FORGET_SUBJECT_CONTEXT', () => {
       expect(mixin.commands).toHaveProperty('FORGET_SUBJECT');
       expect(mixin.commands).toHaveProperty('FORGET_SUBJECT_CONTEXT');
-      expect(mixin.commands).toHaveProperty('FORGET_RELATED_SUBJECT');
-      expect(Object.keys(mixin.commands)).toHaveLength(3);
+      expect(Object.keys(mixin.commands)).toHaveLength(2);
     });
 
     test('returns projections object with SUBJECT_FORGOTTEN', () => {
@@ -36,7 +35,6 @@ describe('createForgetMixin', () => {
     test('all commands are functions', () => {
       expect(mixin.commands.FORGET_SUBJECT).toBeTypeOf('function');
       expect(mixin.commands.FORGET_SUBJECT_CONTEXT).toBeTypeOf('function');
-      expect(mixin.commands.FORGET_RELATED_SUBJECT).toBeTypeOf('function');
     });
 
     test('SUBJECT_FORGOTTEN projection is a function', () => {
@@ -67,10 +65,10 @@ describe('createForgetMixin', () => {
       expect(result.payload.contexts).not.toContain('financial');
     });
 
-    test('throws ValidationError if aggregate is already forgotten', () => {
+    test('throws ValidationError if all autoForget contexts are already forgotten', () => {
       expect(() =>
         mixin.commands.FORGET_SUBJECT(
-          { forgotten: true },
+          { forgottenContexts: ['personal'] },
           { subjectId: 'sub-1' },
         ),
       ).toThrow(/already been forgotten/);
@@ -79,7 +77,7 @@ describe('createForgetMixin', () => {
     test('thrown error has name ValidationError', () => {
       try {
         mixin.commands.FORGET_SUBJECT(
-          { forgotten: true },
+          { forgottenContexts: ['personal'] },
           { subjectId: 'sub-1' },
         );
         expect.unreachable('should have thrown');
@@ -151,61 +149,6 @@ describe('createForgetMixin', () => {
     });
   });
 
-  describe('FORGET_RELATED_SUBJECT command', () => {
-    test('emits RELATED_SUBJECT_FORGOTTEN with payload', () => {
-      const payload = {
-        relatedSubjectId: 'rel-1',
-        relatedSubjectType: 'order',
-        contexts: ['personal'],
-      };
-      const result = mixin.commands.FORGET_RELATED_SUBJECT({}, payload);
-      expect(result).toEqual({
-        type: 'RELATED_SUBJECT_FORGOTTEN',
-        payload,
-      });
-    });
-
-    test('throws when relatedSubjectId is missing', () => {
-      expect(() =>
-        mixin.commands.FORGET_RELATED_SUBJECT(
-          {},
-          { relatedSubjectType: 'order', contexts: ['personal'] },
-        ),
-      ).toThrow(/Missing relatedSubjectId/);
-    });
-
-    test('throws when relatedSubjectType is missing', () => {
-      expect(() =>
-        mixin.commands.FORGET_RELATED_SUBJECT(
-          {},
-          { relatedSubjectId: 'rel-1', contexts: ['personal'] },
-        ),
-      ).toThrow(/Missing relatedSubjectType/);
-    });
-
-    test('throws when contexts is missing', () => {
-      expect(() =>
-        mixin.commands.FORGET_RELATED_SUBJECT(
-          {},
-          { relatedSubjectId: 'rel-1', relatedSubjectType: 'order' },
-        ),
-      ).toThrow(/Missing contexts/);
-    });
-
-    test('throws when contexts is empty array', () => {
-      expect(() =>
-        mixin.commands.FORGET_RELATED_SUBJECT(
-          {},
-          {
-            relatedSubjectId: 'rel-1',
-            relatedSubjectType: 'order',
-            contexts: [],
-          },
-        ),
-      ).toThrow(/Missing contexts/);
-    });
-  });
-
   describe('authorization', () => {
     const authContexts = {
       personal: { roles: ['admin', 'support'], autoForget: true },
@@ -241,19 +184,6 @@ describe('createForgetMixin', () => {
       expect(authorizeForget).toHaveBeenCalledWith(aggregate, payload, auth);
     });
 
-    test('authorizeForget is called with (aggregate, payload, auth) for FORGET_RELATED_SUBJECT', () => {
-      const authorizeForget = vi.fn();
-      const m = createForgetMixin(authContexts, { authorizeForget });
-      const aggregate = {};
-      const payload = {
-        relatedSubjectId: 'rel-1',
-        relatedSubjectType: 'order',
-        contexts: ['personal'],
-      };
-      m.commands.FORGET_RELATED_SUBJECT(aggregate, payload, auth);
-      expect(authorizeForget).toHaveBeenCalledWith(aggregate, payload, auth);
-    });
-
     test('AuthorizationError from authorizeForget propagates for FORGET_SUBJECT', () => {
       const authorizeForget = () => {
         throw new AuthorizationError('Not authorized to forget');
@@ -278,24 +208,6 @@ describe('createForgetMixin', () => {
       ).toThrow(AuthorizationError);
     });
 
-    test('AuthorizationError from authorizeForget propagates for FORGET_RELATED_SUBJECT', () => {
-      const authorizeForget = () => {
-        throw new AuthorizationError('Not authorized to forget');
-      };
-      const m = createForgetMixin(authContexts, { authorizeForget });
-      expect(() =>
-        m.commands.FORGET_RELATED_SUBJECT(
-          {},
-          {
-            relatedSubjectId: 'rel-1',
-            relatedSubjectType: 'order',
-            contexts: ['personal'],
-          },
-          auth,
-        ),
-      ).toThrow(AuthorizationError);
-    });
-
     test('AuthorizationError has correct name property', () => {
       const authorizeForget = () => {
         throw new AuthorizationError('Forbidden');
@@ -315,10 +227,10 @@ describe('createForgetMixin', () => {
         throw new AuthorizationError('Denied');
       };
       const m = createForgetMixin(authContexts, { authorizeForget });
-      // Even though aggregate is already forgotten, auth check comes first
+      // Even though aggregate contexts are already forgotten, auth check comes first
       expect(() =>
         m.commands.FORGET_SUBJECT(
-          { forgotten: true },
+          { forgottenContexts: ['personal'] },
           { subjectId: 'sub-1' },
           auth,
         ),
@@ -327,25 +239,22 @@ describe('createForgetMixin', () => {
   });
 
   describe('SUBJECT_FORGOTTEN projection', () => {
-    test('sets forgotten flag and merges contexts', () => {
+    test('sets forgottenContexts', () => {
       const result = mixin.projections.SUBJECT_FORGOTTEN(
         {},
         { payload: { contexts: ['personal'] }, timestamp: 1000 },
       );
       expect(result).toEqual({
-        forgotten: true,
         forgottenContexts: ['personal'],
-        forgottenAt: 1000,
       });
     });
 
     test('merges new contexts with existing ones', () => {
       const result = mixin.projections.SUBJECT_FORGOTTEN(
-        { forgotten: true, forgottenContexts: ['personal'], forgottenAt: 500 },
+        { forgottenContexts: ['personal'] },
         { payload: { contexts: ['financial'] }, timestamp: 1000 },
       );
       expect(result.forgottenContexts).toEqual(['personal', 'financial']);
-      expect(result.forgottenAt).toBe(1000);
     });
 
     test('deduplicates contexts', () => {
@@ -361,7 +270,6 @@ describe('createForgetMixin', () => {
         {},
         { payload: {}, timestamp: 1000 },
       );
-      expect(result.forgotten).toBe(true);
       expect(result.forgottenContexts).toEqual([]);
     });
 
@@ -372,7 +280,7 @@ describe('createForgetMixin', () => {
       );
       expect(result.name).toBe('Alice');
       expect(result.age).toBe(30);
-      expect(result.forgotten).toBe(true);
+      expect(result.forgottenContexts).toEqual(['personal']);
     });
   });
 });

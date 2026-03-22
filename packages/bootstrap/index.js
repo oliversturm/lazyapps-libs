@@ -36,13 +36,9 @@ const handleSignals = (server) => {
   }
 };
 
-const MIXIN_COMMANDS = [
-  'FORGET_SUBJECT',
-  'FORGET_SUBJECT_CONTEXT',
-  'FORGET_RELATED_SUBJECT',
-];
+const MIXIN_COMMANDS = ['FORGET_SUBJECT', 'FORGET_SUBJECT_CONTEXT'];
 
-const MIXIN_PROJECTIONS = ['SUBJECT_FORGOTTEN', 'RELATED_SUBJECT_FORGOTTEN'];
+const MIXIN_PROJECTIONS = ['SUBJECT_FORGOTTEN'];
 
 const checkConflicts = (aggregateName, aggregate) => {
   const conflicts = [];

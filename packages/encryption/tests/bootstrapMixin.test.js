@@ -29,13 +29,9 @@ const { createForgetMixin } = await import('../forgetMixin.js');
 
 // Replicate bootstrap's MIXIN_COMMANDS/MIXIN_PROJECTIONS and checkConflicts
 // to validate behavior matches what bootstrap/index.js does.
-const MIXIN_COMMANDS = [
-  'FORGET_SUBJECT',
-  'FORGET_SUBJECT_CONTEXT',
-  'FORGET_RELATED_SUBJECT',
-];
+const MIXIN_COMMANDS = ['FORGET_SUBJECT', 'FORGET_SUBJECT_CONTEXT'];
 
-const MIXIN_PROJECTIONS = ['SUBJECT_FORGOTTEN', 'RELATED_SUBJECT_FORGOTTEN'];
+const MIXIN_PROJECTIONS = ['SUBJECT_FORGOTTEN'];
 
 const checkConflicts = (aggregateName, aggregate) => {
   const conflicts = [];
@@ -163,9 +159,6 @@ describe('bootstrap mixin injection', () => {
       );
       expect(result.customer.commands.FORGET_SUBJECT_CONTEXT).toBe(
         mixin.commands.FORGET_SUBJECT_CONTEXT,
-      );
-      expect(result.customer.commands.FORGET_RELATED_SUBJECT).toBe(
-        mixin.commands.FORGET_RELATED_SUBJECT,
       );
       expect(result.customer.projections.SUBJECT_FORGOTTEN).toBe(
         mixin.projections.SUBJECT_FORGOTTEN,

@@ -15,7 +15,11 @@ export const createForgetMixin = (contexts, { authorizeForget } = {}) => {
         if (authorizeForget) {
           authorizeForget(aggregate, payload, auth);
         }
-        if (aggregate.forgotten) {
+        const forgottenContexts = aggregate.forgottenContexts || [];
+        if (
+          autoForgetContexts.length &&
+          autoForgetContexts.every((ctx) => forgottenContexts.includes(ctx))
+        ) {
           throw validationError(
             `Subject ${payload.subjectId || 'unknown'} has already been forgotten`,
           );
@@ -56,25 +60,6 @@ export const createForgetMixin = (contexts, { authorizeForget } = {}) => {
           },
         };
       },
-
-      FORGET_RELATED_SUBJECT: (aggregate, payload, auth) => {
-        if (authorizeForget) {
-          authorizeForget(aggregate, payload, auth);
-        }
-        if (!payload.relatedSubjectId) {
-          throw validationError('Missing relatedSubjectId in payload');
-        }
-        if (!payload.relatedSubjectType) {
-          throw validationError('Missing relatedSubjectType in payload');
-        }
-        if (!payload.contexts || !payload.contexts.length) {
-          throw validationError('Missing contexts in payload');
-        }
-        return {
-          type: 'RELATED_SUBJECT_FORGOTTEN',
-          payload,
-        };
-      },
     },
 
     projections: {
@@ -84,9 +69,7 @@ export const createForgetMixin = (contexts, { authorizeForget } = {}) => {
         const merged = [...new Set([...existingContexts, ...newContexts])];
         return {
           ...aggregate,
-          forgotten: true,
           forgottenContexts: merged,
-          forgottenAt: event.timestamp,
         };
       },
     },

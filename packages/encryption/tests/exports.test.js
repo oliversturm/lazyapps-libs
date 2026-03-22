@@ -43,7 +43,6 @@ describe('index.js exports', () => {
     });
     expect(mixin.commands).toHaveProperty('FORGET_SUBJECT');
     expect(mixin.commands).toHaveProperty('FORGET_SUBJECT_CONTEXT');
-    expect(mixin.commands).toHaveProperty('FORGET_RELATED_SUBJECT');
     expect(mixin.projections).toHaveProperty('SUBJECT_FORGOTTEN');
   });
 
