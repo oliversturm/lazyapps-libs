@@ -34,7 +34,7 @@ describe('socketIoCookieJwt', () => {
   describe('HS256 (sync) path', () => {
     test('extracts token from socket.handshake.auth.token and sets decoded_token', () => {
       mockVerify.mockReturnValue({ sub: 'user-1' });
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: { auth: { token: 'valid-token' }, headers: {} },
       };
@@ -51,7 +51,7 @@ describe('socketIoCookieJwt', () => {
     test('extracts token from cookie when no auth token present', () => {
       mockVerify.mockReturnValue({ sub: 'user-2' });
       mockParse.mockReturnValue({ access_token: 'cookie-token' });
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: {
           auth: {},
@@ -70,7 +70,7 @@ describe('socketIoCookieJwt', () => {
     });
 
     test('leaves decoded_token undefined when no auth token and no cookie', () => {
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: { auth: {}, headers: {} },
       };
@@ -86,7 +86,7 @@ describe('socketIoCookieJwt', () => {
       mockVerify.mockImplementation(() => {
         throw new Error('invalid token');
       });
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: { auth: { token: 'bad-token' }, headers: {} },
       };
@@ -101,7 +101,7 @@ describe('socketIoCookieJwt', () => {
     });
 
     test('always calls next()', () => {
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: { auth: {}, headers: {} },
       };
@@ -114,7 +114,7 @@ describe('socketIoCookieJwt', () => {
 
     test('always calls next() even when token is found', () => {
       mockVerify.mockReturnValue({ sub: 'user-1' });
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: { auth: { token: 'valid-token' }, headers: {} },
       };
@@ -129,7 +129,7 @@ describe('socketIoCookieJwt', () => {
       mockVerify.mockReturnValue({ sub: 'user-3' });
       mockParse.mockReturnValue({ my_token: 'custom-cookie-token' });
       const middleware = socketIoCookieJwt({
-        jwtSecret: 'secret',
+        jwtAuth: 'secret',
         cookieName: 'my_token',
       });
       const socket = {
@@ -150,7 +150,7 @@ describe('socketIoCookieJwt', () => {
 
     test('does not check cookie when auth token is present', () => {
       mockVerify.mockReturnValue({ sub: 'user-1' });
-      const middleware = socketIoCookieJwt({ jwtSecret: 'secret' });
+      const middleware = socketIoCookieJwt({ jwtAuth: 'secret' });
       const socket = {
         handshake: {
           auth: { token: 'auth-token' },

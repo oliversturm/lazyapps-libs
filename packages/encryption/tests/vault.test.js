@@ -289,7 +289,14 @@ describe('vaultKeyStore', () => {
       const mock = createFetchMock([
         {
           path: 'auth/approle/login',
-          respond: () => okResponse({ auth: { client_token: appRoleToken } }),
+          respond: () =>
+            okResponse({
+              auth: {
+                client_token: appRoleToken,
+                lease_duration: 3600,
+                renewable: true,
+              },
+            }),
         },
         {
           path: 'transit/encrypt/',
@@ -447,7 +454,13 @@ describe('vaultKeyStore', () => {
       globalThis.fetch = vi.fn((url) => {
         if (url.includes('approle')) {
           return Promise.resolve(
-            okResponse({ auth: { client_token: 'test' } }),
+            okResponse({
+              auth: {
+                client_token: 'test',
+                lease_duration: 3600,
+                renewable: false,
+              },
+            }),
           );
         }
         return Promise.resolve({

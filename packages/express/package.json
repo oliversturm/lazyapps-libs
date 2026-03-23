@@ -38,10 +38,10 @@
   },
   "dependencies": {
     "@lazyapps/logger": "workspace:^",
-    "body-parser": "^1.20.2",
+    "body-parser": "^1.20.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "express": "^4.21.2",
     "express-jwt": "^8.4.1",
     "morgan": "^1.10.0",
     "nanoid": "^5.0.7"

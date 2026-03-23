@@ -20,7 +20,7 @@ describe('express', () => {
   });
 
   test('calls runExpress with correlationConfig and config', () => {
-    const config = { port: 3008, jwtSecret: 'secret' };
+    const config = { port: 3008, jwtAuth: 'secret' };
     const correlationConfig = { serviceId: 'TEST' };
 
     express(config)(correlationConfig);

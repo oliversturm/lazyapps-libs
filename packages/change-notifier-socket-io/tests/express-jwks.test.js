@@ -90,7 +90,7 @@ describe('JWKS URI propagation in runExpress', () => {
     });
   });
 
-  test('auto-constructs jwtSecret from jwksUri when jwtSecret is not provided', () =>
+  test('auto-constructs jwtAuth from jwksUri when jwtAuth is not provided', () =>
     runExpress(
       {},
       { jwksUri: 'https://auth.example.com/.well-known/jwks.json' },
@@ -111,11 +111,11 @@ describe('JWKS URI propagation in runExpress', () => {
       );
     }));
 
-  test('uses explicit jwtSecret when both jwtSecret and jwksUri are provided', () =>
+  test('uses explicit jwtAuth when both jwtAuth and jwksUri are provided', () =>
     runExpress(
       {},
       {
-        jwtSecret: 'my-explicit-secret',
+        jwtAuth: 'my-explicit-secret',
         jwksUri: 'https://auth.example.com/.well-known/jwks.json',
       },
     ).then(() => {
@@ -131,7 +131,7 @@ describe('JWKS URI propagation in runExpress', () => {
       );
     }));
 
-  test('does not set up JWT middleware when neither jwtSecret nor jwksUri is provided', () =>
+  test('does not set up JWT middleware when neither jwtAuth nor jwksUri is provided', () =>
     runExpress({}, { port: 3008 }).then(() => {
       expect(mockExpressJwtSecret).not.toHaveBeenCalled();
       expect(mockExpressjwt).not.toHaveBeenCalled();
@@ -153,7 +153,7 @@ describe('JWKS URI propagation in runExpress', () => {
       );
     }));
 
-  test('backwards compat: existing jwtSecret-only config still works', () =>
+  test('backwards compat: existing jwtSecret alias still works', () =>
     runExpress({}, { jwtSecret: 'legacy-secret' }).then(() => {
       expect(mockExpressJwtSecret).not.toHaveBeenCalled();
       expect(mockExpressjwt).toHaveBeenCalledWith(

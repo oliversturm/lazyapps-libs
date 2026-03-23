@@ -1,24 +1,70 @@
 import { getLogger } from '@lazyapps/logger';
 
-const vaultRequest = (vaultUrl, token) => (method, path, body) =>
-  fetch(`${vaultUrl}/v1/${path}`, {
-    method,
-    headers: {
-      'X-Vault-Token': token,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  }).then((res) =>
-    res.ok
-      ? res.json()
-      : res.json().then((err) => {
-          const error = new Error(
-            `Vault ${method} ${path}: ${err.errors?.[0] || res.statusText}`,
-          );
-          error.status = res.status;
-          throw error;
-        }),
-  );
+const createVaultClient = (vaultUrl) => {
+  const state = { token: null, renewTimer: null };
+
+  const request = (method, path, body) =>
+    fetch(`${vaultUrl}/v1/${path}`, {
+      method,
+      headers: {
+        'X-Vault-Token': state.token,
+        'Content-Type': 'application/json',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((res) =>
+      res.ok
+        ? res.json()
+        : res.json().then((err) => {
+            const error = new Error(
+              `Vault ${method} ${path}: ${err.errors?.[0] || res.statusText}`,
+            );
+            error.status = res.status;
+            throw error;
+          }),
+    );
+
+  const scheduleRenewal = (leaseDuration, log, reAuth) => {
+    if (state.renewTimer) clearTimeout(state.renewTimer);
+    if (!leaseDuration || leaseDuration <= 0) return;
+
+    // Renew at 80% of lease duration
+    const renewIn = Math.floor(leaseDuration * 0.8) * 1000;
+    log.debug(`Scheduling token renewal in ${Math.floor(renewIn / 1000)}s`);
+
+    state.renewTimer = setTimeout(() => {
+      log.info('Renewing Vault token');
+      request('POST', 'auth/token/renew-self')
+        .then((res) => {
+          const newLease = res.auth && res.auth.lease_duration;
+          log.info(`Token renewed, new lease: ${newLease}s`);
+          scheduleRenewal(newLease, log, reAuth);
+        })
+        .catch((err) => {
+          log.warn(`Token renewal failed: ${err.message}, re-authenticating`);
+          reAuth()
+            .then(({ token, leaseDuration: newLease }) => {
+              state.token = token;
+              scheduleRenewal(newLease, log, reAuth);
+            })
+            .catch((reAuthErr) =>
+              log.error(`Re-authentication failed: ${reAuthErr.message}`),
+            );
+        });
+    }, renewIn);
+
+    // Allow process to exit without waiting for the timer
+    if (state.renewTimer.unref) state.renewTimer.unref();
+  };
+
+  const stopRenewal = () => {
+    if (state.renewTimer) {
+      clearTimeout(state.renewTimer);
+      state.renewTimer = null;
+    }
+  };
+
+  return { state, request, scheduleRenewal, stopRenewal };
+};
 
 const authenticateAppRole = (vaultUrl, roleId, secretId) =>
   fetch(`${vaultUrl}/v1/auth/approle/login`, {
@@ -27,7 +73,11 @@ const authenticateAppRole = (vaultUrl, roleId, secretId) =>
     body: JSON.stringify({ role_id: roleId, secret_id: secretId }),
   }).then((res) =>
     res.ok
-      ? res.json().then((data) => data.auth.client_token)
+      ? res.json().then((data) => ({
+          token: data.auth.client_token,
+          leaseDuration: data.auth.lease_duration,
+          renewable: data.auth.renewable,
+        }))
       : res.json().then((err) => {
           const error = new Error(
             `Vault AppRole login: ${err.errors?.[0] || res.statusText}`,
@@ -195,13 +245,31 @@ export const appRole = ({ roleId, secretId }) => ({ roleId, secretId });
 export const vaultKeyStore = ({ vaultUrl, token, authMethod, dekBackend }) => ({
   initialize: () => {
     const log = getLogger('Encryption/Vault', 'INIT');
+    const client = createVaultClient(vaultUrl);
+
+    const reAuth = authMethod
+      ? () =>
+          authenticateAppRole(
+            vaultUrl,
+            authMethod.roleId,
+            authMethod.secretId,
+          ).then((auth) => {
+            client.state.token = auth.token;
+            return auth;
+          })
+      : null;
 
     const getToken = token
-      ? Promise.resolve(token)
+      ? Promise.resolve({ token, leaseDuration: 0, renewable: false })
       : authenticateAppRole(vaultUrl, authMethod.roleId, authMethod.secretId);
 
-    return getToken.then((vaultToken) => {
-      const request = vaultRequest(vaultUrl, vaultToken);
+    return getToken.then((auth) => {
+      client.state.token = auth.token;
+
+      if (auth.renewable && auth.leaseDuration > 0 && reAuth) {
+        client.scheduleRenewal(auth.leaseDuration, log, reAuth);
+      }
+
       log.info(`Vault key store connected to ${vaultUrl}`);
 
       const dekStore = dekBackend
@@ -210,14 +278,18 @@ export const vaultKeyStore = ({ vaultUrl, token, authMethod, dekBackend }) => ({
 
       return dekStore.then((deks) => ({
         wrapDEK: (contextName, plainDEK) =>
-          request('POST', `transit/encrypt/${contextName}`, {
-            plaintext: plainDEK.toString('base64'),
-          }).then((res) => res.data.ciphertext),
+          client
+            .request('POST', `transit/encrypt/${contextName}`, {
+              plaintext: plainDEK.toString('base64'),
+            })
+            .then((res) => res.data.ciphertext),
 
         unwrapDEK: (contextName, wrappedDEK) =>
-          request('POST', `transit/decrypt/${contextName}`, {
-            ciphertext: wrappedDEK,
-          }).then((res) => Buffer.from(res.data.plaintext, 'base64')),
+          client
+            .request('POST', `transit/decrypt/${contextName}`, {
+              ciphertext: wrappedDEK,
+            })
+            .then((res) => Buffer.from(res.data.plaintext, 'base64')),
 
         getDEK: deks.getDEK,
         isForgotten: deks.isForgotten,
@@ -227,9 +299,12 @@ export const vaultKeyStore = ({ vaultUrl, token, authMethod, dekBackend }) => ({
         deleteKeysForSubject: deks.deleteKeysForSubject,
 
         rotateKEK: (contextName) =>
-          request('POST', `transit/keys/${contextName}/rotate`),
+          client.request('POST', `transit/keys/${contextName}/rotate`),
 
-        close: deks.close || (() => Promise.resolve()),
+        close: () => {
+          client.stopRenewal();
+          return deks.close ? deks.close() : Promise.resolve();
+        },
       }));
     });
   },

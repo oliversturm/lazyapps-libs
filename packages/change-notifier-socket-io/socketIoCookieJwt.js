@@ -2,9 +2,9 @@ import jwt from 'jsonwebtoken';
 import cookie from 'cookie';
 import { JwksClient } from 'jwks-rsa';
 
-const decodeTokenSync = (jwtSecret, token, algorithms) => {
+const decodeTokenSync = (jwtAuth, token, algorithms) => {
   try {
-    return jwt.verify(token, jwtSecret, { algorithms });
+    return jwt.verify(token, jwtAuth, { algorithms });
   } catch (err) {
     return null;
   }
@@ -30,10 +30,12 @@ const decodeTokenJwks = (jwksClient, token, algorithms) => {
 // be necessary to reconnect to the server.
 export const socketIoCookieJwt = ({
   cookieName = 'access_token',
-  jwtSecret,
+  jwtAuth,
+  jwtSecret, // deprecated alias for jwtAuth
   jwtAlgorithms = ['HS256'],
   jwksUri,
 }) => {
+  const secret = jwtAuth || jwtSecret;
   const jwksClient = jwksUri
     ? new JwksClient({ jwksUri, cache: true, rateLimit: true })
     : null;
@@ -63,7 +65,7 @@ export const socketIoCookieJwt = ({
         })
         .then(() => next());
     } else {
-      socket.decoded_token = decodeTokenSync(jwtSecret, token, jwtAlgorithms);
+      socket.decoded_token = decodeTokenSync(secret, token, jwtAlgorithms);
       next();
     }
   };

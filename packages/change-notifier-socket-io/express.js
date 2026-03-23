@@ -40,7 +40,8 @@ const runExpress = (
   {
     port = 3008,
     host = '0.0.0.0',
-    jwtSecret,
+    jwtAuth,
+    jwtSecret, // deprecated alias for jwtAuth
     jwtAlgorithms,
     jwksUri,
     authCookieName,
@@ -53,10 +54,11 @@ const runExpress = (
     redactionHooks,
   },
 ) => {
+  let secret = jwtAuth || jwtSecret;
   return new Promise((resolve, reject) => {
-    // Auto-construct jwtSecret from jwksUri when jwtSecret is not provided
-    if (jwksUri && !jwtSecret) {
-      jwtSecret = expressJwtSecret({
+    // Auto-construct secret from jwksUri when not provided directly
+    if (jwksUri && !secret) {
+      secret = expressJwtSecret({
         cache: true,
         rateLimit: true,
         jwksRequestsPerMinute: 5,
@@ -85,12 +87,12 @@ const runExpress = (
     app.use(cookieParser());
 
     // Similar code as in express/runExpress.js -- refactor?
-    if (jwtSecret) {
+    if (secret) {
       app.use(
         expressjwt({
-          secret: jwtSecret,
+          secret,
           algorithms: jwtAlgorithms,
-          credentialsRequired: credentialsRequired || false,
+          credentialsRequired: credentialsRequired !== false,
           getToken: (req) => {
             // check Authorization header first
             if (
@@ -118,7 +120,7 @@ const runExpress = (
     });
     io.use(
       socketIoCookieJwt({
-        jwtSecret,
+        jwtAuth: secret,
         jwtAlgorithms,
         jwksUri,
         cookieName: authCookieName,
@@ -129,7 +131,7 @@ const runExpress = (
     initSockets(
       correlationConfig,
       io,
-      jwtSecret && ioAuthHandler ? ioAuthHandler : () => true,
+      secret && ioAuthHandler ? ioAuthHandler : () => true,
       socketOpts,
     );
 
@@ -144,7 +146,7 @@ const runExpress = (
 
     const notifier = createNotifier(
       io,
-      jwtSecret && changeInfoAuthHandler ? changeInfoAuthHandler : () => true,
+      secret && changeInfoAuthHandler ? changeInfoAuthHandler : () => true,
       redactionEngine ? { redactionEngine } : {},
     );
     app.post('/change', notifier);
@@ -161,7 +163,7 @@ const runExpress = (
     .then((server) => {
       log.info(
         `HTTP API listening on port ${port}, ${
-          jwtSecret && credentialsRequired ? 'requiring ' : 'checking for '
+          secret && credentialsRequired ? 'requiring ' : 'checking for '
         } a JWT Bearer token${
           authCookieName ? ` or a cookie named ${authCookieName}` : ''
         }`,

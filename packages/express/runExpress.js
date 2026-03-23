@@ -32,13 +32,15 @@ export const runExpress =
     port,
     interfaceIp,
     installHandlers,
-    jwtSecret,
+    jwtAuth,
+    jwtSecret, // deprecated alias for jwtAuth
     jwtAlgorithms = ['HS256'],
     authCookieName,
     credentialsRequired,
     customizeExpress = () => {},
   }) =>
   (context) => {
+    const secret = jwtAuth || jwtSecret;
     return new Promise((resolve, reject) => {
       const app = expressApp();
       app.use(cors());
@@ -52,12 +54,12 @@ export const runExpress =
       );
       app.use(cookieParser());
 
-      if (jwtSecret) {
+      if (secret) {
         app.use(
           expressjwt({
-            secret: jwtSecret,
+            secret,
             algorithms: jwtAlgorithms,
-            credentialsRequired: credentialsRequired || false,
+            credentialsRequired: credentialsRequired !== false,
             getToken: (req) => {
               const tokenLog = getLogger('Tokens/GetT', req.body.correlationId);
               if (
@@ -112,7 +114,7 @@ export const runExpress =
         const addr = server.address();
         log.info(
           `Server listening on ${addr.address}:${addr.port}, ${
-            jwtSecret ? 'with JWT' : 'without JWT'
+            secret ? 'with JWT' : 'without JWT'
           }`,
         );
         resolve(server);
