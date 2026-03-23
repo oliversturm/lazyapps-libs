@@ -12,8 +12,6 @@ export const startCommandProcessor = (correlationConfig, config) => {
     correlationConfig,
     config,
     (...args) => handleCommand(...args, commandRecorder),
-    config.commandRecording
-      ? handleAdminCommand(config.commandRecording.skipAuthCheck)
-      : null,
+    handleAdminCommand(config.isAdmin),
   ).then((context) => config.receiver(context));
 };

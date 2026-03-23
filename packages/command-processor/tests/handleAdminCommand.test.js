@@ -1,7 +1,6 @@
 import { describe, test, expect, vi } from 'vitest';
 import { handleAdminCommand } from '../handleAdminCommand.js';
-
-import { getLogger } from '@lazyapps/logger';
+import { AuthorizationError } from '../validation.js';
 
 vi.mock('@lazyapps/logger', () => {
   const getLogger = vi.fn().mockReturnValue({
@@ -11,59 +10,59 @@ vi.mock('@lazyapps/logger', () => {
   return { getLogger };
 });
 
+const isAdmin = (auth) => auth && auth.roles && auth.roles.includes('admin');
+
 describe('handleAdminCommand', () => {
-  test('rejects unauthorized when skipAuthCheck is false', () => {
-    const handler = handleAdminCommand(false);
+  test('rejects with AuthorizationError when no isAdmin callback configured', () => {
+    const handler = handleAdminCommand(undefined);
     return handler({}, 'setReplayState', { state: true }, null, 'corr-1')
       .then(() => {
         throw new Error('should have rejected');
       })
       .catch((err) => {
-        expect(err.message).toMatch(/Unauthorized/);
+        expect(err).toBeInstanceOf(AuthorizationError);
+        expect(err.message).toMatch(/not configured/);
       });
   });
 
-  test('rejects non-admin auth when skipAuthCheck is false', () => {
-    const handler = handleAdminCommand(false);
+  test('rejects with AuthorizationError when isAdmin returns false', () => {
+    const handler = handleAdminCommand(isAdmin);
     return handler(
       {},
       'setReplayState',
       { state: true },
-      { admin: false },
+      { roles: ['user'] },
       'corr-1',
     )
       .then(() => {
         throw new Error('should have rejected');
       })
       .catch((err) => {
-        expect(err.message).toMatch(/Unauthorized/);
+        expect(err).toBeInstanceOf(AuthorizationError);
+        expect(err.message).toMatch(/Admin role required/);
       });
   });
 
-  test('allows admin auth', () => {
-    const publishReplayState = vi.fn().mockReturnValue(vi.fn());
-    const context = { eventBus: { publishReplayState } };
-    const handler = handleAdminCommand(false);
-    return handler(
-      context,
-      'setReplayState',
-      { state: true },
-      { admin: true },
-      'corr-1',
-    ).then(() => {
-      expect(publishReplayState).toHaveBeenCalledWith('corr-1');
-    });
+  test('rejects with AuthorizationError when auth is null', () => {
+    const handler = handleAdminCommand(isAdmin);
+    return handler({}, 'setReplayState', { state: true }, null, 'corr-1')
+      .then(() => {
+        throw new Error('should have rejected');
+      })
+      .catch((err) => {
+        expect(err).toBeInstanceOf(AuthorizationError);
+      });
   });
 
-  test('skips auth check when skipAuthCheck is true', () => {
+  test('allows when isAdmin returns true', () => {
     const publishReplayState = vi.fn().mockReturnValue(vi.fn());
     const context = { eventBus: { publishReplayState } };
-    const handler = handleAdminCommand(true);
+    const handler = handleAdminCommand(isAdmin);
     return handler(
       context,
       'setReplayState',
       { state: true },
-      null,
+      { roles: ['admin'] },
       'corr-1',
     ).then(() => {
       expect(publishReplayState).toHaveBeenCalledWith('corr-1');
@@ -71,8 +70,8 @@ describe('handleAdminCommand', () => {
   });
 
   test('rejects invalid admin command', () => {
-    const handler = handleAdminCommand(true);
-    return handler({}, 'invalidCommand', {}, null, 'corr-1')
+    const handler = handleAdminCommand(isAdmin);
+    return handler({}, 'invalidCommand', {}, { roles: ['admin'] }, 'corr-1')
       .then(() => {
         throw new Error('should have rejected');
       })
@@ -82,12 +81,12 @@ describe('handleAdminCommand', () => {
   });
 
   test('rejects invalid replay state params', () => {
-    const handler = handleAdminCommand(true);
+    const handler = handleAdminCommand(isAdmin);
     return handler(
       {},
       'setReplayState',
       { state: 'notboolean' },
-      null,
+      { roles: ['admin'] },
       'corr-1',
     )
       .then(() => {
@@ -98,18 +97,15 @@ describe('handleAdminCommand', () => {
       });
   });
 
-  test('throws when no params provided', () => {
-    const handler = handleAdminCommand(true);
-    // Source accesses params.state in error message before rejecting,
-    // so null params causes a TypeError
-    expect(() => handler({}, 'setReplayState', null, null, 'corr-1')).toThrow(
-      TypeError,
-    );
-  });
-
   test('rejects when eventBus is missing', () => {
-    const handler = handleAdminCommand(true);
-    return handler({}, 'setReplayState', { state: true }, null, 'corr-1')
+    const handler = handleAdminCommand(isAdmin);
+    return handler(
+      {},
+      'setReplayState',
+      { state: true },
+      { roles: ['admin'] },
+      'corr-1',
+    )
       .then(() => {
         throw new Error('should have rejected');
       })

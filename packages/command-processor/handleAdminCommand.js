@@ -1,13 +1,18 @@
 import { getLogger } from '@lazyapps/logger';
+import { AuthorizationError } from './validation.js';
 
 export const handleAdminCommand =
-  (skipAuthCheck = false) =>
-  (context, command, params, auth, correlationId) => {
+  (isAdmin) => (context, command, params, auth, correlationId) => {
     const log = getLogger('CP/AdHandler', correlationId);
-    // Not very flexible this check, but we'll live with it for now
-    if (!skipAuthCheck && (!auth || !auth.admin)) {
-      log.error(`Unauthorized ${auth}`);
-      return Promise.reject(new Error(`Unauthorized ${auth}`));
+    if (!isAdmin) {
+      log.error('Admin command rejected: no isAdmin callback configured');
+      return Promise.reject(
+        new AuthorizationError('Admin access is not configured'),
+      );
+    }
+    if (!isAdmin(auth)) {
+      log.error('Admin command rejected: unauthorized');
+      return Promise.reject(new AuthorizationError('Admin role required'));
     }
 
     if (command !== 'setReplayState') {
