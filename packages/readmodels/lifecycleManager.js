@@ -66,7 +66,8 @@ export const createLifecycleManager = (context) => {
     }
     context.projectionHandler.setReadModelReplayState(readModelName, true);
     // Reset in-memory timestamp — replay always starts from scratch.
-    // If events are replayed, projectEventForReadModel updates this.
+    // If events are replayed, projectEventForReadModel updates this
+    // per-event (including MongoDB persistence).
     // If no events are replayed, it stays at 0 (correct).
     if (context.readModels[readModelName]) {
       context.readModels[readModelName].lastProjectedEventTimestamp = 0;
@@ -81,33 +82,11 @@ export const createLifecycleManager = (context) => {
     const current = getState(readModelName);
     if (current !== 'replay') {
       log.warn(`replayDone for '${readModelName}' but state is '${current}'`);
-      return Promise.resolve();
+      return;
     }
     context.projectionHandler.clearReadModelReplayState(readModelName);
-
-    // Persist the in-memory lastProjectedEventTimestamp to MongoDB and
-    // statusTracker. During replay, only in-memory was updated per-event
-    // to avoid wasteful per-event MongoDB writes.
-    const rm = context.readModels[readModelName];
-    const timestamp = rm ? rm.lastProjectedEventTimestamp || 0 : 0;
-    log.info(`Persisting replay timestamp ${timestamp} for '${readModelName}'`);
-
-    return context.storage
-      .updateLastProjectedEventTimestamps(
-        correlationId || 'SYS',
-        [readModelName],
-        timestamp,
-      )
-      .then(() => {
-        if (context.statusTracker) {
-          context.statusTracker.updateLastProjectedEventTimestamp(
-            readModelName,
-            timestamp,
-          );
-        }
-        setState(readModelName, 'stopped', correlationId);
-        log.info(`Read model '${readModelName}' replay done, now stopped`);
-      });
+    setState(readModelName, 'stopped', correlationId);
+    log.info(`Read model '${readModelName}' replay done, now stopped`);
   };
 
   const activate = (readModelName, correlationId) => {

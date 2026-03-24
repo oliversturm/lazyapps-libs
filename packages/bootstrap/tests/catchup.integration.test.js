@@ -143,9 +143,7 @@ const createInlineAdminInstructionHandler = (context) => {
         break;
       case 'replayDone':
         if (instruction.targetReadModel) {
-          lm.replayDone(instruction.targetReadModel, correlationId).catch(
-            () => {},
-          );
+          lm.replayDone(instruction.targetReadModel, correlationId);
         }
         break;
       case 'reset':

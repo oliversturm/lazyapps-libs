@@ -192,11 +192,7 @@ const createAdminInstructionHandler =
           log.warn('replayDone instruction missing targetReadModel');
           return;
         }
-        lm.replayDone(targetReadModel, correlationId).catch((err) => {
-          log.error(
-            `Failed to complete replay for '${targetReadModel}': ${err.message}`,
-          );
-        });
+        lm.replayDone(targetReadModel, correlationId);
         break;
 
       case 'catchupDone': {

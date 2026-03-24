@@ -311,24 +311,18 @@ describe('lifecycleManager', () => {
   });
 
   describe('replayDone', () => {
-    test('transitions replay -> stopped and persists timestamp', () => {
+    test('transitions replay -> stopped and clears replay state', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'replay');
 
-      return lm.replayDone('customers', 'corr-1').then(() => {
-        expect(lm.getState('customers')).toBe('stopped');
-        expect(
-          context.projectionHandler.clearReadModelReplayState,
-        ).toHaveBeenCalledWith('customers');
-        expect(
-          context.storage.updateLastProjectedEventTimestamps,
-        ).toHaveBeenCalledWith('corr-1', ['customers'], 500);
-        expect(
-          context.statusTracker.updateLastProjectedEventTimestamp,
-        ).toHaveBeenCalledWith('customers', 500);
-      });
+      lm.replayDone('customers', 'corr-1');
+
+      expect(lm.getState('customers')).toBe('stopped');
+      expect(
+        context.projectionHandler.clearReadModelReplayState,
+      ).toHaveBeenCalledWith('customers');
     });
 
     test('warns when not in replay state', () => {
@@ -336,13 +330,10 @@ describe('lifecycleManager', () => {
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
 
-      return lm.replayDone('customers', 'corr-1').then(() => {
-        // Should not crash, state unchanged
-        expect(lm.getState('customers')).toBe('stopped');
-        expect(
-          context.storage.updateLastProjectedEventTimestamps,
-        ).not.toHaveBeenCalled();
-      });
+      lm.replayDone('customers', 'corr-1');
+
+      // Should not crash, state unchanged
+      expect(lm.getState('customers')).toBe('stopped');
     });
   });
 

@@ -248,11 +248,14 @@ export const createProjectionHandler = (context) => {
           event,
         )
           .then(() => {
-            // Track the max replayed timestamp in memory so that
-            // replayDone can persist it once at the end. Per-event
-            // MongoDB writes would be wasteful during large replays.
             context.readModels[targetRmName].lastProjectedEventTimestamp =
               event.timestamp;
+            return updateTimestamp(
+              correlationId,
+              context.storage,
+              targetRmName,
+              event.timestamp,
+            );
           })
           .then(() => {
             if (context.statusTracker) {

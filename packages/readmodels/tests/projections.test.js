@@ -531,7 +531,7 @@ describe('createProjectionHandler', () => {
         });
     });
 
-    test('updates in-memory timestamp during replay but does not persist to storage', () => {
+    test('updates in-memory timestamp and persists to storage during replay', () => {
       const context = makeContext();
       const handler = createProjectionHandler(context);
       const event = { type: 'ITEM_CREATED', timestamp: 12345 };
@@ -546,10 +546,10 @@ describe('createProjectionHandler', () => {
           expect(context.readModels.items.lastProjectedEventTimestamp).toBe(
             12345,
           );
-          // MongoDB persistence is deferred to replayDone (not per-event)
+          // MongoDB persistence happens per-event during replay
           expect(
             context.storage.updateLastProjectedEventTimestamps,
-          ).not.toHaveBeenCalled();
+          ).toHaveBeenCalledWith('corr-1', ['items'], 12345);
         });
     });
 
@@ -732,7 +732,7 @@ describe('createProjectionHandler', () => {
         });
     });
 
-    test('replay projection does NOT update statusTracker.lastProjectedEventTimestamp', () => {
+    test('replay projection updates storage timestamp but not statusTracker', () => {
       const context = makeContext();
       context.statusTracker = {
         updateLastProjectedEventTimestamp: vi.fn(),
@@ -748,6 +748,9 @@ describe('createProjectionHandler', () => {
           'items',
         )(event)
         .then(() => {
+          expect(
+            context.storage.updateLastProjectedEventTimestamps,
+          ).toHaveBeenCalledWith('corr-1', ['items'], 1000);
           expect(
             context.statusTracker.updateLastProjectedEventTimestamp,
           ).not.toHaveBeenCalled();
