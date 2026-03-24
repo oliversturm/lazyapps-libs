@@ -4,6 +4,7 @@
 
   let { data } = $props();
 
+  const api = getContext('api');
   const statusStore = getContext('statusStore');
 
   let readModel = $derived(
@@ -13,6 +14,28 @@
         rm.endpointName === data.ep,
     ) || null,
   );
+
+  let actionPending = $state(false);
+
+  const handleStop = () => {
+    actionPending = true;
+    api
+      .stop(data.ep, data.rm)
+      .catch(() => {})
+      .then(() => {
+        actionPending = false;
+      });
+  };
+
+  const handleActivate = () => {
+    actionPending = true;
+    api
+      .activate(data.ep, data.rm)
+      .catch(() => {})
+      .then(() => {
+        actionPending = false;
+      });
+  };
 
   const formatTimestamp = (ts) => {
     if (!ts) return 'N/A';
@@ -75,6 +98,23 @@
   </div>
 
   <div class="flex space-x-4">
+    {#if readModel.state === 'live'}
+      <button
+        onclick={handleStop}
+        disabled={actionPending}
+        class="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 disabled:opacity-50"
+      >
+        {actionPending ? 'Stopping...' : 'Stop'}
+      </button>
+    {:else if readModel.state === 'stopped'}
+      <button
+        onclick={handleActivate}
+        disabled={actionPending}
+        class="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
+      >
+        {actionPending ? 'Activating...' : 'Activate'}
+      </button>
+    {/if}
     <a
       href="/readmodel/{readModel.endpointName}/{readModel.name}/backup"
       class="px-4 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"

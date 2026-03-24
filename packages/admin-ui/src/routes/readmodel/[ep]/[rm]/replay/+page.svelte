@@ -47,7 +47,7 @@
   let step = $derived(storeStep || uiStep);
 
   // Configuration
-  let replayMode = $state('current'); // current | fromScratch | fromBackup
+  let replayMode = $state('fromScratch'); // fromScratch | fromBackup
   let selectedBackupId = $state(null);
   let fromTimestamp = $state(0);
   let toTimestamp = $state(null);
@@ -104,7 +104,7 @@
     uiStep = 'configure';
     error = null;
     selectedBackupId = null;
-    replayMode = 'current';
+    replayMode = 'fromScratch';
     fromTimestamp = 0;
     toTimestamp = null;
   };
@@ -150,17 +150,6 @@
     <div>
       <p class="text-sm font-medium text-gray-700 mb-3">Starting point</p>
       <div class="space-y-2">
-        <label class="flex items-center space-x-2">
-          <input
-            type="radio"
-            bind:group={replayMode}
-            value="current"
-            class="text-blue-600"
-          />
-          <span class="text-sm text-gray-700"
-            >From current state (replay missed events only)</span
-          >
-        </label>
         <label class="flex items-center space-x-2">
           <input
             type="radio"
