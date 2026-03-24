@@ -1,12 +1,13 @@
 import { getLogger } from '@lazyapps/logger';
 
-const VALID_STATES = ['stopped', 'live', 'replay', 'catchup'];
+const VALID_STATES = ['stopped', 'live', 'replay', 'catchup', 'invalid'];
 
 const VALID_TRANSITIONS = {
   stopped: ['replay', 'catchup'],
   live: ['stopped'],
   replay: ['stopped'],
   catchup: ['live', 'stopped'],
+  invalid: [],
 };
 
 export const createLifecycleManager = (context) => {
@@ -21,6 +22,23 @@ export const createLifecycleManager = (context) => {
     log.info(
       `Initialized lifecycle for read models: ${readModelNames.join(', ')}`,
     );
+    if (context.storage && context.storage.perRequest) {
+      return context.storage
+        .perRequest('SYS')
+        .find('readmodel.state', {})
+        .toArray()
+        .then((docs) => {
+          docs.forEach((doc) => {
+            if (doc.replayInProgress && states[doc.name] !== undefined) {
+              log.warn(
+                `Read model '${doc.name}' has replayInProgress flag — setting to invalid`,
+              );
+              setState(doc.name, 'invalid', 'SYS');
+            }
+          });
+        });
+    }
+    return Promise.resolve();
   };
 
   const getState = (name) => states[name] || 'unknown';
@@ -66,15 +84,18 @@ export const createLifecycleManager = (context) => {
     }
     context.projectionHandler.setReadModelReplayState(readModelName, true);
     // Reset in-memory timestamp — replay always starts from scratch.
-    // If events are replayed, projectEventForReadModel updates this
-    // per-event (including MongoDB persistence).
-    // If no events are replayed, it stays at 0 (correct).
     if (context.readModels[readModelName]) {
       context.readModels[readModelName].lastProjectedEventTimestamp = 0;
     }
     setState(readModelName, 'replay', correlationId);
     log.info(`Read model '${readModelName}' is now in replay mode`);
-    return Promise.resolve();
+    return context.storage
+      .perRequest(correlationId)
+      .updateOne(
+        'readmodel.state',
+        { name: readModelName },
+        { $set: { replayInProgress: true } },
+      );
   };
 
   const replayDone = (readModelName, correlationId) => {
@@ -87,6 +108,13 @@ export const createLifecycleManager = (context) => {
     context.projectionHandler.clearReadModelReplayState(readModelName);
     setState(readModelName, 'stopped', correlationId);
     log.info(`Read model '${readModelName}' replay done, now stopped`);
+    context.storage
+      .perRequest(correlationId)
+      .updateOne(
+        'readmodel.state',
+        { name: readModelName },
+        { $unset: { replayInProgress: '' } },
+      );
   };
 
   const activate = (readModelName, correlationId) => {

@@ -12,6 +12,7 @@
     error: 'bg-red-100 text-red-800',
     started: 'bg-blue-100 text-blue-800',
     cancelling: 'bg-orange-100 text-orange-800',
+    invalid: 'bg-red-100 text-red-800',
   };
 
   let colorClass = $derived(colors[status] || 'bg-gray-100 text-gray-800');

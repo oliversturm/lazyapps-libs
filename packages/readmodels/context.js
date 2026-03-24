@@ -6,6 +6,7 @@ import { createReadModelReplayHandler } from './replayHandler.js';
 import { createLifecycleManager } from './lifecycleManager.js';
 import { createCatchupHandler } from './catchupHandler.js';
 import { createStatusTracker } from './statusTracker.js';
+import { readTimestampFromBoth } from './secondaryTimestampStorage.js';
 import { getLogger } from '@lazyapps/logger';
 
 export const initializeContext = (
@@ -19,6 +20,7 @@ export const initializeContext = (
     backup,
     lifecycle,
     endpointName,
+    secondaryTimestampStorage,
   },
 ) => {
   if (!endpointName) {
@@ -35,11 +37,22 @@ export const initializeContext = (
       correlationConfig,
       ...(endpointName && { endpointName }),
     }))
-    .then((context) =>
-      context.storage
-        .readLastProjectedEventTimestamps(readModels)
-        .then(() => context),
-    )
+    .then((context) => {
+      if (secondaryTimestampStorage) {
+        context.secondaryTimestampStorage = secondaryTimestampStorage;
+      }
+      return readTimestampFromBoth(
+        context.storage,
+        secondaryTimestampStorage,
+      )(readModels)
+        .then(() => context)
+        .catch((err) => {
+          const log = getLogger('RM/Context', 'INIT');
+          log.error(`Failed to read timestamps from storage: ${err}`);
+          context.storageUnreadable = true;
+          return context;
+        });
+    })
     .then((context) => ({
       ...context,
       commands: createCommandHandler({ commandSender }),
@@ -110,11 +123,21 @@ export const initializeContext = (
           return subscribePromise;
         };
 
-        lifecycleManager.initialize(Object.keys(readModels));
-
-        // Connect to message bus on startup (subscribes to all topics
-        // except events due to deferEventsSubscription flag)
-        return eventBus(context).then(() => context);
+        return lifecycleManager
+          .initialize(Object.keys(readModels))
+          .then(() => {
+            if (context.storageUnreadable) {
+              const log = getLogger('RM/Context', 'INIT');
+              Object.keys(readModels).forEach((name) => {
+                log.warn(
+                  `Setting '${name}' to invalid — primary storage was unreadable`,
+                );
+                lifecycleManager.setState(name, 'invalid', 'INIT');
+              });
+            }
+          })
+          .then(() => eventBus(context))
+          .then(() => context);
       }
       return eventBus(context).then(() => context);
     });

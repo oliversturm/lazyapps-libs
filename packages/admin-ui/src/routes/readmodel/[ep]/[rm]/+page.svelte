@@ -97,35 +97,54 @@
     {/if}
   </div>
 
-  <div class="flex space-x-4">
-    {#if readModel.state === 'live'}
-      <button
-        onclick={handleStop}
-        disabled={actionPending}
-        class="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 disabled:opacity-50"
+  {#if readModel.state === 'invalid'}
+    <div class="mb-6 p-4 bg-red-50 border border-red-300 rounded-lg">
+      <h3 class="text-sm font-semibold text-red-800 mb-1">Invalid State</h3>
+      <p class="text-sm text-red-700">
+        This read model is in an invalid state. An interrupted replay or backup
+        restore was detected. Manual database intervention is required to
+        recover. Contact your administrator.
+      </p>
+    </div>
+    <div class="flex space-x-4">
+      <a
+        href="/readmodel/{readModel.endpointName}/{readModel.name}/backup"
+        class="px-4 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
       >
-        {actionPending ? 'Stopping...' : 'Stop'}
-      </button>
-    {:else if readModel.state === 'stopped'}
-      <button
-        onclick={handleActivate}
-        disabled={actionPending}
-        class="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
+        Manage Backups
+      </a>
+    </div>
+  {:else}
+    <div class="flex space-x-4">
+      {#if readModel.state === 'live'}
+        <button
+          onclick={handleStop}
+          disabled={actionPending}
+          class="px-4 py-2 bg-amber-600 text-white rounded text-sm hover:bg-amber-700 disabled:opacity-50"
+        >
+          {actionPending ? 'Stopping...' : 'Stop'}
+        </button>
+      {:else if readModel.state === 'stopped'}
+        <button
+          onclick={handleActivate}
+          disabled={actionPending}
+          class="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
+        >
+          {actionPending ? 'Activating...' : 'Activate'}
+        </button>
+      {/if}
+      <a
+        href="/readmodel/{readModel.endpointName}/{readModel.name}/backup"
+        class="px-4 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
       >
-        {actionPending ? 'Activating...' : 'Activate'}
-      </button>
-    {/if}
-    <a
-      href="/readmodel/{readModel.endpointName}/{readModel.name}/backup"
-      class="px-4 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
-    >
-      Manage Backups
-    </a>
-    <a
-      href="/readmodel/{readModel.endpointName}/{readModel.name}/replay"
-      class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-    >
-      Start Replay
-    </a>
-  </div>
+        Manage Backups
+      </a>
+      <a
+        href="/readmodel/{readModel.endpointName}/{readModel.name}/replay"
+        class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+      >
+        Start Replay
+      </a>
+    </div>
+  {/if}
 {/if}

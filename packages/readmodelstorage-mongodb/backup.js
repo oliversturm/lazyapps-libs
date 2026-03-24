@@ -144,41 +144,63 @@ export const backup =
           .then((docs) => {
             const eventTimestamp = docs[0]?.lastProjectedEventTimestamp || 0;
 
-            const dumpPromise =
-              format === 'json'
-                ? dumpJson(
-                    mongoexportCommand,
-                    url,
-                    database,
-                    collectionNames,
-                    toolBackupDir,
-                  )
-                : dumpBson(
-                    mongodumpCommand,
-                    url,
-                    database,
-                    collectionNames,
-                    toolBackupDir,
-                  );
+            // R5: Set replayInProgress before dump so flag is in live DB
+            // during backup+replay. If system crashes mid-operation,
+            // startup detects flag and enters invalid state.
+            return storage
+              .perRequest(correlationId)
+              .updateOne(
+                'readmodel.state',
+                { name: readModelName },
+                { $set: { replayInProgress: true } },
+              )
+              .then(() => {
+                const dumpPromise =
+                  format === 'json'
+                    ? dumpJson(
+                        mongoexportCommand,
+                        url,
+                        database,
+                        collectionNames,
+                        toolBackupDir,
+                      )
+                    : dumpBson(
+                        mongodumpCommand,
+                        url,
+                        database,
+                        collectionNames,
+                        toolBackupDir,
+                      );
 
-            return dumpPromise.then(() => {
-              const metadata = {
-                backupId,
-                readModelName,
-                timestamp,
-                eventTimestamp,
-                collections: collectionNames,
-                format,
-                database,
-              };
-              return writeFile(
-                join(backupDir, 'metadata.json'),
-                JSON.stringify(metadata, null, 2),
-              ).then(() => {
-                log.debug(`Backup ${backupId} created at ${backupDir}`);
-                return { backupId, timestamp, eventTimestamp };
+                return dumpPromise;
+              })
+              .then(() =>
+                storage
+                  .perRequest(correlationId)
+                  .updateOne(
+                    'readmodel.state',
+                    { name: readModelName },
+                    { $unset: { replayInProgress: '' } },
+                  ),
+              )
+              .then(() => {
+                const metadata = {
+                  backupId,
+                  readModelName,
+                  timestamp,
+                  eventTimestamp,
+                  collections: collectionNames,
+                  format,
+                  database,
+                };
+                return writeFile(
+                  join(backupDir, 'metadata.json'),
+                  JSON.stringify(metadata, null, 2),
+                ).then(() => {
+                  log.debug(`Backup ${backupId} created at ${backupDir}`);
+                  return { backupId, timestamp, eventTimestamp };
+                });
               });
-            });
           });
       },
 
@@ -271,19 +293,11 @@ export const backup =
         const log = getLogger('RM/Backup', correlationId);
         log.debug(`Clearing collections for ${readModelName}`);
 
-        return collectionNames
-          .reduce(
-            (chain, colName) =>
-              chain.then(() => storage.dropCollection(correlationId, colName)),
-            Promise.resolve(),
-          )
-          .then(() =>
-            storage.updateLastProjectedEventTimestamps(
-              correlationId,
-              [readModelName],
-              0,
-            ),
-          );
+        return collectionNames.reduce(
+          (chain, colName) =>
+            chain.then(() => storage.dropCollection(correlationId, colName)),
+          Promise.resolve(),
+        );
       },
 
       cleanupBackups: (readModelName, retentionPolicy) => {

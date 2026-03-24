@@ -158,7 +158,16 @@
   </div>
 {/if}
 
-{#if step === 'configure'}
+{#if readModel?.state === 'invalid'}
+  <div class="bg-red-50 border border-red-300 rounded-lg p-6">
+    <h2 class="text-lg font-semibold text-red-800 mb-2">Invalid State</h2>
+    <p class="text-sm text-red-700">
+      This read model is in an invalid state. An interrupted replay or backup
+      restore was detected. Replay controls are disabled. Manual database
+      intervention is required to recover. Contact your administrator.
+    </p>
+  </div>
+{:else if step === 'configure'}
   <div class="bg-white rounded-lg shadow p-6 space-y-6">
     <h2 class="text-lg font-semibold text-gray-900">Configure Replay</h2>
 

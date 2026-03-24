@@ -531,10 +531,13 @@ describe('createProjectionHandler', () => {
         });
     });
 
-    test('updates in-memory timestamp and persists to storage during replay', () => {
+    test('does not update in-memory timestamp or persist to storage during replay', () => {
       const context = makeContext();
       const handler = createProjectionHandler(context);
       const event = { type: 'ITEM_CREATED', timestamp: 12345 };
+
+      // Set a known initial timestamp
+      context.readModels.items.lastProjectedEventTimestamp = 9999;
 
       return handler
         .projectEventForReadModel(
@@ -542,14 +545,46 @@ describe('createProjectionHandler', () => {
           'items',
         )(event)
         .then(() => {
-          // In-memory timestamp is updated per-event during replay
+          // In-memory timestamp must NOT be updated during replay
           expect(context.readModels.items.lastProjectedEventTimestamp).toBe(
-            12345,
+            9999,
           );
-          // MongoDB persistence happens per-event during replay
+          // Storage persistence must NOT happen per-event during replay
           expect(
             context.storage.updateLastProjectedEventTimestamps,
-          ).toHaveBeenCalledWith('corr-1', ['items'], 12345);
+          ).not.toHaveBeenCalled();
+        });
+    });
+
+    test('replay projection should NOT advance timestamp per-event', () => {
+      const context = makeContext();
+      const handler = createProjectionHandler(context);
+
+      // Set initial timestamp to simulate pre-replay state
+      context.readModels.items.lastProjectedEventTimestamp = 5000;
+
+      const event1 = { type: 'ITEM_CREATED', timestamp: 100 };
+      const event2 = { type: 'ITEM_CREATED', timestamp: 200 };
+
+      return handler
+        .projectEventForReadModel(
+          'corr-1',
+          'items',
+        )(event1)
+        .then(() => handler.projectEventForReadModel('corr-1', 'items')(event2))
+        .then(() => {
+          // BUG: per-event timestamp advance during replay is unsafe.
+          // The in-memory timestamp should NOT be mutated during replay
+          // because if replay is cancelled, we'd have an incorrect
+          // timestamp that doesn't match the actual projected state.
+          expect(context.readModels.items.lastProjectedEventTimestamp).toBe(
+            5000,
+          );
+          // Storage should NOT be called per-event during replay either.
+          // The timestamp should only be updated once at replay completion.
+          expect(
+            context.storage.updateLastProjectedEventTimestamps,
+          ).not.toHaveBeenCalled();
         });
     });
 
@@ -732,7 +767,7 @@ describe('createProjectionHandler', () => {
         });
     });
 
-    test('replay projection updates storage timestamp but not statusTracker', () => {
+    test('replay projection does not update storage timestamp or statusTracker', () => {
       const context = makeContext();
       context.statusTracker = {
         updateLastProjectedEventTimestamp: vi.fn(),
@@ -750,10 +785,89 @@ describe('createProjectionHandler', () => {
         .then(() => {
           expect(
             context.storage.updateLastProjectedEventTimestamps,
-          ).toHaveBeenCalledWith('corr-1', ['items'], 1000);
+          ).not.toHaveBeenCalled();
           expect(
             context.statusTracker.updateLastProjectedEventTimestamp,
           ).not.toHaveBeenCalled();
+        });
+    });
+
+    test('live projection writes timestamp to secondary storage', () => {
+      const context = makeContext();
+      context.secondaryTimestampStorage = {
+        writeTimestamp: vi.fn().mockResolvedValue(),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 3000 };
+
+      return handler
+        .projectEvent('corr-1')(event, false)
+        .then(() => {
+          expect(
+            context.secondaryTimestampStorage.writeTimestamp,
+          ).toHaveBeenCalledWith('items', 3000);
+        });
+    });
+
+    test('catch-up projection writes timestamp to secondary storage', () => {
+      const context = makeContext();
+      context.secondaryTimestampStorage = {
+        writeTimestamp: vi.fn().mockResolvedValue(),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 3500 };
+
+      return handler
+        .projectCatchupEventForReadModel(
+          'corr-1',
+          'items',
+        )(event)
+        .then(() => {
+          expect(
+            context.secondaryTimestampStorage.writeTimestamp,
+          ).toHaveBeenCalledWith('items', 3500);
+        });
+    });
+
+    test('replay projection does NOT write to secondary storage', () => {
+      const context = makeContext();
+      context.secondaryTimestampStorage = {
+        writeTimestamp: vi.fn().mockResolvedValue(),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 3000 };
+
+      return handler
+        .projectEventForReadModel(
+          'corr-1',
+          'items',
+        )(event)
+        .then(() => {
+          expect(
+            context.secondaryTimestampStorage.writeTimestamp,
+          ).not.toHaveBeenCalled();
+        });
+    });
+
+    test('secondary storage write failure does not break primary projection', () => {
+      const context = makeContext();
+      context.secondaryTimestampStorage = {
+        writeTimestamp: vi.fn().mockRejectedValue(new Error('disk full')),
+      };
+      const handler = createProjectionHandler(context);
+      const event = { type: 'ITEM_CREATED', timestamp: 4000 };
+
+      return handler
+        .projectEvent('corr-1')(event, false)
+        .then(() => {
+          // Primary storage should still have been called
+          expect(
+            context.storage.updateLastProjectedEventTimestamps,
+          ).toHaveBeenCalledWith('corr-1', ['items'], 4000);
+          // Secondary was called but failed — no throw
+          expect(
+            context.secondaryTimestampStorage.writeTimestamp,
+          ).toHaveBeenCalledWith('items', 4000);
         });
     });
 

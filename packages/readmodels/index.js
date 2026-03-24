@@ -77,8 +77,66 @@ const handleRestoreBackup = (context, correlationId, instruction) => {
     context.statusTracker.immediatePush(targetReadModel);
   }
 
-  context.backup
-    .restoreBackup(correlationId, targetReadModel, backupId)
+  // R14: Read secondary timestamp before restore (backup restore
+  // overwrites primary storage, so we need the secondary value as
+  // a safety net).
+  const readSecondaryTs = context.secondaryTimestampStorage
+    ? context.secondaryTimestampStorage.readTimestamp(targetReadModel)
+    : Promise.resolve(0);
+
+  readSecondaryTs
+    .then((secondaryTs) => {
+      // R5: Set replayInProgress BEFORE restore.
+      return context.storage
+        .perRequest(correlationId)
+        .updateOne(
+          'readmodel.state',
+          { name: targetReadModel },
+          { $set: { replayInProgress: true } },
+        )
+        .then(() =>
+          context.backup.restoreBackup(
+            correlationId,
+            targetReadModel,
+            backupId,
+          ),
+        )
+        .then(() => {
+          // R14: After restore, compare secondary with restored primary.
+          // Write back the larger to both storages.
+          const primaryTs =
+            context.readModels[targetReadModel]?.lastProjectedEventTimestamp ||
+            0;
+          const bestTs = Math.max(primaryTs, secondaryTs);
+          if (bestTs > primaryTs) {
+            log.info(
+              `Secondary timestamp (${secondaryTs}) > restored primary ` +
+                `(${primaryTs}) — writing back ${bestTs}`,
+            );
+            return context.storage
+              .updateLastProjectedEventTimestamps(
+                correlationId,
+                [targetReadModel],
+                bestTs,
+              )
+              .then(() => {
+                context.readModels[
+                  targetReadModel
+                ].lastProjectedEventTimestamp = bestTs;
+              });
+          }
+          return bestTs;
+        })
+        .then((bestTs) => {
+          // Ensure secondary has the best value
+          if (context.secondaryTimestampStorage && bestTs > secondaryTs) {
+            return context.secondaryTimestampStorage.writeTimestamp(
+              targetReadModel,
+              bestTs,
+            );
+          }
+        });
+    })
     .then(() => {
       log.info(`Restored backup ${backupId} for ${targetReadModel}`);
       if (context.statusTracker) {
@@ -282,6 +340,7 @@ export const startReadModels = (correlationConfig, config) =>
     backup: config.backup,
     lifecycle: config.lifecycle,
     endpointName: config.endpointName,
+    secondaryTimestampStorage: config.secondaryTimestampStorage,
   }).then((context) => {
     context.adminInstructionHandler = createAdminInstructionHandler(context);
     if (config.token) {

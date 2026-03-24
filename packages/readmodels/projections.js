@@ -67,6 +67,18 @@ const updateTimestamp = (correlationId, storage, rmName, timestamp) =>
     timestamp,
   );
 
+const updateSecondaryTimestamp = (context, rmName, timestamp) =>
+  context.secondaryTimestampStorage
+    ? context.secondaryTimestampStorage
+        .writeTimestamp(rmName, timestamp)
+        .catch((err) => {
+          const log = getLogger('RM/Timestamp', 'SYS');
+          log.error(
+            `Failed to write secondary timestamp for ${rmName}: ${err}`,
+          );
+        })
+    : Promise.resolve();
+
 const handleProjections =
   (correlationId, log, context, getProjectionContext, inReplay, event) =>
   (rmProjections) =>
@@ -81,6 +93,11 @@ const handleProjections =
               event.timestamp,
             ),
           )
+          .then(() => {
+            if (!inReplay) {
+              return updateSecondaryTimestamp(context, rmName, event.timestamp);
+            }
+          })
           .then(() => {
             if (!inReplay && context.statusTracker) {
               context.statusTracker.updateLastProjectedEventTimestamp(
@@ -248,16 +265,6 @@ export const createProjectionHandler = (context) => {
           event,
         )
           .then(() => {
-            context.readModels[targetRmName].lastProjectedEventTimestamp =
-              event.timestamp;
-            return updateTimestamp(
-              correlationId,
-              context.storage,
-              targetRmName,
-              event.timestamp,
-            );
-          })
-          .then(() => {
             if (context.statusTracker) {
               context.statusTracker.updateProgress(
                 targetRmName,
@@ -316,6 +323,8 @@ export const createProjectionHandler = (context) => {
               context.storage,
               targetRmName,
               event.timestamp,
+            ).then(() =>
+              updateSecondaryTimestamp(context, targetRmName, event.timestamp),
             );
           })
           .catch((err) => {

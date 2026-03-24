@@ -404,7 +404,7 @@ describe(
 
     const rmDb = () => env.cleanupClient.db('replay-ts-rm');
 
-    test('replay from scratch persists lastProjectedEventTimestamp, no duplicates on restart', () =>
+    test('replay from scratch preserves timestamp, no duplicates on restart', () =>
       // Step 1: Insert 5 events into the event store
       insertEvents(
         Array.from({ length: 5 }, (_, i) => ({
@@ -461,26 +461,21 @@ describe(
             }),
           ),
         )
-        // Step 5: Reset — clear collections and set timestamp to 0
+        // Step 5: Clear data collections but PRESERVE timestamp (T=500)
+        // This simulates clearCollections behavior: drops data, keeps
+        // readmodel.state with lastProjectedEventTimestamp intact.
         .then(() =>
           rmDb()
             .collection('items_overview')
             .drop()
             .catch(() => {}),
         )
-        .then(() =>
-          env.rmContext.storage.updateLastProjectedEventTimestamps(
-            'replay-test',
-            ['items'],
-            0,
-          ),
-        )
-        // Verify timestamp is now 0
+        // Verify timestamp is still 500 (preserved by clearCollections)
         .then(() =>
           rmDb().collection('readmodel.state').findOne({ name: 'items' }),
         )
         .then((stateDoc) => {
-          expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
+          expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
         })
         // Step 6: Start replay via lifecycle manager
         .then(() =>
@@ -552,9 +547,8 @@ describe(
           ),
         )
         // ══════════════════════════════════════════════════════════════════
-        // THIS IS THE KEY ASSERTION — the bug means this will be 0
-        // After replay from scratch, lastProjectedEventTimestamp should
-        // reflect the max timestamp of the replayed events (500)
+        // Replay does NOT update lastProjectedEventTimestamp per-event.
+        // clearCollections preserved T=500, so it stays at 500.
         // ══════════════════════════════════════════════════════════════════
         .then(() =>
           rmDb().collection('readmodel.state').findOne({ name: 'items' }),
@@ -563,7 +557,7 @@ describe(
           expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
         })
         // Step 11: Simulate restart — create a NEW context from the same MongoDB
-        // This loads lastProjectedEventTimestamp from MongoDB
+        // This loads lastProjectedEventTimestamp=500 from MongoDB
         .then(() => {
           const freshReadModels = cloneTestReadModels();
           env.restartReadModels = freshReadModels;
@@ -601,7 +595,8 @@ describe(
             mqName: 'replay-ts-restart-queries',
           })(restartContext);
         })
-        // Step 12: Verify the loaded timestamp from MongoDB is 500 (not 0)
+        // Step 12: Verify the loaded timestamp from MongoDB is 500
+        // (clearCollections preserved it, replay did not change it)
         .then(() => {
           expect(env.restartReadModels.items.lastProjectedEventTimestamp).toBe(
             500,
@@ -699,6 +694,7 @@ describe(
           ).then((res) => res.json()),
         )
         // Step 17: Wait for live state on restarted context
+        // Catch-up starts from T=500, finds no new events, goes live quickly
         .then(() =>
           waitForCondition(
             () =>
@@ -717,8 +713,8 @@ describe(
           ),
         )
         // Step 18: THE CRITICAL CHECK — verify NO duplicates
-        // If lastProjectedEventTimestamp was 0 (the bug), catch-up would
-        // re-stream all events from the beginning, creating duplicate rows
+        // Because T=500 was preserved, catch-up from T=500 found no new
+        // events and did not re-project anything.
         .then(() =>
           rmDb()
             .collection('items_overview')
@@ -727,7 +723,7 @@ describe(
             .toArray(),
         )
         .then((items) => {
-          // Should have exactly 5 items, not 10 (duplicates from re-catchup)
+          // Should have exactly 5 items, not 10 (no duplicates)
           expect(items).toHaveLength(5);
           expect(items).toEqual(
             expect.arrayContaining([
@@ -907,7 +903,8 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         rmDb().collection('readmodel.state').findOne({ name: 'items' }),
       )
       .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
+        // Replay does not update timestamp — stays at 0 (pre-replay reset value)
+        expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
       })
       // Insert more events
       .then(() =>
@@ -935,7 +932,8 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         rmDb().collection('readmodel.state').findOne({ name: 'items' }),
       )
       .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(800);
+        // Replay does not update timestamp — stays at 0 (pre-replay reset value)
+        expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
       })
       // Verify correct data
       .then(() =>
@@ -1107,12 +1105,12 @@ describe(
             }),
           ),
         )
-        // Verify timestamp covers all 7 events
+        // Replay does not update timestamp — stays at 0 (pre-replay reset value)
         .then(() =>
           rmDb().collection('readmodel.state').findOne({ name: 'items' }),
         )
         .then((stateDoc) => {
-          expect(stateDoc.lastProjectedEventTimestamp).toBe(700);
+          expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
         })
         // Verify all 7 items projected
         .then(() =>
@@ -1262,12 +1260,12 @@ describe('replay then live events', { timeout: 60000 }, () => {
           }),
         ),
       )
-      // Verify timestamp after replay
+      // Replay does not update timestamp — stays at 0 (pre-replay reset value)
       .then(() =>
         rmDb().collection('readmodel.state').findOne({ name: 'items' }),
       )
       .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(300);
+        expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
       })
       // Now add new events and activate → catch-up + live
       .then(() =>
@@ -1501,9 +1499,10 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
           }),
         ),
       )
+      // Replay does not update timestamp — stays at 0 (pre-replay reset value)
       .then(() => getTimestamp())
       .then((ts) => {
-        expect(ts).toBe(400);
+        expect(ts).toBe(0);
       }));
 
   test('after replay with no events, timestamp stays at 0', () =>

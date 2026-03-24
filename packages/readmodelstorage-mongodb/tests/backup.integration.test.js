@@ -179,7 +179,7 @@ describe('backup integration', { timeout: 120000 }, () => {
             });
         }));
 
-      test('clear collections drops collections and resets timestamps', () =>
+      test('clear collections drops collections but preserves timestamps', () =>
         createBackupPath().then((bp) => {
           const b = backup({ backupPath: bp, format: 'json' })(storage);
 
@@ -202,7 +202,38 @@ describe('backup integration', { timeout: 120000 }, () => {
                 .findOne({ name: 'testRM' });
             })
             .then((state) => {
-              expect(state.lastProjectedEventTimestamp).toBe(0);
+              expect(state.lastProjectedEventTimestamp).toBe(50000);
+            });
+        }));
+
+      test('clearCollections preserves lastProjectedEventTimestamp', () =>
+        createBackupPath().then((bp) => {
+          const b = backup({ backupPath: bp, format: 'json' })(storage);
+
+          return db
+            .collection('test_col')
+            .insertMany([{ name: 'alice' }])
+            .then(() =>
+              storage.updateLastProjectedEventTimestamps(
+                'corr-1',
+                ['testRM'],
+                50000,
+              ),
+            )
+            .then(() => b.clearCollections('corr-1', 'testRM', ['test_col']))
+            .then(() => db.collection('test_col').countDocuments())
+            .then((count) => {
+              // Collections should be cleared
+              expect(count).toBe(0);
+              return db
+                .collection('readmodel.state')
+                .findOne({ name: 'testRM' });
+            })
+            .then((state) => {
+              // BUG: clearCollections resets timestamp to 0, but during
+              // replay-from-backup the timestamp should be PRESERVED so
+              // that catch-up after replay knows where to resume from.
+              expect(state.lastProjectedEventTimestamp).toBe(50000);
             });
         }));
 

@@ -9,7 +9,8 @@ vi.mock('@lazyapps/logger', () => ({
   }),
 }));
 
-const { createLifecycleManager } = await import('../lifecycleManager.js');
+const { createLifecycleManager, __testing__ } =
+  await import('../lifecycleManager.js');
 
 const createMockContext = (overrides = {}) => ({
   readModels: {
@@ -26,6 +27,12 @@ const createMockContext = (overrides = {}) => ({
   },
   storage: {
     updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+    perRequest: vi.fn().mockReturnValue({
+      find: vi.fn().mockReturnValue({
+        toArray: vi.fn().mockResolvedValue([]),
+      }),
+      updateOne: vi.fn().mockResolvedValue(),
+    }),
   },
   statusTracker: {
     setState: vi.fn(),
@@ -386,6 +393,146 @@ describe('lifecycleManager', () => {
       expect(lm.isValidTransition('live', 'replay')).toBe(false);
       expect(lm.isValidTransition('replay', 'live')).toBe(false);
       expect(lm.isValidTransition('replay', 'catchup')).toBe(false);
+    });
+  });
+
+  describe('R4: invalid lifecycle state', () => {
+    test('invalid is a recognized valid state', () => {
+      // R4: 'invalid' must be a valid state in the state machine
+      expect(__testing__.VALID_STATES).toContain('invalid');
+    });
+
+    test('no transitions allowed out of invalid state', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      // R4: invalid is a terminal/absorbing state — nothing can leave it
+      expect(lm.isValidTransition('invalid', 'stopped')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'live')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'replay')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'catchup')).toBe(false);
+    });
+
+    test('activate is refused when state is invalid', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      return lm.activate('customers').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('Cannot activate');
+          expect(err.message).toContain('invalid');
+        },
+      );
+    });
+
+    test('startReplay is refused when state is invalid', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      return lm.startReplay('customers', 'corr-1').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toContain('Cannot start replay');
+          expect(err.message).toContain('invalid');
+        },
+      );
+    });
+  });
+
+  describe('R3: replayInProgress flag in readmodel.state', () => {
+    test('startReplay sets replayInProgress flag in storage', () => {
+      const mockUpdateOne = vi.fn().mockResolvedValue();
+      const context = createMockContext({
+        storage: {
+          updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+          perRequest: vi.fn().mockReturnValue({
+            updateOne: mockUpdateOne,
+            find: vi.fn().mockReturnValue({
+              toArray: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        },
+      });
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+
+      return lm.startReplay('customers', 'corr-1').then(() => {
+        // R3: startReplay must persist replayInProgress=true to MongoDB
+        // so that on crash recovery, the system knows replay was in progress
+        expect(mockUpdateOne).toHaveBeenCalledWith(
+          'readmodel.state',
+          { name: 'customers' },
+          expect.objectContaining({
+            $set: expect.objectContaining({ replayInProgress: true }),
+          }),
+        );
+      });
+    });
+
+    test('replayDone clears replayInProgress flag in storage', () => {
+      const mockUpdateOne = vi.fn().mockResolvedValue();
+      const context = createMockContext({
+        storage: {
+          updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+          perRequest: vi.fn().mockReturnValue({
+            updateOne: mockUpdateOne,
+            find: vi.fn().mockReturnValue({
+              toArray: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        },
+      });
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'replay');
+
+      lm.replayDone('customers', 'corr-1');
+
+      // R3: replayDone must clear the flag from MongoDB
+      expect(mockUpdateOne).toHaveBeenCalledWith(
+        'readmodel.state',
+        { name: 'customers' },
+        expect.objectContaining({
+          $unset: expect.objectContaining({ replayInProgress: '' }),
+        }),
+      );
+    });
+
+    test('initialize detects replayInProgress and sets invalid state', () => {
+      const context = createMockContext({
+        storage: {
+          updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+          perRequest: vi.fn().mockReturnValue({
+            find: vi.fn().mockReturnValue({
+              toArray: vi
+                .fn()
+                .mockResolvedValue([
+                  { name: 'customers', replayInProgress: true },
+                  { name: 'orders' },
+                ]),
+            }),
+          }),
+        },
+      });
+      const lm = createLifecycleManager(context);
+
+      // R3: initialize should check readmodel.state for replayInProgress
+      // and set those read models to 'invalid' state
+      return lm.initialize(['customers', 'orders']).then(() => {
+        expect(lm.getState('customers')).toBe('invalid');
+        expect(lm.getState('orders')).toBe('stopped');
+      });
     });
   });
 });
