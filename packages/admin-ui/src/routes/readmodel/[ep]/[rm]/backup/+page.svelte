@@ -5,6 +5,7 @@
   let { data } = $props();
 
   const api = getContext('api');
+  const statusStore = getContext('statusStore');
 
   let backups = $state([]);
   let loading = $state(true);
@@ -30,19 +31,31 @@
     loadBackups();
   });
 
+  // When backup progress returns to idle while we're waiting for a
+  // create to finish, refresh the list to pick up the new entry.
+  let waitingForBackup = $state(false);
+
+  $effect(() => {
+    if (!waitingForBackup) return;
+    const rm = $statusStore.readModels.find(
+      (rm) => rm.name === data.rm && rm.endpointName === data.ep,
+    );
+    if (rm?.backupProgress?.state === 'idle') {
+      waitingForBackup = false;
+      creating = false;
+      loadBackups();
+    }
+  });
+
   const handleCreate = () => {
     creating = true;
+    waitingForBackup = true;
     error = null;
-    api
-      .createBackup(data.ep, data.rm)
-      .then(() => {
-        creating = false;
-        loadBackups();
-      })
-      .catch((err) => {
-        error = err.error || String(err);
-        creating = false;
-      });
+    api.createBackup(data.ep, data.rm).catch((err) => {
+      error = err.error || String(err);
+      creating = false;
+      waitingForBackup = false;
+    });
   };
 
   const handleDelete = (backupId) => {
