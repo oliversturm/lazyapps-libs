@@ -16,6 +16,7 @@ vi.mock('@lazyapps/logger', () => ({
     info: vi.fn(),
     error: vi.fn(),
   }),
+  safeStringify: (obj) => JSON.stringify(obj),
 }));
 
 const { rabbitMq } = await import('../readmodels/index.js');

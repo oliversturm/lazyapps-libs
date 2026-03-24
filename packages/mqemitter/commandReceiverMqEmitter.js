@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
 import { nanoid } from 'nanoid';
 
@@ -37,7 +37,7 @@ export const commandReceiverMqEmitter =
           }
 
           const log = getLogger('CR/MQ', correlationId);
-          log.debug(`Received command: ${JSON.stringify(messagePayload)}`);
+          log.debug(`Received command: ${safeStringify(messagePayload)}`);
           const { command, aggregateName, aggregateId, payload } =
             messagePayload;
           const aggregate = aggregates[aggregateName];
@@ -62,7 +62,7 @@ export const commandReceiverMqEmitter =
             ).catch((err) => {
               log.error(`An error occurred handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
     
-    ${JSON.stringify(payload)}
+    ${safeStringify(payload)}
           
     ${err}`);
             });

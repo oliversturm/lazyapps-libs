@@ -7,7 +7,11 @@ vi.mock('@lazyapps/logger', () => {
     error: vi.fn(),
     debugBare: vi.fn(),
   });
-  return { getLogger, getStream: vi.fn() };
+  return {
+    getLogger,
+    getStream: vi.fn(),
+    safeStringify: (obj) => JSON.stringify(obj),
+  };
 });
 
 const mockNanoid = vi.fn().mockReturnValue('generated-id');
@@ -320,7 +324,7 @@ describe('initSockets', () => {
       ack,
     );
 
-    expect(ack).toHaveBeenCalledWith({ error: 'Error: auth explosion' });
+    expect(ack).toHaveBeenCalledWith({ error: 'Registration failed' });
   });
 
   test('on register: no error when ack callback not provided', () => {

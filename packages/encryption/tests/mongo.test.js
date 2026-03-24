@@ -8,6 +8,7 @@ vi.mock('@lazyapps/logger', () => ({
     error: vi.fn(),
     warn: vi.fn(),
   }),
+  safeStringify: (obj) => JSON.stringify(obj),
 }));
 
 const createMockCollection = () => {
@@ -35,6 +36,7 @@ const createMockCollection = () => {
       toArray: () =>
         Promise.resolve(docs.filter((d) => d.context === filter.context)),
     })),
+    createIndex: vi.fn(() => Promise.resolve()),
     deleteMany: vi.fn((filter) => {
       const before = docs.length;
       const remaining = docs.filter(
@@ -55,6 +57,7 @@ const createForgottenCollection = () => {
   const docs = [];
   return {
     __docs: docs,
+    createIndex: vi.fn(() => Promise.resolve()),
     findOne: vi.fn((filter) => {
       const match = docs.find((d) => {
         if (d.subjectId !== filter.subjectId) return false;

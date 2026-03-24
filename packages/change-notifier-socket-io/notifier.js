@@ -76,7 +76,7 @@ export const initSockets = (
             resolvers,
           )}: ${err}`,
         );
-        if (typeof ack === 'function') ack({ error: String(err) });
+        if (typeof ack === 'function') ack({ error: 'Registration failed' });
       }
     });
   });

@@ -7,7 +7,7 @@ vi.mock('@lazyapps/logger', () => {
     error: vi.fn(),
     debugBare: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, safeStringify: (obj) => JSON.stringify(obj) };
 });
 
 const { createApiHandler } =

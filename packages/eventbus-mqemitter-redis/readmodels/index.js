@@ -1,6 +1,6 @@
 import pRetry from 'p-retry';
 
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { connect } from '../connect.js';
 
 export const mqEmitterRedis =
@@ -33,7 +33,7 @@ export const mqEmitterRedis =
         mq.on('events', ({ payload }, cb) => {
           const { correlationId, event } = payload;
           const log = getLogger('RM/EB/Redis', correlationId);
-          log.debug(`Received event: ${JSON.stringify(event)}`);
+          log.debug(`Received event: ${safeStringify(event)}`);
           context.projectionHandler.projectEvent(correlationId)(
             event,
             inReplay,
@@ -44,7 +44,7 @@ export const mqEmitterRedis =
         mq.on('__system', ({ payload }, cb) => {
           const { correlationId, event } = payload;
           const log = getLogger('RM/EB/Redis', correlationId);
-          log.debug(`Received '__system' event: ${JSON.stringify(event)}`);
+          log.debug(`Received '__system' event: ${safeStringify(event)}`);
 
           handleSysMessage(event);
           cb();

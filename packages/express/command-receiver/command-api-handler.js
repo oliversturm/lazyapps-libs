@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 
 export const createApiHandler =
   ({ aggregateStore, eventStore, eventBus, aggregates, handleCommand }) =>
@@ -10,7 +10,7 @@ export const createApiHandler =
       req.body;
     const log = getLogger('EX/CP/Handler', correlationId);
     log.debug(
-      `Command received: ${JSON.stringify({
+      `Command received: ${safeStringify({
         command,
         aggregateName,
         aggregateId,
@@ -55,14 +55,14 @@ export const createApiHandler =
         if (err.name === 'ValidationError') {
           log.error(`Validation error while handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
 
-          ${JSON.stringify(payload)}
+          ${safeStringify(payload)}
                 
           ${err}`);
           res.sendStatus(400);
         } else if (err.name === 'AuthorizationError') {
           log.error(`Unauthorized while handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
 
-          ${JSON.stringify(payload)}
+          ${safeStringify(payload)}
 
           ${err}`);
           res.sendStatus(403);
@@ -78,7 +78,7 @@ export const createApiHandler =
         } else {
           log.error(`Unknown error handling command ${command} for aggregate ${aggregateName}(${aggregateId}) with payload:
 
-${JSON.stringify(payload)}
+${safeStringify(payload)}
       
 ${err}`);
           res.sendStatus(500);

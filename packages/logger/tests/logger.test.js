@@ -26,7 +26,8 @@ vi.mock('loglevel-plugin-prefix', () => ({
   },
 }));
 
-const { getLogger, getStream } = await import('../index.js');
+const { getLogger, getStream, configurePiiPaths, safeStringify } =
+  await import('../index.js');
 
 describe('getLogger', () => {
   beforeEach(() => {
@@ -91,6 +92,73 @@ describe('getLogger', () => {
     expect(mockLogger.warn).toHaveBeenCalledWith('[c] w');
     expect(mockLogger.error).toHaveBeenCalledWith('[c] e');
     expect(mockLogger.log).toHaveBeenCalledWith('[c] l');
+  });
+});
+
+describe('safeStringify / PII redaction', () => {
+  beforeEach(() => {
+    configurePiiPaths([]);
+  });
+
+  test('without PII paths, serializes normally', () => {
+    const obj = { payload: { name: 'Alice', age: 30 } };
+    expect(safeStringify(obj)).toBe(JSON.stringify(obj));
+  });
+
+  test('redacts configured PII paths', () => {
+    configurePiiPaths(['payload.name', 'payload.email']);
+    const obj = {
+      type: 'CUSTOMER_CREATED',
+      payload: { name: 'Alice', email: 'alice@example.com', age: 30 },
+    };
+    const result = JSON.parse(safeStringify(obj));
+    expect(result.type).toBe('CUSTOMER_CREATED');
+    expect(result.payload.name).toBe('[PII]');
+    expect(result.payload.email).toBe('[PII]');
+    expect(result.payload.age).toBe(30);
+  });
+
+  test('handles missing intermediate paths gracefully', () => {
+    configurePiiPaths(['payload.name']);
+    const obj = { type: 'SOME_EVENT' };
+    expect(safeStringify(obj)).toBe(JSON.stringify(obj));
+  });
+
+  test('handles null values in path gracefully', () => {
+    configurePiiPaths(['payload.name']);
+    const obj = { payload: null };
+    expect(safeStringify(obj)).toBe(JSON.stringify(obj));
+  });
+
+  test('does not mutate the original object', () => {
+    configurePiiPaths(['payload.name']);
+    const obj = { payload: { name: 'Alice' } };
+    safeStringify(obj);
+    expect(obj.payload.name).toBe('Alice');
+  });
+
+  test('handles deeply nested paths', () => {
+    configurePiiPaths(['a.b.c.d']);
+    const obj = { a: { b: { c: { d: 'secret', e: 'safe' } } } };
+    const result = JSON.parse(safeStringify(obj));
+    expect(result.a.b.c.d).toBe('[PII]');
+    expect(result.a.b.c.e).toBe('safe');
+  });
+
+  test('handles multiple paths in same parent', () => {
+    configurePiiPaths(['payload.name', 'payload.email']);
+    const obj = { payload: { name: 'Alice', email: 'a@b.com', id: 1 } };
+    const result = JSON.parse(safeStringify(obj));
+    expect(result.payload.name).toBe('[PII]');
+    expect(result.payload.email).toBe('[PII]');
+    expect(result.payload.id).toBe(1);
+  });
+
+  test('returns primitives unchanged', () => {
+    configurePiiPaths(['payload.name']);
+    expect(safeStringify('hello')).toBe('"hello"');
+    expect(safeStringify(42)).toBe('42');
+    expect(safeStringify(null)).toBe('null');
   });
 });
 

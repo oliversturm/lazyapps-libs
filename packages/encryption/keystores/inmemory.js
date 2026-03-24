@@ -16,7 +16,7 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
 
     const wrapLocal = (kek, plainDEK) => {
       const iv = randomBytes(IV_LENGTH);
-      const cipher = createCipheriv(ALGORITHM, kek, iv);
+      const cipher = createCipheriv(ALGORITHM, kek, iv, { authTagLength: 16 });
       const encrypted = Buffer.concat([
         cipher.update(plainDEK),
         cipher.final(),
@@ -34,6 +34,7 @@ export const inMemoryKeyStore = (initialKEKs = {}) => ({
         ALGORITHM,
         kek,
         Buffer.from(wrapped.iv, 'base64'),
+        { authTagLength: 16 },
       );
       decipher.setAuthTag(Buffer.from(wrapped.tag, 'base64'));
       return Buffer.concat([

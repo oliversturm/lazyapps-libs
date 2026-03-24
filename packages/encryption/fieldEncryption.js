@@ -6,7 +6,7 @@ const IV_LENGTH = 12;
 
 export const encryptValue = (key, plaintext) => {
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, key, iv);
+  const cipher = createCipheriv(ALGORITHM, key, iv, { authTagLength: 16 });
   const encrypted = Buffer.concat([
     cipher.update(String(plaintext), 'utf8'),
     cipher.final(),
@@ -26,6 +26,7 @@ export const decryptValue = (key, envelope) => {
     envelope.alg || ALGORITHM,
     key,
     Buffer.from(envelope.iv, 'base64'),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
   return (

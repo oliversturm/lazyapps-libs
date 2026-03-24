@@ -18,7 +18,7 @@ const deriveKEK = (rootSecret, contextName) => {
 
 const wrapLocal = (kek, plainDEK) => {
   const iv = randomBytes(IV_LENGTH);
-  const cipher = createCipheriv(ALGORITHM, kek, iv);
+  const cipher = createCipheriv(ALGORITHM, kek, iv, { authTagLength: 16 });
   const encrypted = Buffer.concat([cipher.update(plainDEK), cipher.final()]);
   const tag = cipher.getAuthTag();
   return {
@@ -33,6 +33,7 @@ const unwrapLocal = (kek, wrapped) => {
     ALGORITHM,
     kek,
     Buffer.from(wrapped.iv, 'base64'),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(wrapped.tag, 'base64'));
   return Buffer.concat([
@@ -58,7 +59,14 @@ export const mongoKeyStore = ({
     return MongoClient.connect(url).then((client) => {
       const db = client.db(database);
       log.info(`Key store connected to ${database}`);
-      return {
+      return Promise.all([
+        db
+          .collection(dekCollection)
+          .createIndex({ subjectId: 1, context: 1, version: -1 }),
+        db
+          .collection(forgottenCollection)
+          .createIndex({ subjectId: 1, context: 1 }),
+      ]).then(() => ({
         wrapDEK: (contextName, plainDEK) =>
           Promise.resolve(wrapLocal(deriveKEK(secret, contextName), plainDEK)),
 
@@ -191,7 +199,7 @@ export const mongoKeyStore = ({
         },
 
         close: () => client.close(),
-      };
+      }));
     });
   },
 });

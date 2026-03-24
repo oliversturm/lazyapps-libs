@@ -8,7 +8,7 @@ vi.mock('@lazyapps/logger', () => {
     debug: vi.fn(),
     warn: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, safeStringify: (obj) => JSON.stringify(obj) };
 });
 
 const aggregates = {

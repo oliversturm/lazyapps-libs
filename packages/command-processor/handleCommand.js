@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { metrics } from '@opentelemetry/api';
 import { withSpan } from './tracing.js';
 
@@ -70,7 +70,7 @@ export const handleCommand = (
                 aggregateId,
               };
               const log = getLogger('CP/Handler', correlationId);
-              log.debug(`Event generated: ${JSON.stringify(event)}`);
+              log.debug(`Event generated: ${safeStringify(event)}`);
               return event;
             })
             .then(eventStore.addEvent(correlationId))

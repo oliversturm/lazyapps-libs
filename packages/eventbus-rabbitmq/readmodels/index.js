@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { channelWithExchange } from '../channelWithExchange.js';
 
 export const rabbitMq = (config) => (context) => {
@@ -42,7 +42,7 @@ export const rabbitMq = (config) => (context) => {
                   );
                   const log = getLogger('RM/EB/Rabbit', correlationId);
                   log.debug(
-                    `Received '__system' event: ${JSON.stringify(event)}`,
+                    `Received '__system' event: ${safeStringify(event)}`,
                   );
 
                   handleSysMessage(event);
@@ -57,7 +57,7 @@ export const rabbitMq = (config) => (context) => {
                   log.debug(
                     `Received message on topic '${
                       msg.fields.routingKey
-                    }': ${JSON.stringify(event)}`,
+                    }': ${safeStringify(event)}`,
                   );
                   context.projectionHandler.projectEvent(correlationId)(
                     event,

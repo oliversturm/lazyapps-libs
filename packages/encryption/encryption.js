@@ -18,6 +18,12 @@ export const createEncryption = ({
 }) => {
   const log = getLogger('Encryption', 'INIT');
 
+  // Two cache layers for DEKs:
+  // 1. keyCache (TTL + LRU) wraps the keystore — caches wrapped DEK metadata
+  //    from the store, evicts by TTL and size. Reduces keystore round-trips.
+  // 2. envelopeManager maintains its own Map of unwrapped DEKs — caches the
+  //    plaintext key material after unwrapping. Cleared explicitly on forget.
+  // Flow: fieldEncryptor → envelope cache → keyCache → keystore
   return keyStore
     .initialize()
     .then((ks) => createKeyCache(ks, cache))

@@ -66,6 +66,15 @@ export const defineEncryptionSchema = (schemaDef) => {
     enumerable: false,
   });
 
+  Object.defineProperty(result, 'getPiiPaths', {
+    value: () => [
+      ...new Set(
+        Object.values(events).flatMap((fields) => Object.keys(fields)),
+      ),
+    ],
+    enumerable: false,
+  });
+
   log.debug(
     `Encryption schema defined for ${Object.keys(events).length} event types`,
   );

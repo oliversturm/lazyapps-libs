@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
 
 export const readModelEventBusMqEmitter =
@@ -21,7 +21,7 @@ export const readModelEventBusMqEmitter =
         mq.on('events', ({ payload }, cb) => {
           const { correlationId } = payload;
           const log = getLogger('RM/EB', correlationId);
-          log.debug(`Received event: ${JSON.stringify(payload)}`);
+          log.debug(`Received event: ${safeStringify(payload)}`);
           context.projectionHandler.projectEvent(correlationId)(
             payload,
             inReplay,
@@ -32,7 +32,7 @@ export const readModelEventBusMqEmitter =
         mq.on('__system', ({ payload }, cb) => {
           const { correlationId, event } = payload;
           const log = getLogger('RM/EB', correlationId);
-          log.debug(`Received '__system' event: ${JSON.stringify(event)}`);
+          log.debug(`Received '__system' event: ${safeStringify(event)}`);
 
           handleSysMessage(event);
           cb();

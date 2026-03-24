@@ -15,6 +15,7 @@ vi.mock('@lazyapps/logger', () => ({
     info: vi.fn(),
     error: vi.fn(),
   }),
+  safeStringify: (obj) => JSON.stringify(obj),
 }));
 
 let container;

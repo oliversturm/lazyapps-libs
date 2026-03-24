@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 
 export const inmemory = () => (aggregates) => {
   const store = {};
@@ -49,7 +49,7 @@ export const inmemory = () => (aggregates) => {
         );
       } else {
         log.debug(
-          `No aggregate projection for type in event ${JSON.stringify(event)}`,
+          `No aggregate projection for type in event ${safeStringify(event)}`,
         );
       }
 

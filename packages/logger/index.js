@@ -26,6 +26,30 @@ prefix.apply(log, {
   },
 });
 
+let piiPaths = [];
+
+export const configurePiiPaths = (paths) => {
+  piiPaths = paths || [];
+};
+
+const redactPath = (obj, parts) =>
+  parts.length === 1
+    ? obj[parts[0]] !== undefined
+      ? { ...obj, [parts[0]]: '[PII]' }
+      : obj
+    : obj[parts[0]] !== undefined && obj[parts[0]] !== null
+      ? { ...obj, [parts[0]]: redactPath({ ...obj[parts[0]] }, parts.slice(1)) }
+      : obj;
+
+const redactPii = (obj) =>
+  !piiPaths.length || typeof obj !== 'object' || obj === null
+    ? obj
+    : piiPaths.reduce((acc, path) => redactPath(acc, path.split('.')), {
+        ...obj,
+      });
+
+export const safeStringify = (obj) => JSON.stringify(redactPii(obj));
+
 let otelEnabled = false;
 let otelLogger = null;
 let otelTrace = null;
