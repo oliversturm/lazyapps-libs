@@ -24,8 +24,12 @@ const createMockContext = (overrides = {}) => ({
     setReadModelReplayState: vi.fn(),
     clearReadModelReplayState: vi.fn(),
   },
+  storage: {
+    updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+  },
   statusTracker: {
     setState: vi.fn(),
+    updateLastProjectedEventTimestamp: vi.fn(),
   },
   catchupHandler: {
     handleCatchupComplete: vi.fn().mockResolvedValue(),
@@ -307,18 +311,24 @@ describe('lifecycleManager', () => {
   });
 
   describe('replayDone', () => {
-    test('transitions replay -> stopped', () => {
+    test('transitions replay -> stopped and persists timestamp', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'replay');
 
-      lm.replayDone('customers', 'corr-1');
-
-      expect(lm.getState('customers')).toBe('stopped');
-      expect(
-        context.projectionHandler.clearReadModelReplayState,
-      ).toHaveBeenCalledWith('customers');
+      return lm.replayDone('customers', 'corr-1').then(() => {
+        expect(lm.getState('customers')).toBe('stopped');
+        expect(
+          context.projectionHandler.clearReadModelReplayState,
+        ).toHaveBeenCalledWith('customers');
+        expect(
+          context.storage.updateLastProjectedEventTimestamps,
+        ).toHaveBeenCalledWith('corr-1', ['customers'], 500);
+        expect(
+          context.statusTracker.updateLastProjectedEventTimestamp,
+        ).toHaveBeenCalledWith('customers', 500);
+      });
     });
 
     test('warns when not in replay state', () => {
@@ -326,10 +336,13 @@ describe('lifecycleManager', () => {
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
 
-      lm.replayDone('customers', 'corr-1');
-
-      // Should not crash, state unchanged
-      expect(lm.getState('customers')).toBe('stopped');
+      return lm.replayDone('customers', 'corr-1').then(() => {
+        // Should not crash, state unchanged
+        expect(lm.getState('customers')).toBe('stopped');
+        expect(
+          context.storage.updateLastProjectedEventTimestamps,
+        ).not.toHaveBeenCalled();
+      });
     });
   });
 

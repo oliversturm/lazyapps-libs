@@ -248,9 +248,13 @@ export const createProjectionHandler = (context) => {
           event,
         )
           .then(() => {
-            // During replay, do NOT update lastProjectedEventTimestamp.
-            // Replay re-projects historical events without side effects,
-            // and the timestamp should reflect the last real projection.
+            // Track the max replayed timestamp in memory so that
+            // replayDone can persist it once at the end. Per-event
+            // MongoDB writes would be wasteful during large replays.
+            context.readModels[targetRmName].lastProjectedEventTimestamp =
+              event.timestamp;
+          })
+          .then(() => {
             if (context.statusTracker) {
               context.statusTracker.updateProgress(
                 targetRmName,
