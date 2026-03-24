@@ -29,7 +29,9 @@ export const rabbitMq = (config) => () => {
       publishReplayEvent:
         (correlationId) => (targetReadModel, event, targetEndpointName) => {
           const log = getLogger('CmdProc/EB/Rabbit', correlationId);
-          log.debug(`Publishing replay event for ${targetReadModel}: ${JSON.stringify(event)}`);
+          log.debug(
+            `Publishing replay event for ${targetReadModel}: ${JSON.stringify(event)}`,
+          );
           channel.publish(
             exchange,
             '__replay',
@@ -46,7 +48,9 @@ export const rabbitMq = (config) => () => {
       publishCatchupEvent:
         (correlationId) => (targetReadModel, event, targetEndpointName) => {
           const log = getLogger('CmdProc/EB/Rabbit', correlationId);
-          log.debug(`Publishing catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`);
+          log.debug(
+            `Publishing catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`,
+          );
           channel.publish(
             exchange,
             '__catchup',

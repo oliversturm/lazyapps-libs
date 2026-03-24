@@ -117,6 +117,45 @@ describe('createOrchestrator', () => {
         });
     });
 
+    test('skips activation when activateAfter is false', () => {
+      sseClient.cache.readModels['ep1/customers'] = {
+        endpointName: 'ep1',
+        readModelName: 'customers',
+        state: 'stopped',
+        lastProjectedEventTimestamp: 5000,
+      };
+
+      sseClient.waitForStatus.mockResolvedValue({
+        readModels: {
+          'ep1/customers': { state: 'stopped' },
+        },
+        commandProcessor: {
+          state: 'idle',
+          activeReplays: [],
+          activeCatchUps: [],
+        },
+      });
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', { activateAfter: false })
+        .then((result) => {
+          expect(result).toEqual({
+            status: 'stopped',
+            endpointName: 'ep1',
+            readModel: 'customers',
+          });
+          expect(sseClient.endOperation).toHaveBeenCalled();
+          // Activation commands (activate, startCatchup, catchupDone) should
+          // NOT have been published — only replay-related commands.
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const publishedTypes = publishFn.mock.calls.map((c) => c[0].type);
+          expect(publishedTypes).not.toContain('activate');
+          expect(publishedTypes).not.toContain('startCatchup');
+          expect(publishedTypes).not.toContain('catchupDone');
+        });
+    });
+
     test('fetches replayRelevantEvents during sequence', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',

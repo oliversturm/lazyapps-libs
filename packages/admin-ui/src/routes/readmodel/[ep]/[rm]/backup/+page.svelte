@@ -70,6 +70,18 @@
       });
   };
 
+  let readModel = $derived(
+    $statusStore.readModels.find(
+      (rm) => rm.name === data.rm && rm.endpointName === data.ep,
+    ) || null,
+  );
+
+  const handleActivate = () => {
+    api.activate(data.ep, data.rm).catch((err) => {
+      error = err.error || String(err);
+    });
+  };
+
   const handleRestore = (backupId) => {
     error = null;
     api
@@ -117,6 +129,15 @@
     class="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700"
   >
     {error}
+  </div>
+{/if}
+
+{#if readModel?.state === 'stopped'}
+  <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded flex items-center justify-between">
+    <span class="text-sm text-amber-700">Read model is stopped.</span>
+    <button onclick={handleActivate} class="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+      Activate
+    </button>
   </div>
 {/if}
 

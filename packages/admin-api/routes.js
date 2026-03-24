@@ -85,7 +85,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
 
   const startReplay = (req, res) => {
     const { ep, rm } = req.params;
-    const { backupId, autoBackup } = req.body || {};
+    const { backupId, autoBackup, activateAfter } = req.body || {};
     const correlationId = nanoid();
     const log = getLogger('Admin/Replay', correlationId);
 
@@ -93,7 +93,7 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
 
     // Fire off orchestration — don't await, return immediately
     orchestrator
-      .replayOrchestration(ep, rm, { backupId, autoBackup })
+      .replayOrchestration(ep, rm, { backupId, autoBackup, activateAfter })
       .catch((err) => {
         log.error(
           `Replay orchestration failed for ${ep}/${rm}: ${err.message}`,

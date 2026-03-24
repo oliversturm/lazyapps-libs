@@ -55,7 +55,9 @@ export const mqEmitterRedis =
         publishReplayEvent:
           (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/Redis', correlationId);
-            log.debug(`Publishing replay event for ${targetReadModel}: ${JSON.stringify(event)}`);
+            log.debug(
+              `Publishing replay event for ${targetReadModel}: ${JSON.stringify(event)}`,
+            );
             mq.emit({
               topic: '__replay',
               payload: {
@@ -69,7 +71,9 @@ export const mqEmitterRedis =
         publishCatchupEvent:
           (correlationId) => (targetReadModel, event, targetEndpointName) => {
             const log = getLogger('CP/EB/Redis', correlationId);
-            log.debug(`Publishing catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`);
+            log.debug(
+              `Publishing catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`,
+            );
             mq.emit({
               topic: '__catchup',
               payload: {

@@ -15,7 +15,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
   const replayOrchestration = (ep, rm, options = {}) => {
     const correlationId = nanoid();
     const log = getLogger('Admin/Replay', correlationId);
-    const { backupId, autoBackup } = options;
+    const { backupId, autoBackup, activateAfter = true } = options;
 
     log.info(`Starting replay orchestration for ${ep}/${rm}`);
 
@@ -159,8 +159,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
-        log.info('Replay complete, chaining to activation');
-        return activationOrchestration(ep, rm);
+        if (activateAfter) {
+          log.info('Replay complete, chaining to activation');
+          return activationOrchestration(ep, rm);
+        }
+        log.info('Replay complete, staying stopped (activateAfter=false)');
+        return { status: 'stopped', endpointName: ep, readModel: rm };
       })
       .then((result) => {
         sseClient.endOperation();

@@ -23,6 +23,12 @@
 
   // Track whether we initiated a replay in this page session
   let replayInitiated = $state(false);
+  let activateAfter = $state(true);
+  let sawReplayState = $state(false);
+
+  $effect(() => {
+    if (readModel?.state === 'replay') sawReplayState = true;
+  });
 
   // Derive replay step from store state
   let storeStep = $derived.by(() => {
@@ -33,6 +39,7 @@
     if (replayInitiated) {
       // Replay was initiated — track the orchestration lifecycle
       if (mode === 'live') return 'done';
+      if (mode === 'stopped' && !activateAfter && sawReplayState) return 'done-stopped';
       // stopped is a transient state during orchestration (between
       // replayDone and activate) — show as replaying to avoid flicker
       if (mode === 'stopped') return 'replaying';
@@ -76,6 +83,7 @@
     if (replayMode === 'fromBackup') options.backupId = selectedBackupId;
     if (fromTimestamp) options.fromTimestamp = fromTimestamp;
     if (toTimestamp) options.toTimestamp = toTimestamp;
+    options.activateAfter = activateAfter;
 
     replayInitiated = true;
     api
@@ -100,6 +108,12 @@
       });
   };
 
+  const handleActivate = () => {
+    api.activate(data.ep, data.rm).catch((err) => {
+      error = err.error || String(err);
+    });
+  };
+
   const handleReset = () => {
     uiStep = 'configure';
     error = null;
@@ -107,6 +121,7 @@
     replayMode = 'fromScratch';
     fromTimestamp = 0;
     toTimestamp = null;
+    sawReplayState = false;
   };
 
   const formatTimestamp = (ts) => {
@@ -203,6 +218,14 @@
       <TimelineSelector bind:fromTimestamp bind:toTimestamp />
     </div>
 
+    <div>
+      <label class="flex items-center space-x-2">
+        <input type="checkbox" bind:checked={activateAfter} class="text-blue-600" />
+        <span class="text-sm text-gray-700">Activate after replay (go live)</span>
+      </label>
+      <p class="text-xs text-gray-400 ml-6">When unchecked, the read model stays stopped after replay for inspection.</p>
+    </div>
+
     <button
       onclick={handleStartReplay}
       disabled={replayMode === 'fromBackup' && !selectedBackupId}
@@ -268,6 +291,27 @@
         onclick={handleReset}
         class="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
       >
+        Start New Replay
+      </button>
+    </div>
+  </div>
+{:else if step === 'done-stopped'}
+  <div class="bg-white rounded-lg shadow p-6 space-y-4">
+    <div class="flex items-center space-x-2">
+      <h2 class="text-lg font-semibold text-amber-700">Replay Complete — Stopped</h2>
+      <StatusBadge status="stopped" />
+    </div>
+    <p class="text-sm text-gray-600">
+      The read model has been replayed and is currently stopped. You can inspect the data before activating.
+    </p>
+    <div class="flex space-x-3">
+      <button onclick={handleActivate} class="px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700">
+        Activate (Go Live)
+      </button>
+      <a href="/readmodel/{data.ep}/{data.rm}" class="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">
+        View Read Model
+      </a>
+      <button onclick={handleReset} class="px-4 py-2 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">
         Start New Replay
       </button>
     </div>
