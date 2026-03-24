@@ -56,7 +56,7 @@ export const mqEmitterRedis =
             return;
           }
           if (context.readModels[targetReadModel]) {
-            log.debug(`Replay event for ${targetReadModel}: ${event.type}`);
+            log.debug(`Replay event for ${targetReadModel}: ${JSON.stringify(event)}`);
             context.projectionHandler.projectEventForReadModel(
               correlationId,
               targetReadModel,
@@ -77,7 +77,7 @@ export const mqEmitterRedis =
             return;
           }
           if (context.readModels[targetReadModel]) {
-            log.debug(`Catch-up event for ${targetReadModel}: ${event.type}`);
+            log.debug(`Catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`);
             context.projectionHandler.projectCatchupEventForReadModel(
               correlationId,
               targetReadModel,

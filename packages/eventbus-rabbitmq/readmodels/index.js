@@ -54,7 +54,7 @@ export const rabbitMq = (config) => (context) => {
                 }
                 if (context.readModels[targetReadModel]) {
                   log.debug(
-                    `Replay event for ${targetReadModel}: ${event.type}`,
+                    `Replay event for ${targetReadModel}: ${JSON.stringify(event)}`,
                   );
                   context.projectionHandler.projectEventForReadModel(
                     correlationId,
@@ -78,7 +78,7 @@ export const rabbitMq = (config) => (context) => {
                 }
                 if (context.readModels[targetReadModel]) {
                   log.debug(
-                    `Catch-up event for ${targetReadModel}: ${event.type}`,
+                    `Catch-up event for ${targetReadModel}: ${JSON.stringify(event)}`,
                   );
                   context.projectionHandler.projectCatchupEventForReadModel(
                     correlationId,

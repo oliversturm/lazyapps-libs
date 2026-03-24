@@ -85,6 +85,9 @@ export const createCatchupHandler = (eventStore, eventBus, statusTracker) => {
                 if (eventFilter && !eventFilter.has(event.type)) {
                   return processNext();
                 }
+                log.debug(
+                  `Catch-up event for ${readModel}: ${JSON.stringify(event)}`,
+                );
                 eventBus.publishCatchupEvent(correlationId)(
                   readModel,
                   event,

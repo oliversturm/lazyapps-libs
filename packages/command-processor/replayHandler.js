@@ -59,6 +59,9 @@ export const createReplayHandler = (eventStore, eventBus, statusTracker) => {
             if (eventFilter && !eventFilter.has(event.type)) {
               return processNext();
             }
+            log.debug(
+              `Replay event for ${readModel}: ${JSON.stringify(event)}`,
+            );
             eventBus.publishReplayEvent(correlationId)(
               readModel,
               event,
