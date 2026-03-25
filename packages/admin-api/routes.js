@@ -1,7 +1,15 @@
 import { getLogger } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
+import { getPreflightStatus } from './preflightCheck.js';
+import { parseFilter } from './sideEffectFilter.js';
 
-const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
+const createRoutes = ({
+  sseClient,
+  orchestrator,
+  eventBus,
+  token,
+  developmentMode = false,
+}) => {
   const publishCommand = (correlationId, command) => {
     eventBus.publishAdminInstruction(correlationId)({
       ...command,
@@ -18,6 +26,22 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
       return false;
     }
     return true;
+  };
+
+  // --- Admin config endpoint ---
+
+  const adminConfig = (req, res) => {
+    res.json({ developmentMode: !!developmentMode });
+  };
+
+  const validateFilter = (req, res) => {
+    const { filterString } = req.body || {};
+    if (typeof filterString !== 'string') {
+      res.status(400).json({ filter: null, error: 'filterString is required' });
+      return;
+    }
+    const result = parseFilter(filterString);
+    res.json(result);
   };
 
   // --- Status endpoints (serve from cache) ---
@@ -81,24 +105,64 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     });
   };
 
+  // --- Preflight endpoint ---
+
+  const replayPreflight = (req, res) => {
+    const { ep, rm } = req.params;
+    const rmStatus = sseClient.cache.getReadModel(ep, rm);
+
+    if (!rmStatus) {
+      res.status(404).json({ error: `Read model ${ep}/${rm} not found` });
+      return;
+    }
+
+    // Fetch last event store timestamp from CP if available
+    return sseClient
+      .fetchLastEventStoreTimestamp()
+      .then((lastEventStoreTimestamp) => {
+        const preflight = getPreflightStatus(rmStatus, lastEventStoreTimestamp);
+        res.json(preflight);
+      })
+      .catch(() => {
+        // If we can't reach the event store, still return what we know
+        const preflight = getPreflightStatus(rmStatus, null);
+        res.json(preflight);
+      });
+  };
+
   // --- Replay endpoints ---
 
   const startReplay = (req, res) => {
     const { ep, rm } = req.params;
-    const { backupId, autoBackup, activateAfter } = req.body || {};
+    const { backupId, autoBackup, activateAfter, t0Option, customTimestamp } =
+      req.body || {};
     const correlationId = nanoid();
     const log = getLogger('Admin/Replay', correlationId);
 
     log.info(`Replay requested for ${ep}/${rm}`);
 
+    // Route to backup replay orchestration when both backupId and t0Option
+    // are present (backup restore with T=0 handling)
+    const orchestration =
+      backupId && t0Option
+        ? orchestrator.backupReplayOrchestration(ep, rm, {
+            backupId,
+            activateAfter,
+            t0Option,
+            customTimestamp,
+          })
+        : orchestrator.replayOrchestration(ep, rm, {
+            backupId,
+            autoBackup,
+            activateAfter,
+            t0Option,
+            customTimestamp,
+          });
+
     // Fire off orchestration — don't await, return immediately
-    orchestrator
-      .replayOrchestration(ep, rm, { backupId, autoBackup, activateAfter })
-      .catch((err) => {
-        log.error(
-          `Replay orchestration failed for ${ep}/${rm}: ${err.message}`,
-        );
-      });
+    orchestration.catch((err) => {
+      log.error(`Replay orchestration failed for ${ep}/${rm}: ${err.message}`);
+    });
 
     res.status(202).json({
       status: 'started',
@@ -261,6 +325,25 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     res.json({ status: 'stopping', endpointName: ep, readModel: rm });
   };
 
+  const dismissInvalid = (req, res) => {
+    if (!developmentMode) {
+      res.status(403).json({ error: 'Development mode only' });
+      return;
+    }
+    if (!validateReadModel(req, res)) return;
+    const { ep, rm } = req.params;
+    const correlationId = nanoid();
+
+    publishCommand(correlationId, {
+      type: 'dismissInvalid',
+      targetEndpointName: ep,
+      targetReadModel: rm,
+      developmentOperation: true,
+    });
+
+    res.json({ status: 'dismissing', endpointName: ep, readModel: rm });
+  };
+
   const resetRm = (req, res) => {
     if (!validateReadModel(req, res)) return;
     const { ep, rm } = req.params;
@@ -276,10 +359,13 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
   };
 
   return {
+    adminConfig,
+    validateFilter,
     readModelStatusAll,
     readModelStatusOne,
     commandProcessorStatus,
     sseStream,
+    replayPreflight,
     startReplay,
     cancelReplay,
     createBackup,
@@ -289,15 +375,32 @@ const createRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     listBackups,
     activateAllRms,
     activateRm,
+    dismissInvalid,
     stopRm,
     resetRm,
   };
 };
 
-const installAdminRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
-  const routes = createRoutes({ sseClient, orchestrator, eventBus, token });
+const installAdminRoutes = ({
+  sseClient,
+  orchestrator,
+  eventBus,
+  token,
+  developmentMode,
+}) => {
+  const routes = createRoutes({
+    sseClient,
+    orchestrator,
+    eventBus,
+    token,
+    developmentMode,
+  });
 
   return (app) => {
+    // Config
+    app.get('/admin/config', routes.adminConfig);
+    app.post('/admin/validate-filter', routes.validateFilter);
+
     // Status
     app.get('/admin/readmodel/status', routes.readModelStatusAll);
     app.get('/admin/readmodel/status/:ep/:rm', routes.readModelStatusOne);
@@ -305,6 +408,7 @@ const installAdminRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     app.get('/admin/events', routes.sseStream);
 
     // Replay
+    app.get('/admin/replay/preflight/:ep/:rm', routes.replayPreflight);
     app.post('/admin/replay/start/:ep/:rm', routes.startReplay);
     app.post('/admin/replay/cancel/:ep/:rm', routes.cancelReplay);
 
@@ -318,6 +422,7 @@ const installAdminRoutes = ({ sseClient, orchestrator, eventBus, token }) => {
     // Lifecycle — activate-all MUST be before parameterized routes
     app.post('/admin/readmodel/activate-all', routes.activateAllRms);
     app.post('/admin/readmodel/activate/:ep/:rm', routes.activateRm);
+    app.post('/admin/readmodel/dismiss-invalid/:ep/:rm', routes.dismissInvalid);
     app.post('/admin/readmodel/stop/:ep/:rm', routes.stopRm);
     app.post('/admin/readmodel/reset/:ep/:rm', routes.resetRm);
   };

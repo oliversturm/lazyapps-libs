@@ -86,6 +86,36 @@ describe('context', () => {
     );
   });
 
+  test('developmentMode is stored on context when true', () => {
+    const readModels = {};
+    const storageResult = {
+      readLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+    };
+    const storage = vi.fn().mockResolvedValue(storageResult);
+    const eventBus = vi.fn().mockResolvedValue();
+    return initializeContext(
+      {},
+      { readModels, storage, eventBus, developmentMode: true },
+    ).then((context) => {
+      expect(context.developmentMode).toBe(true);
+    });
+  });
+
+  test('developmentMode is not stored on context when false', () => {
+    const readModels = {};
+    const storageResult = {
+      readLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+    };
+    const storage = vi.fn().mockResolvedValue(storageResult);
+    const eventBus = vi.fn().mockResolvedValue();
+    return initializeContext(
+      {},
+      { readModels, storage, eventBus, developmentMode: false },
+    ).then((context) => {
+      expect(context.developmentMode).toBeUndefined();
+    });
+  });
+
   test('connectEventBus retries after failure', () => {
     const readModels = { rm1: {} };
     const subscribeToEvents = vi

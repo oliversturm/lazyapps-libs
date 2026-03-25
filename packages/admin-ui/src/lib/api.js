@@ -73,6 +73,28 @@ export const createAdminClient = () => ({
       body: '{}',
     }),
 
+  replayPreflight: (ep, rm) => jsonFetch(`/admin/replay/preflight/${ep}/${rm}`),
+
+  getConfig: () => jsonFetch('/admin/config'),
+
+  validateFilter: (filterString) =>
+    jsonFetch('/admin/validate-filter', {
+      method: 'POST',
+      body: JSON.stringify({ filterString }),
+    }),
+
+  activateWithoutCatchup: (ep, rm) =>
+    jsonFetch(`/admin/readmodel/activate/${ep}/${rm}`, {
+      method: 'POST',
+      body: JSON.stringify({ skipCatchup: true }),
+    }),
+
+  dismissInvalid: (ep, rm) =>
+    jsonFetch(`/admin/readmodel/dismiss-invalid/${ep}/${rm}`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
   refreshStatus: () => jsonFetch('/admin/readmodel/status'),
 
   getCommandProcessorStatus: () => jsonFetch('/admin/commandprocessor/status'),

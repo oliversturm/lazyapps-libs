@@ -1,11 +1,14 @@
 <script>
   import { getContext } from 'svelte';
   import BackupList from '$lib/components/BackupList.svelte';
+  import TzeroDialog from '$lib/components/TzeroDialog.svelte';
+  import TimestampEntry from '$lib/components/TimestampEntry.svelte';
 
   let { data } = $props();
 
   const api = getContext('api');
   const statusStore = getContext('statusStore');
+  const devMode = getContext('devMode');
 
   let backups = $state([]);
   let loading = $state(true);
@@ -82,16 +85,99 @@
     });
   };
 
+  // Dev-mode controls (C5)
+  let devTimestampOverride = $state(0);
+  let devUseTimestampOverride = $state(false);
+
+  // --- Restore with T=0 detection ---
   let restoreConfirmBackupId = $state(null);
+  let restorePreflight = $state(null);
+  let restorePreflightLoading = $state(false);
+
+  // T=0 dialog state for backup restore
+  let tzeroOption = $state(null);
+  let customTimestamp = $state(0);
+  let tzeroConfirmed = $state(false);
+  let isTzero = $derived(restorePreflight?.tzero === true);
+
+  const tzeroOptions = {
+    lastEventTimestamp: {
+      title: 'Accept last event timestamp as boundary',
+      detail: 'Replay from the backup point to the last event in the event store with side effects suppressed. After replay, the read model activates and processes new events with side effects enabled. This is the safest option for most cases.',
+      confirmWarning: '<p>Events from backup to latest will be replayed <strong>without</strong> side effects. New events after activation will trigger side effects normally.</p>',
+    },
+    backupTimestamp: {
+      title: 'Accept backup timestamp as boundary',
+      detail: 'No further replay after restore. The read model goes straight to catch-up from the backup timestamp. All events after the backup are processed with side effects enabled during catch-up.',
+      confirmWarning: '<p>All events after the backup timestamp will be processed <strong>with side effects enabled</strong> during catch-up. This means emails, webhooks, and commands will fire for events after the backup point.</p>',
+    },
+    customTimestamp: {
+      title: 'Custom boundary timestamp',
+      detail: 'Replay events from backup to a custom timestamp with side effects suppressed. Events after the boundary are processed during catch-up with side effects enabled. This gives you precise control over where the "no side effects" boundary falls.',
+      needsTimestamp: true,
+    },
+  };
+
+  const resetTzero = () => {
+    tzeroOption = null;
+    tzeroConfirmed = false;
+    customTimestamp = 0;
+  };
 
   const handleRestoreRequest = (backupId) => {
     restoreConfirmBackupId = backupId;
+    restorePreflight = null;
+    resetTzero();
+
+    // Run preflight check for T=0 detection
+    restorePreflightLoading = true;
+    api
+      .replayPreflight(data.ep, data.rm)
+      .then((result) => {
+        restorePreflight = result;
+        restorePreflightLoading = false;
+      })
+      .catch(() => {
+        // If preflight fails, proceed without T=0 detection
+        restorePreflight = { tzero: false };
+        restorePreflightLoading = false;
+      });
   };
+
+  // Restore button is disabled if T=0 detected but not confirmed
+  let restoreDisabled = $derived(isTzero && !tzeroConfirmed);
 
   const handleRestoreConfirm = () => {
     const backupId = restoreConfirmBackupId;
     restoreConfirmBackupId = null;
     error = null;
+
+    const options = { backupId };
+
+    // Include T=0 options if applicable
+    if (isTzero && tzeroConfirmed) {
+      if (tzeroOption === 'lastEventTimestamp') {
+        options.t0Option = 'replayToLatest';
+        options.suppressSideEffects = true;
+      } else if (tzeroOption === 'backupTimestamp') {
+        options.t0Option = 'skipReplayCatchUpOnly';
+      } else if (tzeroOption === 'customTimestamp') {
+        options.t0Option = 'customBoundary';
+        options.customTimestamp = customTimestamp;
+        options.suppressSideEffects = true;
+      }
+    }
+
+    // Dev-mode overrides
+    if ($devMode && devUseTimestampOverride && devTimestampOverride > 0) {
+      options.timestampOverride = devTimestampOverride;
+    }
+
+    restorePreflight = null;
+    resetTzero();
+    devUseTimestampOverride = false;
+    devTimestampOverride = 0;
+
     api
       .restoreBackup(data.ep, data.rm, backupId)
       .then(() => {
@@ -104,6 +190,8 @@
 
   const handleRestoreCancel = () => {
     restoreConfirmBackupId = null;
+    restorePreflight = null;
+    resetTzero();
   };
 </script>
 
@@ -176,7 +264,7 @@
 
 {#if restoreConfirmBackupId}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
       <h3 class="text-lg font-semibold text-gray-900 mb-2">Confirm Restore</h3>
       <div class="mb-4 p-3 bg-amber-50 border border-amber-300 rounded">
         <p class="text-sm text-amber-800 font-medium mb-1">Warning: Standalone restore</p>
@@ -186,6 +274,44 @@
           Replay from Backup on the replay page instead.
         </p>
       </div>
+
+      {#if restorePreflightLoading}
+        <p class="text-sm text-gray-500 mb-4">Checking read model status...</p>
+      {:else if isTzero}
+        <!-- T=0 dialog within restore modal -->
+        <div class="mb-4">
+          <TzeroDialog
+            options={tzeroOptions}
+            lastEventStoreTimestamp={restorePreflight?.lastEventStoreTimestamp}
+            bind:confirmed={tzeroConfirmed}
+            bind:selectedOption={tzeroOption}
+            bind:customTimestamp
+          />
+        </div>
+      {/if}
+
+      {#if $devMode}
+        <div class="mb-4 border-2 border-red-300 rounded-lg p-4 bg-red-50 space-y-3">
+          <p class="text-xs font-bold text-red-800 uppercase tracking-wide">Dev-mode overrides</p>
+          <label class="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              bind:checked={devUseTimestampOverride}
+              class="text-red-600"
+            />
+            <span class="text-sm text-red-800">Timestamp override</span>
+          </label>
+          {#if devUseTimestampOverride}
+            <div class="ml-6">
+              <TimestampEntry
+                bind:value={devTimestampOverride}
+                label="Override timestamp"
+              />
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       <p class="text-sm text-gray-600 mb-4">
         Restore backup <span class="font-mono">{restoreConfirmBackupId}</span>?
       </p>
@@ -198,9 +324,11 @@
         </button>
         <button
           onclick={handleRestoreConfirm}
-          class="px-4 py-2 text-sm text-white bg-amber-600 rounded hover:bg-amber-700"
+          disabled={restoreDisabled || restorePreflightLoading}
+          class="px-4 py-2 text-sm text-white bg-amber-600 rounded hover:bg-amber-700
+            disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Restore Anyway
+          Restore{isTzero ? '' : ' Anyway'}
         </button>
       </div>
     </div>

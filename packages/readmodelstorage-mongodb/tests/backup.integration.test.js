@@ -292,6 +292,110 @@ describe('backup integration', { timeout: 120000 }, () => {
             expect(backups).toEqual([]);
           });
         }));
+
+      test('metadata.json contains timestamp and eventTimestamp fields', () =>
+        createBackupPath().then((bp) => {
+          const b = backup({ backupPath: bp, format: 'json' })(storage);
+
+          return db
+            .collection('test_col')
+            .insertMany([{ name: 'alice' }])
+            .then(() => b.createBackup('corr-1', 'testRM', ['test_col']))
+            .then((result) =>
+              readFile(
+                join(bp, 'testRM', result.backupId, 'metadata.json'),
+                'utf8',
+              ).then(JSON.parse),
+            )
+            .then((metadata) => {
+              expect(metadata).toHaveProperty('timestamp');
+              expect(metadata).toHaveProperty('eventTimestamp');
+              expect(typeof metadata.timestamp).toBe('number');
+              expect(typeof metadata.eventTimestamp).toBe('number');
+              expect(metadata.timestamp).toBeGreaterThan(0);
+            });
+        }));
+
+      test('metadata.json eventTimestamp reflects lastProjectedEventTimestamp', () =>
+        createBackupPath().then((bp) => {
+          const b = backup({ backupPath: bp, format: 'json' })(storage);
+
+          return db
+            .collection('test_col')
+            .insertMany([{ name: 'alice' }])
+            .then(() =>
+              storage.updateLastProjectedEventTimestamps(
+                'corr-1',
+                ['testRM'],
+                55000,
+              ),
+            )
+            .then(() => b.createBackup('corr-1', 'testRM', ['test_col']))
+            .then((result) =>
+              readFile(
+                join(bp, 'testRM', result.backupId, 'metadata.json'),
+                'utf8',
+              ).then(JSON.parse),
+            )
+            .then((metadata) => {
+              expect(metadata.eventTimestamp).toBe(55000);
+              expect(metadata.timestamp).toBeGreaterThan(0);
+              expect(metadata.backupId).toMatch(/^testRM__/);
+              expect(metadata.readModelName).toBe('testRM');
+              expect(metadata.collections).toEqual(['test_col']);
+              expect(metadata.format).toBe('json');
+              expect(metadata.database).toBe('backup-test');
+            });
+        }));
+
+      test('metadata.json eventTimestamp is 0 when no events projected', () =>
+        createBackupPath().then((bp) => {
+          const b = backup({ backupPath: bp, format: 'json' })(storage);
+
+          return b
+            .createBackup('corr-1', 'testRM', ['test_col'])
+            .then((result) =>
+              readFile(
+                join(bp, 'testRM', result.backupId, 'metadata.json'),
+                'utf8',
+              ).then(JSON.parse),
+            )
+            .then((metadata) => {
+              expect(metadata.eventTimestamp).toBe(0);
+            });
+        }));
+
+      test('restore uses metadata eventTimestamp to set lastProjectedEventTimestamp', () =>
+        createBackupPath().then((bp) => {
+          const b = backup({ backupPath: bp, format: 'json' })(storage);
+
+          return db
+            .collection('test_col')
+            .insertMany([{ name: 'alice' }])
+            .then(() =>
+              storage.updateLastProjectedEventTimestamps(
+                'corr-1',
+                ['testRM'],
+                77000,
+              ),
+            )
+            .then(() => b.createBackup('corr-1', 'testRM', ['test_col']))
+            .then((result) => {
+              // Change the timestamp to something different
+              return storage
+                .updateLastProjectedEventTimestamps('corr-1', ['testRM'], 99000)
+                .then(() =>
+                  b.restoreBackup('corr-2', 'testRM', result.backupId),
+                );
+            })
+            .then(() =>
+              db.collection('readmodel.state').findOne({ name: 'testRM' }),
+            )
+            .then((state) => {
+              // After restore, timestamp should match what was in the backup metadata
+              expect(state.lastProjectedEventTimestamp).toBe(77000);
+            });
+        }));
     },
   );
 

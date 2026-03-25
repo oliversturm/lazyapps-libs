@@ -6,6 +6,7 @@
 
   const api = getContext('api');
   const statusStore = getContext('statusStore');
+  const devMode = getContext('devMode');
 
   let readModel = $derived(
     $statusStore.readModels.find(
@@ -31,6 +32,26 @@
     actionPending = true;
     api
       .activate(data.ep, data.rm)
+      .catch(() => {})
+      .then(() => {
+        actionPending = false;
+      });
+  };
+
+  const handleActivateWithoutCatchup = () => {
+    actionPending = true;
+    api
+      .activateWithoutCatchup(data.ep, data.rm)
+      .catch(() => {})
+      .then(() => {
+        actionPending = false;
+      });
+  };
+
+  const handleDismissInvalid = () => {
+    actionPending = true;
+    api
+      .dismissInvalid(data.ep, data.rm)
       .catch(() => {})
       .then(() => {
         actionPending = false;
@@ -113,6 +134,16 @@
       >
         Manage Backups
       </a>
+      {#if $devMode}
+        <button
+          onclick={handleDismissInvalid}
+          disabled={actionPending}
+          class="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700
+            disabled:opacity-50 border-2 border-red-800"
+        >
+          {actionPending ? 'Dismissing...' : 'Dismiss Invalid State'}
+        </button>
+      {/if}
     </div>
   {:else}
     <div class="flex space-x-4">
@@ -132,6 +163,16 @@
         >
           {actionPending ? 'Activating...' : 'Activate'}
         </button>
+        {#if $devMode}
+          <button
+            onclick={handleActivateWithoutCatchup}
+            disabled={actionPending}
+            class="px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700
+              disabled:opacity-50 border-2 border-red-800"
+          >
+            {actionPending ? 'Activating...' : 'Activate without Catch-up'}
+          </button>
+        {/if}
       {/if}
       <a
         href="/readmodel/{readModel.endpointName}/{readModel.name}/backup"

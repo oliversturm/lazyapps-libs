@@ -25,98 +25,37 @@ describe('createSideEffectsHandler', () => {
     });
   });
 
-  test('schedule runs liveOnly side-effect when not in replay', () => {
+  test('schedule runs side-effect when not in replay', () => {
     return createSideEffectsHandler().then((result) => {
       const handler = result.getSideEffectsHandler('corr-1', false);
       const effect = vi.fn().mockResolvedValue();
       return handler
-        .schedule(() => effect(), {
-          name: 'test-effect',
-          execution: 'liveOnly',
-        })
+        .schedule(() => effect(), { name: 'test-effect' })
         .then(() => {
           expect(effect).toHaveBeenCalledOnce();
         });
     });
   });
 
-  test('schedule skips liveOnly side-effect when in replay', () => {
+  test('schedule skips side-effect when in replay', () => {
     return createSideEffectsHandler().then((result) => {
       const handler = result.getSideEffectsHandler('corr-1', true);
       const effect = vi.fn().mockResolvedValue();
       return handler
-        .schedule(() => effect(), {
-          name: 'test-effect',
-          execution: 'liveOnly',
-        })
+        .schedule(() => effect(), { name: 'test-effect' })
         .then(() => {
           expect(effect).not.toHaveBeenCalled();
         });
     });
   });
 
-  test('schedule runs replayOnly side-effect when in replay', () => {
-    return createSideEffectsHandler().then((result) => {
-      const handler = result.getSideEffectsHandler('corr-1', true);
-      const effect = vi.fn().mockResolvedValue();
-      return handler
-        .schedule(() => effect(), {
-          name: 'test-effect',
-          execution: 'replayOnly',
-        })
-        .then(() => {
-          expect(effect).toHaveBeenCalledOnce();
-        });
-    });
-  });
-
-  test('schedule skips replayOnly side-effect when not in replay', () => {
-    return createSideEffectsHandler().then((result) => {
-      const handler = result.getSideEffectsHandler('corr-1', false);
-      const effect = vi.fn().mockResolvedValue();
-      return handler
-        .schedule(() => effect(), {
-          name: 'test-effect',
-          execution: 'replayOnly',
-        })
-        .then(() => {
-          expect(effect).not.toHaveBeenCalled();
-        });
-    });
-  });
-
-  test('schedule runs always side-effect when in replay', () => {
-    return createSideEffectsHandler().then((result) => {
-      const handler = result.getSideEffectsHandler('corr-1', true);
-      const effect = vi.fn().mockResolvedValue();
-      return handler
-        .schedule(() => effect(), { name: 'test-effect', execution: 'always' })
-        .then(() => {
-          expect(effect).toHaveBeenCalledOnce();
-        });
-    });
-  });
-
-  test('schedule runs always side-effect when not in replay', () => {
-    return createSideEffectsHandler().then((result) => {
-      const handler = result.getSideEffectsHandler('corr-1', false);
-      const effect = vi.fn().mockResolvedValue();
-      return handler
-        .schedule(() => effect(), { name: 'test-effect', execution: 'always' })
-        .then(() => {
-          expect(effect).toHaveBeenCalledOnce();
-        });
-    });
-  });
-
-  test('schedule defaults to liveOnly execution', () => {
+  test('schedule skips side-effect when in replay even without options', () => {
     return createSideEffectsHandler().then((result) => {
       const handler = result.getSideEffectsHandler('corr-1', true);
       const effect = vi.fn().mockResolvedValue();
       return handler
         .schedule(() => effect())
         .then(() => {
-          // Default execution is 'liveOnly', should skip in replay
           expect(effect).not.toHaveBeenCalled();
         });
     });

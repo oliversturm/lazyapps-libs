@@ -426,6 +426,22 @@ const createSseClient = ({
     );
   };
 
+  const fetchLastEventStoreTimestamp = () => {
+    if (!commandProcessorUrl) {
+      return Promise.resolve(null);
+    }
+
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    return fetch(`${commandProcessorUrl}/admin/eventstore/lastTimestamp`, {
+      headers,
+    }).then((r) => {
+      if (!r.ok) return null;
+      return r.json().then((data) => data.lastTimestamp ?? null);
+    });
+  };
+
   return {
     cache,
     emitter,
@@ -439,6 +455,7 @@ const createSseClient = ({
     fetchReplayRelevantEvents,
     fetchBackupList,
     fetchAllStatus,
+    fetchLastEventStoreTimestamp,
     getServiceUrls,
   };
 };

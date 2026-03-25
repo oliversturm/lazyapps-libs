@@ -84,7 +84,13 @@ const handleProjections =
   (rmProjections) =>
     Promise.all(
       rmProjections.map(([rmName, f]) =>
-        f(getProjectionContext(correlationId)(rmName)(inReplay), event)
+        f(
+          getProjectionContext(correlationId)(rmName)({
+            inReplay,
+            suppressNotifications: false,
+          }),
+          event,
+        )
           .then(() =>
             updateTimestamp(
               correlationId,
@@ -181,6 +187,7 @@ export const createProjectionHandler = (context) => {
   const readModelReplayState = new Map();
   const readModelTerminalState = new Map();
   const readModelCatchupState = new Map();
+  const readModelReplayOptions = new Map();
 
   const isReadModelReplaying = (rmName) =>
     readModelReplayState.get(rmName) === true;
@@ -233,24 +240,119 @@ export const createProjectionHandler = (context) => {
 
   const getCatchupState = (rmName) => readModelCatchupState.get(rmName) || null;
 
-  const getProjectionContext = (correlationId) => (rmName) => (inReplay) => ({
-    storage: context.storage.perRequest(correlationId),
-    commands: inReplay
-      ? { execute: () => () => Promise.resolve() }
-      : context.commands(correlationId),
-    changeNotification: inReplay
-      ? {
-          sendChangeNotification: () => Promise.resolve(),
-          createChangeInfo:
-            context.changeNotification(correlationId).createChangeInfo,
+  const wrapSideEffectsWithFilter = (
+    realHandler,
+    byNameFilter,
+    correlationId,
+  ) => {
+    const filterLog = getLogger('RM/Filter', correlationId);
+    return {
+      schedule: (promiseGenerator, options = {}) => {
+        const name = options.name || 'unnamed';
+        const shouldRun =
+          byNameFilter.type === 'include'
+            ? byNameFilter.names.includes(name)
+            : !byNameFilter.names.includes(name);
+
+        if (!shouldRun) {
+          filterLog.debug(
+            `Side-effect '${name}' filtered out ` +
+              `by ${byNameFilter.type} filter`,
+          );
+          return Promise.resolve();
         }
-      : context.changeNotification(correlationId),
-    log: getLogger(`RM/${rmName}`, correlationId),
-    sideEffects: context.sideEffects.getSideEffectsHandler(
-      correlationId,
-      inReplay,
-    ),
+        return realHandler.schedule(promiseGenerator, options);
+      },
+    };
+  };
+
+  const wrapCommandsWithFilter = (realCommands, byCommandFilter) => ({
+    execute: (cmd) => {
+      const cmdType = cmd.type || '';
+      const shouldRun =
+        byCommandFilter.type === 'include'
+          ? byCommandFilter.commands.includes(cmdType)
+          : !byCommandFilter.commands.includes(cmdType);
+
+      if (!shouldRun) {
+        return () => Promise.resolve();
+      }
+      return realCommands.execute(cmd);
+    },
   });
+
+  const getProjectionContext =
+    (correlationId) =>
+    (rmName) =>
+    ({
+      inReplay = false,
+      suppressNotifications = false,
+      sideEffectFilter = null,
+      enableSideEffects = false,
+      suppressSideEffects = false,
+    } = {}) => {
+      const resolveCommands = () => {
+        if (sideEffectFilter?.byCommand) {
+          return wrapCommandsWithFilter(
+            context.commands(correlationId),
+            sideEffectFilter.byCommand,
+          );
+        }
+        // enableSideEffects un-stubs commands during replay
+        if (inReplay && !enableSideEffects) {
+          return { execute: () => () => Promise.resolve() };
+        }
+        // suppressSideEffects stubs commands during catch-up
+        if (!inReplay && suppressSideEffects) {
+          return { execute: () => () => Promise.resolve() };
+        }
+        return context.commands(correlationId);
+      };
+
+      const resolveSideEffects = () => {
+        if (sideEffectFilter?.byName) {
+          const realHandler = context.sideEffects.getSideEffectsHandler(
+            correlationId,
+            false,
+          );
+          return wrapSideEffectsWithFilter(
+            realHandler,
+            sideEffectFilter.byName,
+            correlationId,
+          );
+        }
+        // suppressSideEffects stubs sideEffects during catch-up
+        if (!inReplay && suppressSideEffects) {
+          return context.sideEffects.getSideEffectsHandler(correlationId, true);
+        }
+        // enableSideEffects un-stubs sideEffects during replay
+        if (inReplay && enableSideEffects) {
+          return context.sideEffects.getSideEffectsHandler(
+            correlationId,
+            false,
+          );
+        }
+        return context.sideEffects.getSideEffectsHandler(
+          correlationId,
+          inReplay,
+        );
+      };
+
+      return {
+        storage: context.storage.perRequest(correlationId),
+        commands: resolveCommands(),
+        changeNotification:
+          inReplay || suppressNotifications
+            ? {
+                sendChangeNotification: () => Promise.resolve(),
+                createChangeInfo:
+                  context.changeNotification(correlationId).createChangeInfo,
+              }
+            : context.changeNotification(correlationId),
+        log: getLogger(`RM/${rmName}`, correlationId),
+        sideEffects: resolveSideEffects(),
+      };
+    };
 
   const projectEventForReadModel = (correlationId, targetRmName) => {
     const log = getLogger('RM/Replay', correlationId);
@@ -259,9 +361,15 @@ export const createProjectionHandler = (context) => {
       if (!rm) return Promise.resolve();
       const projection = rm.projections && rm.projections[event.type];
       if (!projection) return Promise.resolve();
+      const opts = readModelReplayOptions.get(targetRmName) || {};
       return eventQueue.add(() =>
         projection(
-          getProjectionContext(correlationId)(targetRmName)(true),
+          getProjectionContext(correlationId)(targetRmName)({
+            inReplay: true,
+            suppressNotifications: true,
+            sideEffectFilter: opts.sideEffectFilter || null,
+            enableSideEffects: opts.enableSideEffects || false,
+          }),
           event,
         )
           .then(() => {
@@ -295,9 +403,15 @@ export const createProjectionHandler = (context) => {
       const projection = rm.projections && rm.projections[event.type];
       if (!projection) return Promise.resolve();
       recordCatchupEventFingerprint(targetRmName, event);
+      const opts = readModelReplayOptions.get(targetRmName) || {};
       return eventQueue.add(() =>
         projection(
-          getProjectionContext(correlationId)(targetRmName)(false),
+          getProjectionContext(correlationId)(targetRmName)({
+            inReplay: false,
+            suppressNotifications: true,
+            sideEffectFilter: opts.sideEffectFilter || null,
+            suppressSideEffects: opts.suppressSideEffects || false,
+          }),
           event,
         )
           .then(() => {
@@ -369,6 +483,33 @@ export const createProjectionHandler = (context) => {
     clearCatchupState,
     getFifoQueueSize,
     getCatchupState,
+    setReplayOptions: (rmName, options) => {
+      readModelReplayOptions.set(rmName, options);
+    },
+    clearReplayOptions: (rmName) => {
+      readModelReplayOptions.delete(rmName);
+    },
+    getReplayOptions: (rmName) => readModelReplayOptions.get(rmName) || null,
+    // Convenience aliases for filter-only use
+    setSideEffectFilter: (rmName, filter) => {
+      const existing = readModelReplayOptions.get(rmName) || {};
+      readModelReplayOptions.set(rmName, {
+        ...existing,
+        sideEffectFilter: filter,
+      });
+    },
+    clearSideEffectFilter: (rmName) => {
+      const existing = readModelReplayOptions.get(rmName);
+      if (!existing) return;
+      const { sideEffectFilter: _, ...rest } = existing;
+      if (Object.keys(rest).length === 0) {
+        readModelReplayOptions.delete(rmName);
+      } else {
+        readModelReplayOptions.set(rmName, rest);
+      }
+    },
+    getSideEffectFilter: (rmName) =>
+      (readModelReplayOptions.get(rmName) || {}).sideEffectFilter || null,
     flushEventQueue: () => eventQueue.add(() => Promise.resolve()),
   };
 };

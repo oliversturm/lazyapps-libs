@@ -49,6 +49,7 @@ const createMockSseClient = () => {
     fetchReplayRelevantEvents: vi
       .fn()
       .mockResolvedValue(['EVENT_A', 'EVENT_B']),
+    fetchLastEventStoreTimestamp: vi.fn().mockResolvedValue(9000),
   };
 };
 
@@ -308,6 +309,429 @@ describe('createOrchestrator', () => {
       return orchestrator.activateAll().then((results) => {
         expect(results).toEqual([]);
       });
+    });
+  });
+
+  describe('replayOrchestration with T=0 options', () => {
+    const setupStandardMocks = () => {
+      sseClient.cache.readModels['ep1/customers'] = {
+        endpointName: 'ep1',
+        readModelName: 'customers',
+        state: 'stopped',
+        lastProjectedEventTimestamp: 0,
+      };
+
+      sseClient.waitForStatus.mockResolvedValue({
+        readModels: {
+          'ep1/customers': { state: 'stopped' },
+        },
+        commandProcessor: {
+          state: 'idle',
+          activeReplays: [],
+          activeCatchUps: [],
+        },
+      });
+    };
+
+    test('option 1 (replayToCurrentTime) fetches last event store timestamp', () => {
+      setupStandardMocks();
+      sseClient.fetchLastEventStoreTimestamp.mockResolvedValue(9000);
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'replayToCurrentTime',
+        })
+        .then(() => {
+          expect(sseClient.fetchLastEventStoreTimestamp).toHaveBeenCalled();
+          // Should have published a replay command with toTimestamp=9000
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeDefined();
+          expect(replayCall[0].toTimestamp).toBe(9000);
+        });
+    });
+
+    test('option 1 fails when event store timestamp is unavailable', () => {
+      setupStandardMocks();
+      sseClient.fetchLastEventStoreTimestamp.mockResolvedValue(null);
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'replayToCurrentTime',
+        })
+        .then(() => {
+          throw new Error('should not resolve');
+        })
+        .catch((err) => {
+          expect(err.message).toContain('event store timestamp unavailable');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('option 1 persists timestamp to both storages', () => {
+      setupStandardMocks();
+      sseClient.fetchLastEventStoreTimestamp.mockResolvedValue(9000);
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'replayToCurrentTime',
+        })
+        .then(() => {
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const persistCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'persistTimestamp',
+          );
+          expect(persistCall).toBeDefined();
+          expect(persistCall[0].timestamp).toBe(9000);
+          expect(persistCall[0].targetReadModel).toBe('customers');
+        });
+    });
+
+    test('option 2 (skipReplayCatchUpOnly) skips replay and activates', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'skipReplayCatchUpOnly',
+        })
+        .then(() => {
+          // Should NOT have published a replay command
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeUndefined();
+
+          // Should have published stop and reset
+          const stopCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'stop',
+          );
+          expect(stopCall).toBeDefined();
+          const resetCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'reset',
+          );
+          expect(resetCall).toBeDefined();
+
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('option 2 with activateAfter=false returns warning', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'skipReplayCatchUpOnly',
+          activateAfter: false,
+        })
+        .then((result) => {
+          expect(result.status).toBe('stopped');
+          expect(result.warning).toContain('skipReplayCatchUpOnly');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('option 3 (customBoundary) uses custom timestamp', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'customBoundary',
+          customTimestamp: 4500,
+        })
+        .then(() => {
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeDefined();
+          expect(replayCall[0].toTimestamp).toBe(4500);
+        });
+    });
+
+    test('option 3 persists custom timestamp to both storages', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'customBoundary',
+          customTimestamp: 4500,
+        })
+        .then(() => {
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+          const persistCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'persistTimestamp',
+          );
+          expect(persistCall).toBeDefined();
+          expect(persistCall[0].timestamp).toBe(4500);
+        });
+    });
+
+    test('option 3 fails when customTimestamp is missing', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'customBoundary',
+        })
+        .then(() => {
+          throw new Error('should not resolve');
+        })
+        .catch((err) => {
+          expect(err.message).toContain('customBoundary requires');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('unknown t0Option rejects', () => {
+      setupStandardMocks();
+
+      return orchestrator
+        .replayOrchestration('ep1', 'customers', {
+          t0Option: 'invalidOption',
+        })
+        .then(() => {
+          throw new Error('should not resolve');
+        })
+        .catch((err) => {
+          expect(err.message).toContain('Unknown t0Option');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('standard replay (no t0Option) uses RM lastProjectedEventTimestamp', () => {
+      sseClient.cache.readModels['ep1/customers'] = {
+        endpointName: 'ep1',
+        readModelName: 'customers',
+        state: 'stopped',
+        lastProjectedEventTimestamp: 5000,
+      };
+
+      sseClient.waitForStatus.mockResolvedValue({
+        readModels: {
+          'ep1/customers': { state: 'stopped' },
+        },
+        commandProcessor: {
+          state: 'idle',
+          activeReplays: [],
+          activeCatchUps: [],
+        },
+      });
+
+      return orchestrator.replayOrchestration('ep1', 'customers').then(() => {
+        // Should NOT have called fetchLastEventStoreTimestamp
+        expect(sseClient.fetchLastEventStoreTimestamp).not.toHaveBeenCalled();
+
+        const publishFn =
+          eventBus.publishAdminInstruction.mock.results[0].value;
+        const replayCall = publishFn.mock.calls.find(
+          (c) => c[0].type === 'replay',
+        );
+        expect(replayCall[0].toTimestamp).toBe(5000);
+
+        // Should NOT have published persistTimestamp
+        const persistCall = publishFn.mock.calls.find(
+          (c) => c[0].type === 'persistTimestamp',
+        );
+        expect(persistCall).toBeUndefined();
+      });
+    });
+  });
+
+  describe('backupReplayOrchestration with T=0 options', () => {
+    const setupBackupMocks = (backupTimestamp = 3000) => {
+      sseClient.cache.readModels['ep1/customers'] = {
+        endpointName: 'ep1',
+        readModelName: 'customers',
+        state: 'stopped',
+        lastProjectedEventTimestamp: backupTimestamp,
+      };
+
+      sseClient.waitForStatus.mockResolvedValue({
+        readModels: {
+          'ep1/customers': { state: 'stopped' },
+        },
+        commandProcessor: {
+          state: 'idle',
+          activeReplays: [],
+          activeCatchUps: [],
+        },
+      });
+    };
+
+    test('acceptLastEvent: fetches event store timestamp and replays from backup ts', () => {
+      setupBackupMocks(3000);
+      sseClient.fetchLastEventStoreTimestamp.mockResolvedValue(9000);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'acceptLastEvent',
+        })
+        .then(() => {
+          expect(sseClient.fetchLastEventStoreTimestamp).toHaveBeenCalled();
+
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+
+          // Should restore backup
+          const restoreCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'restoreBackup',
+          );
+          expect(restoreCall).toBeDefined();
+          expect(restoreCall[0].backupId).toBe('b1');
+
+          // Should replay from backupTs to eventStoreTs
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeDefined();
+          expect(replayCall[0].fromTimestamp).toBe(3000);
+          expect(replayCall[0].toTimestamp).toBe(9000);
+
+          // Should persist timestamp
+          const persistCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'persistTimestamp',
+          );
+          expect(persistCall).toBeDefined();
+          expect(persistCall[0].timestamp).toBe(9000);
+        });
+    });
+
+    test('acceptLastEvent: fails when event store timestamp unavailable', () => {
+      setupBackupMocks(3000);
+      sseClient.fetchLastEventStoreTimestamp.mockResolvedValue(null);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'acceptLastEvent',
+        })
+        .then(() => {
+          throw new Error('should not resolve');
+        })
+        .catch((err) => {
+          expect(err.message).toContain('event store timestamp unavailable');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('acceptBackupTimestamp: skips replay, activates directly', () => {
+      setupBackupMocks(3000);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'acceptBackupTimestamp',
+        })
+        .then(() => {
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+
+          // Should restore backup
+          const restoreCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'restoreBackup',
+          );
+          expect(restoreCall).toBeDefined();
+
+          // Should NOT send replay command
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeUndefined();
+
+          // Should persist backup timestamp
+          const persistCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'persistTimestamp',
+          );
+          expect(persistCall).toBeDefined();
+          expect(persistCall[0].timestamp).toBe(3000);
+
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('acceptBackupTimestamp with activateAfter=false returns stopped', () => {
+      setupBackupMocks(3000);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'acceptBackupTimestamp',
+          activateAfter: false,
+        })
+        .then((result) => {
+          expect(result.status).toBe('stopped');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('customBoundary: replays from backup timestamp to custom value', () => {
+      setupBackupMocks(3000);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'customBoundary',
+          customTimestamp: 7000,
+        })
+        .then(() => {
+          const publishFn =
+            eventBus.publishAdminInstruction.mock.results[0].value;
+
+          const replayCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'replay',
+          );
+          expect(replayCall).toBeDefined();
+          expect(replayCall[0].fromTimestamp).toBe(3000);
+          expect(replayCall[0].toTimestamp).toBe(7000);
+
+          const persistCall = publishFn.mock.calls.find(
+            (c) => c[0].type === 'persistTimestamp',
+          );
+          expect(persistCall).toBeDefined();
+          expect(persistCall[0].timestamp).toBe(7000);
+        });
+    });
+
+    test('customBoundary: fails when customTimestamp is missing', () => {
+      setupBackupMocks(3000);
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'customBoundary',
+        })
+        .then(() => {
+          throw new Error('should not resolve');
+        })
+        .catch((err) => {
+          expect(err.message).toContain('requires a valid timestamp');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('calls endOperation on failure', () => {
+      sseClient.waitForStatus.mockRejectedValue(
+        new Error('Status wait timeout'),
+      );
+
+      return orchestrator
+        .backupReplayOrchestration('ep1', 'customers', {
+          backupId: 'b1',
+          t0Option: 'acceptLastEvent',
+        })
+        .catch((err) => {
+          expect(err.message).toBe('Status wait timeout');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
     });
   });
 });

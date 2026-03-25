@@ -1,6 +1,7 @@
 <script>
   import '../app.css';
   import { onDestroy, setContext } from 'svelte';
+  import { writable } from 'svelte/store';
   import { createAdminClient } from '$lib/api.js';
   import { createSseConnection } from '$lib/sse.js';
   import { createStatusStore } from '$lib/statusStore.js';
@@ -9,9 +10,20 @@
 
   const api = createAdminClient();
   const statusStore = createStatusStore();
+  const devMode = writable(false);
 
   setContext('api', api);
   setContext('statusStore', statusStore);
+  setContext('devMode', devMode);
+
+  // Fetch dev-mode config on startup
+  api.getConfig()
+    .then((config) => {
+      devMode.set(!!config.developmentMode);
+    })
+    .catch(() => {
+      devMode.set(false);
+    });
 
   let refreshing = $state(false);
 
@@ -49,6 +61,12 @@
 </script>
 
 <div class="min-h-screen bg-gray-50">
+  {#if $devMode}
+    <div class="bg-red-600 text-white text-center py-1.5 px-4 text-xs font-bold tracking-wide">
+      DEVELOPMENT MODE — Dev-only controls are active. Do not use in production.
+    </div>
+  {/if}
+
   <nav class="bg-white border-b border-gray-200">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex h-14 items-center justify-between">
@@ -68,6 +86,9 @@
           >
         </div>
         <div class="flex items-center space-x-3">
+          {#if $devMode}
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800">DEV</span>
+          {/if}
           {#if $statusStore.connected}
             <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800">Connected</span>
           {:else}

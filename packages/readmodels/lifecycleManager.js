@@ -2,7 +2,7 @@ import { getLogger } from '@lazyapps/logger';
 
 const VALID_STATES = ['stopped', 'live', 'replay', 'catchup', 'invalid'];
 
-const VALID_TRANSITIONS = {
+const BASE_TRANSITIONS = {
   stopped: ['replay', 'catchup'],
   live: ['stopped'],
   replay: ['stopped'],
@@ -10,7 +10,15 @@ const VALID_TRANSITIONS = {
   invalid: [],
 };
 
+const DEV_TRANSITIONS = {
+  ...BASE_TRANSITIONS,
+  invalid: ['stopped'],
+};
+
 export const createLifecycleManager = (context) => {
+  const VALID_TRANSITIONS = context.developmentMode
+    ? DEV_TRANSITIONS
+    : BASE_TRANSITIONS;
   const states = {};
   let connectPromise = null;
 
@@ -65,8 +73,26 @@ export const createLifecycleManager = (context) => {
       log.info(`Read model '${readModelName}' already stopped`);
       return;
     }
+    if (current === 'invalid' && !context.developmentMode) {
+      log.warn(
+        `Cannot stop '${readModelName}' from invalid state (not in development mode)`,
+      );
+      return;
+    }
     if (current === 'catchup') {
       context.projectionHandler.clearCatchupState(readModelName);
+    }
+    if (current === 'invalid') {
+      log.info(
+        `Clearing replayInProgress for '${readModelName}' (dev mode recovery from invalid)`,
+      );
+      context.storage
+        .perRequest(correlationId || 'SYS')
+        .updateOne(
+          'readmodel.state',
+          { name: readModelName },
+          { $unset: { replayInProgress: '' } },
+        );
     }
     log.info(`Stopping read model '${readModelName}'`);
     setState(readModelName, 'stopped', correlationId);
@@ -181,4 +207,8 @@ export const createLifecycleManager = (context) => {
   };
 };
 
-export const __testing__ = { VALID_STATES, VALID_TRANSITIONS };
+export const __testing__ = {
+  VALID_STATES,
+  BASE_TRANSITIONS,
+  DEV_TRANSITIONS,
+};

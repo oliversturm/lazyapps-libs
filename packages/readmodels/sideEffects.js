@@ -7,17 +7,21 @@ const createSideEffectsHandler = () => {
   const schedule =
     (correlationId, inReplay) =>
     (promiseGenerator, options = {}) => {
-      const defaultOptions = { name: 'unnamed', execution: 'liveOnly' };
+      const defaultOptions = { name: 'unnamed' };
       const actualOptions = { ...defaultOptions, ...options };
 
       const log = getLogger('ReadMod/Side', correlationId);
-      return (inReplay &&
-        ['replayOnly', 'always'].includes(actualOptions.execution)) ||
-        (!inReplay && ['liveOnly', 'always'].includes(actualOptions.execution))
-        ? queue.add(() =>
+      return inReplay
+        ? new Promise((resolve) => {
+            log.debug(
+              `Skipping side-effect '${actualOptions.name}' (inReplay=${inReplay})`,
+            );
+            resolve();
+          })
+        : queue.add(() =>
             new Promise((resolve) => {
               log.debug(
-                `Running side-effect '${actualOptions.name}' (inReplay=${inReplay}, execution=${actualOptions.execution})`,
+                `Running side-effect '${actualOptions.name}' (inReplay=${inReplay})`,
               );
               resolve();
             })
@@ -34,13 +38,7 @@ const createSideEffectsHandler = () => {
                   `Can't execute side-effect '${actualOptions.name}': ${err}`,
                 );
               }),
-          )
-        : new Promise((resolve) => {
-            log.debug(
-              `Skipping side-effect '${actualOptions.name} (inReplay=${inReplay}, execution=${actualOptions.execution})`,
-            );
-            resolve();
-          });
+          );
     };
 
   return Promise.resolve({

@@ -188,6 +188,43 @@ const handleReset = (context, correlationId, instruction) => {
     });
 };
 
+const handlePersistTimestamp = (context, correlationId, instruction) => {
+  const log = getLogger('RM/Admin', correlationId);
+  const { targetReadModel, timestamp } = instruction;
+
+  log.info(`Persisting timestamp ${timestamp} for ${targetReadModel}`);
+
+  const primaryWrite = context.storage
+    .updateLastProjectedEventTimestamps(
+      correlationId,
+      [targetReadModel],
+      timestamp,
+    )
+    .then(() => {
+      if (context.readModels[targetReadModel]) {
+        context.readModels[targetReadModel].lastProjectedEventTimestamp =
+          timestamp;
+      }
+    });
+
+  const secondaryWrite = context.secondaryTimestampStorage
+    ? context.secondaryTimestampStorage.writeTimestamp(
+        targetReadModel,
+        timestamp,
+      )
+    : Promise.resolve();
+
+  return Promise.all([primaryWrite, secondaryWrite])
+    .then(() => {
+      log.info(
+        `Persisted timestamp ${timestamp} for ${targetReadModel} to both storages`,
+      );
+    })
+    .catch((err) => {
+      log.error(`Failed to persist timestamp for ${targetReadModel}: ${err}`);
+    });
+};
+
 const createAdminInstructionHandler =
   (context) => (correlationId, instruction) => {
     const log = getLogger('RM/Admin', correlationId);
@@ -197,6 +234,16 @@ const createAdminInstructionHandler =
     log.info(
       `Admin instruction: ${type} for read model '${targetReadModel || 'all'}'`,
     );
+
+    if (instruction.developmentOperation && !context.developmentMode) {
+      log.error(
+        `REJECTED: instruction '${type}' requires development mode ` +
+          `but this RM service is NOT in development mode. ` +
+          `This is a safety check — development operations are ` +
+          `not allowed in production.`,
+      );
+      return;
+    }
 
     switch (type) {
       case 'activate':
@@ -325,6 +372,14 @@ const createAdminInstructionHandler =
         handleRestoreBackup(context, correlationId, instruction);
         break;
 
+      case 'persistTimestamp':
+        if (!targetReadModel) {
+          log.warn('persistTimestamp instruction missing targetReadModel');
+          return;
+        }
+        handlePersistTimestamp(context, correlationId, instruction);
+        break;
+
       default:
         log.warn(`Unknown admin instruction type: ${type}`);
     }
@@ -341,6 +396,7 @@ export const startReadModels = (correlationConfig, config) =>
     lifecycle: config.lifecycle,
     endpointName: config.endpointName,
     secondaryTimestampStorage: config.secondaryTimestampStorage,
+    developmentMode: config.developmentMode,
   }).then((context) => {
     context.adminInstructionHandler = createAdminInstructionHandler(context);
     if (config.token) {

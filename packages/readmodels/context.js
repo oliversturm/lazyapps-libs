@@ -21,6 +21,7 @@ export const initializeContext = (
     lifecycle,
     endpointName,
     secondaryTimestampStorage,
+    developmentMode,
   },
 ) => {
   if (!endpointName) {
@@ -36,6 +37,7 @@ export const initializeContext = (
       readModels,
       correlationConfig,
       ...(endpointName && { endpointName }),
+      ...(developmentMode && { developmentMode: true }),
     }))
     .then((context) => {
       if (secondaryTimestampStorage) {

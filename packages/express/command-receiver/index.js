@@ -22,6 +22,24 @@ const installAdminEndpoints = (context, app) => {
     res.json(statusTracker.getStatus());
   });
 
+  app.get('/admin/eventstore/lastTimestamp', tokenAuth, (req, res) => {
+    if (!context.eventStore || !context.eventStore.getLatestEventTimestamp) {
+      res
+        .status(501)
+        .json({ error: 'Event store does not support this query' });
+      return;
+    }
+    context.eventStore
+      .getLatestEventTimestamp()
+      .then((ts) => {
+        res.json({ lastTimestamp: ts });
+      })
+      .catch((err) => {
+        adminLog.error(`Failed to get latest event timestamp: ${err}`);
+        res.status(500).json({ error: 'Failed to query event store' });
+      });
+  });
+
   app.get('/admin/commandprocessor/events', tokenAuth, (req, res) => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',

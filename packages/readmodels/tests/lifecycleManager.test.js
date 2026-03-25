@@ -402,13 +402,13 @@ describe('lifecycleManager', () => {
       expect(__testing__.VALID_STATES).toContain('invalid');
     });
 
-    test('no transitions allowed out of invalid state', () => {
+    test('no transitions allowed out of invalid state in production mode', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
       lm.setState('customers', 'invalid');
 
-      // R4: invalid is a terminal/absorbing state — nothing can leave it
+      // R4: invalid is a terminal/absorbing state in production
       expect(lm.isValidTransition('invalid', 'stopped')).toBe(false);
       expect(lm.isValidTransition('invalid', 'live')).toBe(false);
       expect(lm.isValidTransition('invalid', 'replay')).toBe(false);
@@ -447,6 +447,103 @@ describe('lifecycleManager', () => {
           expect(err.message).toContain('invalid');
         },
       );
+    });
+
+    test('stop is refused from invalid state in production mode', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      lm.stop('customers', 'corr-1');
+
+      // State should remain invalid
+      expect(lm.getState('customers')).toBe('invalid');
+    });
+  });
+
+  describe('developmentMode', () => {
+    test('invalid->stopped is allowed in development mode', () => {
+      const context = createMockContext({ developmentMode: true });
+      const lm = createLifecycleManager(context);
+
+      expect(lm.isValidTransition('invalid', 'stopped')).toBe(true);
+    });
+
+    test('invalid->stopped is rejected in production mode', () => {
+      const context = createMockContext();
+      const lm = createLifecycleManager(context);
+
+      expect(lm.isValidTransition('invalid', 'stopped')).toBe(false);
+    });
+
+    test('stop transitions from invalid to stopped in dev mode', () => {
+      const mockUpdateOne = vi.fn().mockResolvedValue();
+      const context = createMockContext({
+        developmentMode: true,
+        storage: {
+          updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+          perRequest: vi.fn().mockReturnValue({
+            updateOne: mockUpdateOne,
+            find: vi.fn().mockReturnValue({
+              toArray: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        },
+      });
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      lm.stop('customers', 'corr-1');
+
+      expect(lm.getState('customers')).toBe('stopped');
+    });
+
+    test('stop clears replayInProgress flag when recovering from invalid in dev mode', () => {
+      const mockUpdateOne = vi.fn().mockResolvedValue();
+      const context = createMockContext({
+        developmentMode: true,
+        storage: {
+          updateLastProjectedEventTimestamps: vi.fn().mockResolvedValue(),
+          perRequest: vi.fn().mockReturnValue({
+            updateOne: mockUpdateOne,
+            find: vi.fn().mockReturnValue({
+              toArray: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        },
+      });
+      const lm = createLifecycleManager(context);
+      lm.initialize(['customers']);
+      lm.setState('customers', 'invalid');
+
+      lm.stop('customers', 'corr-1');
+
+      expect(mockUpdateOne).toHaveBeenCalledWith(
+        'readmodel.state',
+        { name: 'customers' },
+        expect.objectContaining({
+          $unset: expect.objectContaining({ replayInProgress: '' }),
+        }),
+      );
+    });
+
+    test('other invalid transitions remain blocked in dev mode', () => {
+      const context = createMockContext({ developmentMode: true });
+      const lm = createLifecycleManager(context);
+
+      expect(lm.isValidTransition('invalid', 'live')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'replay')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'catchup')).toBe(false);
+    });
+
+    test('DEV_TRANSITIONS allows invalid->stopped', () => {
+      expect(__testing__.DEV_TRANSITIONS.invalid).toContain('stopped');
+    });
+
+    test('BASE_TRANSITIONS does not allow invalid->stopped', () => {
+      expect(__testing__.BASE_TRANSITIONS.invalid).toEqual([]);
     });
   });
 

@@ -261,13 +261,14 @@ describe('createProjectionHandler catch-up features', () => {
         });
     });
 
-    test('projects with real changeNotification (inReplay=false)', () => {
+    test('suppresses changeNotification during catch-up', () => {
       const context = makeContext();
-      const realChangeNotification = {
-        sendChangeNotification: vi.fn().mockResolvedValue(),
-        createChangeInfo: vi.fn(),
-      };
-      context.changeNotification.mockReturnValue(realChangeNotification);
+      const realSendFn = vi.fn().mockResolvedValue();
+      const realCreateChangeInfo = vi.fn();
+      context.changeNotification.mockReturnValue({
+        sendChangeNotification: realSendFn,
+        createChangeInfo: realCreateChangeInfo,
+      });
       const handler = createProjectionHandler(context);
       handler.setReadModelCatchingUp('items');
 
@@ -281,8 +282,37 @@ describe('createProjectionHandler catch-up features', () => {
         .then(() => {
           const projectionContext =
             context.readModels.items.projections.ITEM_CREATED.mock.calls[0][0];
-          expect(projectionContext.changeNotification).toBe(
-            realChangeNotification,
+          // sendChangeNotification should be a no-op stub
+          return projectionContext.changeNotification
+            .sendChangeNotification({})
+            .then(() => {
+              expect(realSendFn).not.toHaveBeenCalled();
+            });
+        });
+    });
+
+    test('preserves createChangeInfo during catch-up', () => {
+      const context = makeContext();
+      const realCreateChangeInfo = vi.fn().mockReturnValue({ info: true });
+      context.changeNotification.mockReturnValue({
+        sendChangeNotification: vi.fn().mockResolvedValue(),
+        createChangeInfo: realCreateChangeInfo,
+      });
+      const handler = createProjectionHandler(context);
+      handler.setReadModelCatchingUp('items');
+
+      const event = { type: 'ITEM_CREATED', timestamp: 100, aggregateId: '1' };
+
+      return handler
+        .projectCatchupEventForReadModel(
+          'corr-1',
+          'items',
+        )(event)
+        .then(() => {
+          const projectionContext =
+            context.readModels.items.projections.ITEM_CREATED.mock.calls[0][0];
+          expect(projectionContext.changeNotification.createChangeInfo).toBe(
+            realCreateChangeInfo,
           );
         });
     });
