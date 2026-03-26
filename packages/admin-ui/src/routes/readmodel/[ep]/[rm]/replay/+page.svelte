@@ -79,11 +79,9 @@
   // Track whether we initiated a replay in this page session
   let replayInitiated = $state(false);
   let activateAfter = $state(true);
-  let sawReplayState = $state(false);
-
-  $effect(() => {
-    if (readModel?.state === 'replay') sawReplayState = true;
-  });
+  // stateVersion at the moment replay was initiated — used to distinguish
+  // "already stopped before replay" from "stopped after replay completed"
+  let initiatedAtVersion = $state(null);
 
   // Derive replay step from store state
   let storeStep = $derived.by(() => {
@@ -92,12 +90,24 @@
     if (mode === 'replay') return 'replaying';
     if (mode === 'catchup') return 'catchup';
     if (replayInitiated) {
-      // Replay was initiated — track the orchestration lifecycle
-      if (mode === 'live') return 'done';
-      if (mode === 'stopped' && !activateAfter && sawReplayState) return 'done-stopped';
-      // stopped is a transient state during orchestration (between
-      // replayDone and activate) — show as replaying to avoid flicker
-      if (mode === 'stopped') return 'replaying';
+      // Only treat terminal states as "done" when the state has actually
+      // changed since we initiated the replay (stateVersion advanced).
+      // Without this guard, a fast replay that skips the 'replay' SSE
+      // event would show "done" immediately because the RM was already
+      // in 'stopped' or 'live' state when the user clicked Start.
+      const stateAdvanced =
+        initiatedAtVersion == null ||
+        (readModel.stateVersion ?? 0) > initiatedAtVersion;
+      if (stateAdvanced) {
+        if (mode === 'live') return 'done';
+        if (mode === 'stopped' && !activateAfter) return 'done-stopped';
+      }
+      // When activateAfter is true, stopped is a transient state during
+      // orchestration (between replayDone and activate) — show as
+      // replaying to avoid flicker
+      if (mode === 'stopped' && activateAfter) return 'replaying';
+      // State hasn't advanced yet — show as replaying (waiting for SSE)
+      if (!stateAdvanced) return 'replaying';
     }
     return null;
   });
@@ -220,6 +230,7 @@
     }
 
     replayInitiated = true;
+    initiatedAtVersion = readModel?.stateVersion ?? 0;
     api
       .startReplay(endpointName, data.rm, options)
       .then(() => {
@@ -255,7 +266,7 @@
     replayMode = 'fromScratch';
     fromTimestamp = 0;
     toTimestamp = null;
-    sawReplayState = false;
+    initiatedAtVersion = null;
     resetTzero();
   };
 

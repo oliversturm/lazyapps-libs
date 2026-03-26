@@ -4,6 +4,49 @@ import { nanoid } from 'nanoid';
 const STEP_TIMEOUT_MS = 10000;
 
 const createOrchestrator = ({ sseClient, eventBus, token }) => {
+  // Track active orchestrations per read model key (ep/rm).
+  // When a new orchestration starts for an RM that already has one running,
+  // the old one is aborted. This prevents stale orchestrations from
+  // interfering with new ones (e.g., activating an RM that a newer
+  // orchestration intended to leave stopped).
+  const activeOrchestrations = new Map();
+
+  const createAbortable = (ep, rm, correlationId, log) => {
+    const key = `${ep}/${rm}`;
+    const existing = activeOrchestrations.get(key);
+    if (existing) {
+      log.info(
+        `Aborting previous orchestration ${existing.correlationId} for ${key}`,
+      );
+      existing.abort();
+    }
+
+    let aborted = false;
+    const abort = () => {
+      aborted = true;
+    };
+    const checkAborted = (stepName) => {
+      if (aborted) {
+        throw new Error(
+          `Orchestration ${correlationId} aborted at ${stepName} — ` +
+            `superseded by a newer orchestration for ${key}`,
+        );
+      }
+    };
+
+    activeOrchestrations.set(key, { correlationId, abort });
+
+    const cleanup = () => {
+      // Only remove if this is still the active orchestration
+      const current = activeOrchestrations.get(key);
+      if (current && current.correlationId === correlationId) {
+        activeOrchestrations.delete(key);
+      }
+    };
+
+    return { checkAborted, cleanup };
+  };
+
   const publishCommand = (correlationId, command) => {
     eventBus.publishAdminInstruction(correlationId)({
       ...command,
@@ -76,6 +119,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
     } = options;
 
     log.info(`Starting replay orchestration for ${ep}/${rm}`);
+    const { checkAborted, cleanup } = createAbortable(
+      ep,
+      rm,
+      correlationId,
+      log,
+    );
 
     // Option 2: skipReplayCatchUpOnly — skip replay entirely
     if (t0Option === 'skipReplayCatchUpOnly') {
@@ -89,6 +138,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       return sseClient
         .startOperation()
         .then(() => {
+          checkAborted('skip-replay Step 1');
           // Step 1: Stop the RM
           log.info('Step 1: Sending stop command');
           publishCommand(correlationId, {
@@ -103,6 +153,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           }, STEP_TIMEOUT_MS);
         })
         .then(() => {
+          checkAborted('skip-replay Step 2');
           // Step 2: Reset storage
           log.info('Step 2: Resetting RM storage');
           publishCommand(correlationId, {
@@ -117,6 +168,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           }, STEP_TIMEOUT_MS);
         })
         .then(() => {
+          checkAborted('skip-replay activate');
           if (activateAfter) {
             log.info('Skip-replay complete, chaining to activation');
             return activationOrchestration(ep, rm);
@@ -132,10 +184,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           };
         })
         .then((result) => {
+          cleanup();
           sseClient.endOperation();
           return result;
         })
         .catch((err) => {
+          cleanup();
           log.error(`Skip-replay orchestration failed: ${err.message}`);
           sseClient.endOperation();
           throw err;
@@ -146,6 +200,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
     return sseClient
       .startOperation()
       .then(() => {
+        checkAborted('Step 1');
         // Step 1: Stop the RM
         log.info('Step 1: Sending stop command');
         publishCommand(correlationId, {
@@ -160,6 +215,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
+        checkAborted('Step 1b');
         // Step 1b: Dev-mode timestamp override — persist before resolving
         if (timestampOverride !== undefined && timestampOverride !== null) {
           log.info(
@@ -176,14 +232,18 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           );
         }
       })
-      .then(() =>
+      .then(() => {
+        checkAborted('Step 2');
         // Step 2: Resolve the replay timestamp
-        resolveReplayTimestamp(ep, rm, options, log).then((lastTimestamp) => {
-          log.info(`Step 2: replay toTimestamp = ${lastTimestamp}`);
-          return lastTimestamp;
-        }),
-      )
+        return resolveReplayTimestamp(ep, rm, options, log).then(
+          (lastTimestamp) => {
+            log.info(`Step 2: replay toTimestamp = ${lastTimestamp}`);
+            return lastTimestamp;
+          },
+        );
+      })
       .then((lastTimestamp) => {
+        checkAborted('Step 2b');
         // Step 2b: For T=0 options, persist the resolved timestamp
         // to both storages so the RM starts with the right boundary
         if (t0Option && lastTimestamp > 0) {
@@ -200,6 +260,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         return lastTimestamp;
       })
       .then((lastTimestamp) => {
+        checkAborted('Step 3');
         // Step 3: Optional auto-backup
         if (!autoBackup) return lastTimestamp;
 
@@ -222,6 +283,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           .then(() => lastTimestamp);
       })
       .then((lastTimestamp) => {
+        checkAborted('Step 4');
         // Step 4: Reset or restore backup
         if (backupId) {
           log.info(`Step 4: Restoring backup ${backupId}`);
@@ -248,6 +310,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           .then(() => lastTimestamp);
       })
       .then((lastTimestamp) => {
+        checkAborted('Step 5');
         // Step 5: Query replayRelevantEvents
         log.info('Step 5: Fetching replayRelevantEvents');
         return sseClient
@@ -255,6 +318,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           .then((events) => ({ lastTimestamp, replayRelevantEvents: events }));
       })
       .then(({ lastTimestamp, replayRelevantEvents }) => {
+        checkAborted('Step 6');
         // Step 6: Send startReplay to RM
         log.info('Step 6: Sending startReplay command');
         publishCommand(correlationId, {
@@ -271,6 +335,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           .then(() => ({ lastTimestamp, replayRelevantEvents }));
       })
       .then(({ lastTimestamp, replayRelevantEvents }) => {
+        checkAborted('Step 7');
         // Step 7: Send replay command to CP
         log.info(
           `Step 7: Sending replay command to CP (toTimestamp=${lastTimestamp})`,
@@ -302,6 +367,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         );
       })
       .then(() => {
+        checkAborted('Step 9');
         // Step 9: Send replayDone, await stopped, then activate
         log.info('Step 9: Sending replayDone command');
         publishCommand(correlationId, {
@@ -316,6 +382,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
+        checkAborted('activate decision');
         if (activateAfter) {
           log.info('Replay complete, chaining to activation');
           return activationOrchestration(ep, rm);
@@ -324,10 +391,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         return { status: 'stopped', endpointName: ep, readModel: rm };
       })
       .then((result) => {
+        cleanup();
         sseClient.endOperation();
         return result;
       })
       .catch((err) => {
+        cleanup();
         log.error(`Replay orchestration failed: ${err.message}`);
         sseClient.endOperation();
         throw err;
@@ -349,12 +418,19 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       `Starting backup replay orchestration for ${ep}/${rm} ` +
         `(backup=${backupId}, t0Option=${t0Option})`,
     );
+    const { checkAborted, cleanup } = createAbortable(
+      ep,
+      rm,
+      correlationId,
+      log,
+    );
 
     let rememberedLastEventTs = null;
 
     return sseClient
       .startOperation()
       .then(() => {
+        checkAborted('backup Step 1');
         // Step 1: Stop the RM
         log.info('Step 1: Sending stop command');
         publishCommand(correlationId, {
@@ -563,10 +639,12 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           });
       })
       .then((result) => {
+        cleanup();
         sseClient.endOperation();
         return result;
       })
       .catch((err) => {
+        cleanup();
         log.error(`Backup replay orchestration failed: ${err.message}`);
         sseClient.endOperation();
         throw err;
@@ -578,6 +656,17 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
     const log = getLogger('Admin/Replay', correlationId);
 
     log.info(`Cancelling replay for ${ep}/${rm}`);
+
+    // Abort any active orchestration for this RM
+    const key = `${ep}/${rm}`;
+    const existing = activeOrchestrations.get(key);
+    if (existing) {
+      log.info(
+        `Aborting active orchestration ${existing.correlationId} for ${key}`,
+      );
+      existing.abort();
+      activeOrchestrations.delete(key);
+    }
 
     // Cancel on CP side
     publishCommand(correlationId, {
