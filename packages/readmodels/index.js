@@ -380,6 +380,18 @@ const createAdminInstructionHandler =
         handlePersistTimestamp(context, correlationId, instruction);
         break;
 
+      case 'dismissInvalid':
+        if (!lm) {
+          log.warn('dismissInvalid requires lifecycle manager');
+          return;
+        }
+        if (!targetReadModel) {
+          log.warn('dismissInvalid instruction missing targetReadModel');
+          return;
+        }
+        lm.stop(targetReadModel, correlationId);
+        break;
+
       default:
         log.warn(`Unknown admin instruction type: ${type}`);
     }

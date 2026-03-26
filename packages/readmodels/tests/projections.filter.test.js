@@ -81,6 +81,7 @@ const makeContext = () => {
         schedule: realSchedule,
       }),
     },
+    developmentMode: true,
     __mocks: { realExecute, executeResult, realSchedule },
   };
 };

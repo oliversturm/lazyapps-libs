@@ -546,6 +546,7 @@ describe(
       t0opt1: createRmDef('t0opt1_col'),
       t0opt2: createRmDef('t0opt2_col'),
       t0opt3: createRmDef('t0opt3_col'),
+      t0opt2noact: createRmDef('t0opt2noact_col'),
     };
     const { env, setup, teardown } = setupTestEnv(
       't0-fresh',
@@ -713,6 +714,48 @@ describe(
         )
         .then((stateDoc) => {
           expect(stateDoc.lastProjectedEventTimestamp).toBe(5000);
+        }));
+
+    // T=0 Option 2 with activateAfter=false — skipReplayCatchUpOnly
+    // This is ineffectual: skip replay, no catch-up, RM stays stopped with no data.
+    test('skipReplayCatchUpOnly with activateAfter=false leaves RM stopped with no data', () =>
+      fetchAdmin('/admin/replay/start/rm/t0opt2noact', {
+        method: 'POST',
+        body: JSON.stringify({
+          t0Option: 'skipReplayCatchUpOnly',
+          activateAfter: false,
+        }),
+      })
+        .then(({ status }) => {
+          expect(status).toBe(202);
+          // The orchestrator will: stop → reset → return stopped with warning
+          // (no replay, no catch-up, no activation).
+          // Give it a moment to complete.
+          return new Promise((r) => setTimeout(r, 2000));
+        })
+        // Verify RM is stopped (not live)
+        .then(() =>
+          fetchRM('/admin/readmodel').then(({ body }) => {
+            const rm = body.find((r) => r.name === 't0opt2noact');
+            expect(rm.state).toBe('stopped');
+          }),
+        )
+        // Verify no data was projected (skip replay + no activation = no data)
+        .then(() =>
+          rmDb()
+            .collection('t0opt2noact_col')
+            .countDocuments()
+            .then((count) => {
+              expect(count).toBe(0);
+            }),
+        )
+        // Verify timestamp is still 0 (T=0, never changed)
+        .then(() =>
+          rmDb().collection('readmodel.state').findOne({ name: 't0opt2noact' }),
+        )
+        .then((stateDoc) => {
+          // Timestamp remains 0 since nothing happened
+          expect(stateDoc?.lastProjectedEventTimestamp || 0).toBe(0);
         }));
   },
 );

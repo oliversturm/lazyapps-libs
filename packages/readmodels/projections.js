@@ -484,6 +484,19 @@ export const createProjectionHandler = (context) => {
     getFifoQueueSize,
     getCatchupState,
     setReplayOptions: (rmName, options) => {
+      if (
+        (options.enableSideEffects || options.suppressSideEffects) &&
+        !context.developmentMode
+      ) {
+        const log = getLogger('RM/Projections', 'GUARD');
+        log.error(
+          `REJECTED: enableSideEffects/suppressSideEffects requires ` +
+            `development mode but this RM service is NOT in development ` +
+            `mode. This is a safety check — these options are not allowed ` +
+            `in production.`,
+        );
+        return;
+      }
       readModelReplayOptions.set(rmName, options);
     },
     clearReplayOptions: (rmName) => {
@@ -492,6 +505,15 @@ export const createProjectionHandler = (context) => {
     getReplayOptions: (rmName) => readModelReplayOptions.get(rmName) || null,
     // Convenience aliases for filter-only use
     setSideEffectFilter: (rmName, filter) => {
+      if (!context.developmentMode) {
+        const log = getLogger('RM/Projections', 'GUARD');
+        log.error(
+          `REJECTED: setSideEffectFilter requires development mode but ` +
+            `this RM service is NOT in development mode. This is a safety ` +
+            `check — side-effect filters are not allowed in production.`,
+        );
+        return;
+      }
       const existing = readModelReplayOptions.get(rmName) || {};
       readModelReplayOptions.set(rmName, {
         ...existing,

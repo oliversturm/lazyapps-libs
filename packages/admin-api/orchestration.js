@@ -72,6 +72,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       activateAfter = true,
       t0Option,
       customTimestamp,
+      timestampOverride,
     } = options;
 
     log.info(`Starting replay orchestration for ${ep}/${rm}`);
@@ -157,6 +158,23 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           const rmStatus = status.readModels[`${ep}/${rm}`];
           return rmStatus && rmStatus.state === 'stopped';
         }, STEP_TIMEOUT_MS);
+      })
+      .then(() => {
+        // Step 1b: Dev-mode timestamp override — persist before resolving
+        if (timestampOverride !== undefined && timestampOverride !== null) {
+          log.info(
+            `Step 1b: Dev-mode timestamp override = ${timestampOverride}`,
+          );
+          return persistTimestampToBothStorages(
+            correlationId,
+            ep,
+            rm,
+            timestampOverride,
+          ).then(() =>
+            // Allow SSE cache to pick up the new timestamp
+            sseClient.fetchAllStatus(),
+          );
+        }
       })
       .then(() =>
         // Step 2: Resolve the replay timestamp
@@ -324,6 +342,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       activateAfter = true,
       t0Option,
       customTimestamp,
+      timestampOverride,
     } = options;
 
     log.info(
@@ -402,6 +421,22 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           log.info(`Step 4: Backup timestamp = ${backupTimestamp}`);
           return backupTimestamp;
         });
+      })
+      .then((backupTimestamp) => {
+        // Step 4b: Dev-mode timestamp override — replace backup timestamp
+        if (timestampOverride !== undefined && timestampOverride !== null) {
+          log.info(
+            `Step 4b: Dev-mode timestamp override = ${timestampOverride} ` +
+              `(was ${backupTimestamp})`,
+          );
+          return persistTimestampToBothStorages(
+            correlationId,
+            ep,
+            rm,
+            timestampOverride,
+          ).then(() => timestampOverride);
+        }
+        return backupTimestamp;
       })
       .then((backupTimestamp) => {
         // Step 5: Determine replay boundary based on t0Option
@@ -569,11 +604,14 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
     return Promise.resolve({ status: 'cancelling', correlationId });
   };
 
-  const activationOrchestration = (ep, rm) => {
+  const activationOrchestration = (ep, rm, options) => {
+    const { skipCatchup } = options || {};
     const correlationId = nanoid();
     const log = getLogger('Admin/Activate', correlationId);
 
-    log.info(`Starting activation for ${ep}/${rm}`);
+    log.info(
+      `Starting activation for ${ep}/${rm}${skipCatchup ? ' (skip catchup)' : ''}`,
+    );
 
     return sseClient
       .ensureConnected()
@@ -594,6 +632,21 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         );
       })
       .then(() => {
+        if (skipCatchup) {
+          // Skip catch-up: go directly to catchupDone → live
+          log.info('Skipping catch-up (skipCatchup=true)');
+          publishCommand(correlationId, {
+            type: 'catchupDone',
+            targetEndpointName: ep,
+            targetReadModel: rm,
+          });
+
+          return sseClient.waitForStatus((status) => {
+            const rmStatus = status.readModels[`${ep}/${rm}`];
+            return rmStatus && rmStatus.state === 'live';
+          }, STEP_TIMEOUT_MS);
+        }
+
         // Step 2: Query lastProjectedEventTimestamp and replayRelevantEvents
         const rmStatus = sseClient.cache.getReadModel(ep, rm);
         const fromTimestamp = rmStatus?.lastProjectedEventTimestamp || 0;
@@ -603,7 +656,14 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           .fetchReplayRelevantEvents(ep, rm)
           .then((events) => ({ fromTimestamp, replayRelevantEvents: events }));
       })
-      .then(({ fromTimestamp, replayRelevantEvents }) => {
+      .then((result) => {
+        if (skipCatchup) {
+          // Already resolved to live state
+          log.info(`Activation complete for ${ep}/${rm} (skipped catchup)`);
+          return { status: 'live', endpointName: ep, readModel: rm };
+        }
+
+        const { fromTimestamp, replayRelevantEvents } = result;
         // Step 3: Send startCatchup to CP
         log.info(`Step 3: Sending startCatchup to CP (from ${fromTimestamp})`);
         publishCommand(correlationId, {
@@ -631,7 +691,9 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           ),
         );
       })
-      .then(() => {
+      .then((result) => {
+        if (skipCatchup) return result;
+
         // Step 5: Send catchupDone to RM
         log.info('Step 5: Sending catchupDone command');
         publishCommand(correlationId, {
@@ -647,7 +709,8 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           return rmStatus && rmStatus.state === 'live';
         }, STEP_TIMEOUT_MS);
       })
-      .then(() => {
+      .then((result) => {
+        if (skipCatchup) return result;
         log.info(`Activation complete for ${ep}/${rm}`);
         return { status: 'live', endpointName: ep, readModel: rm };
       });

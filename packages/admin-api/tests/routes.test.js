@@ -543,6 +543,7 @@ describe('createRoutes', () => {
       expect(orchestrator.activationOrchestration).toHaveBeenCalledWith(
         'ep1',
         'customers',
+        { skipCatchup: undefined },
       );
       expect(res.status).toHaveBeenCalledWith(202);
     });

@@ -69,4 +69,40 @@ describe('createSideEffectsHandler', () => {
       return handler.schedule(() => effect(), { name: 'failing-effect' });
     });
   });
+
+  // 13.3: execution parameter was removed — passing it has no effect
+  test('13.3: execution option is silently ignored (removed parameter)', () => {
+    return createSideEffectsHandler().then((result) => {
+      const handler = result.getSideEffectsHandler('corr-1', false);
+      const effect = vi.fn().mockResolvedValue();
+
+      // Passing execution: 'replayOnly' should be ignored — effect still runs
+      return handler
+        .schedule(() => effect(), {
+          name: 'test-effect',
+          execution: 'replayOnly',
+        })
+        .then(() => {
+          expect(effect).toHaveBeenCalledOnce();
+        });
+    });
+  });
+
+  test('13.3: execution: always is silently ignored — replay still skips', () => {
+    return createSideEffectsHandler().then((result) => {
+      // inReplay=true — effects should be skipped regardless of execution option
+      const handler = result.getSideEffectsHandler('corr-1', true);
+      const effect = vi.fn().mockResolvedValue();
+
+      return handler
+        .schedule(() => effect(), {
+          name: 'test-effect',
+          execution: 'always',
+        })
+        .then(() => {
+          // execution: 'always' has no effect — still skipped during replay
+          expect(effect).not.toHaveBeenCalled();
+        });
+    });
+  });
 });

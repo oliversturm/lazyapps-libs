@@ -134,12 +134,25 @@ const createRoutes = ({
 
   const startReplay = (req, res) => {
     const { ep, rm } = req.params;
-    const { backupId, autoBackup, activateAfter, t0Option, customTimestamp } =
-      req.body || {};
+    const {
+      backupId,
+      autoBackup,
+      activateAfter,
+      t0Option,
+      customTimestamp,
+      timestampOverride,
+    } = req.body || {};
     const correlationId = nanoid();
     const log = getLogger('Admin/Replay', correlationId);
 
     log.info(`Replay requested for ${ep}/${rm}`);
+
+    if (timestampOverride !== undefined && !developmentMode) {
+      res
+        .status(403)
+        .json({ error: 'timestampOverride requires development mode' });
+      return;
+    }
 
     // Route to backup replay orchestration when both backupId and t0Option
     // are present (backup restore with T=0 handling)
@@ -150,6 +163,7 @@ const createRoutes = ({
             activateAfter,
             t0Option,
             customTimestamp,
+            timestampOverride,
           })
         : orchestrator.replayOrchestration(ep, rm, {
             backupId,
@@ -157,6 +171,7 @@ const createRoutes = ({
             activateAfter,
             t0Option,
             customTimestamp,
+            timestampOverride,
           });
 
     // Fire off orchestration — don't await, return immediately
@@ -299,10 +314,19 @@ const createRoutes = ({
     }
     const correlationId = nanoid();
 
-    orchestrator.activationOrchestration(ep, rm).catch((err) => {
-      const log = getLogger('Admin/Activate', correlationId);
-      log.error(`Activation failed for ${ep}/${rm}: ${err.message}`);
-    });
+    const { skipCatchup } = req.body || {};
+
+    if (skipCatchup && !developmentMode) {
+      res.status(403).json({ error: 'skipCatchup requires development mode' });
+      return;
+    }
+
+    orchestrator
+      .activationOrchestration(ep, rm, { skipCatchup })
+      .catch((err) => {
+        const log = getLogger('Admin/Activate', correlationId);
+        log.error(`Activation failed for ${ep}/${rm}: ${err.message}`);
+      });
 
     res.status(202).json({
       status: 'activating',

@@ -28,6 +28,7 @@ const { initializeContext } = await import('@lazyapps/readmodels/context.js');
 const { startReadModels, installAdminEndpoints } =
   await import('@lazyapps/readmodels');
 const { installReadModelStatusApi } = await import('@lazyapps/admin-api');
+const { createRoutes } = await import('@lazyapps/admin-api/routes.js');
 const { createProjectionHandler } =
   await import('@lazyapps/readmodels/projections.js');
 
@@ -398,6 +399,7 @@ describe('D6: side-effect filter in projections', { timeout: 30000 }, () => {
             return Promise.resolve();
           },
         },
+        developmentMode: true,
       },
     ).then((context) => ({
       context,
@@ -587,4 +589,741 @@ describe('D6: side-effect filter in projections', { timeout: 30000 }, () => {
           });
       },
     ));
+
+  // 11.5: changeNotification suppressed during replay (explicit assertion)
+  test('11.5: changeNotification.sendChangeNotification NOT called during replay', () => {
+    const changeNotificationCalls = [];
+    registerSharedMqEmitter('filter-notif-replay-events', mqemitter());
+    registerSharedMqEmitter('filter-notif-replay-queries', mqemitter());
+
+    return initializeContext(
+      { serviceId: 'filter-notif-replay' },
+      {
+        readModels: {
+          items: {
+            projections: {
+              ITEM_CREATED: (ctx, event) =>
+                ctx.storage
+                  .insertOne('items_overview', {
+                    id: event.aggregateId,
+                    name: event.payload.name,
+                  })
+                  .then(() =>
+                    ctx.changeNotification.sendChangeNotification({
+                      readModel: 'items',
+                      type: 'ITEM_CREATED',
+                    }),
+                  ),
+            },
+            collections: ['items_overview'],
+            replayRelevantEvents: ['ITEM_CREATED'],
+          },
+        },
+        endpointName: 'ep',
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: 'filter-notif-replay',
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: 'filter-notif-replay-events',
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: (correlationId, notification) => {
+            changeNotificationCalls.push(notification);
+            return Promise.resolve();
+          },
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        developmentMode: true,
+      },
+    ).then((context) => {
+      const projHandler = context.projectionHandler;
+      return projHandler
+        .projectEventForReadModel(
+          'corr-notif',
+          'items',
+        )(makeEvent(1, 100))
+        .then(() => flush())
+        .then(() => {
+          // changeNotification.sendChangeNotification should NOT have been
+          // called because projectEventForReadModel sets inReplay=true,
+          // which replaces sendChangeNotification with a no-op
+          expect(changeNotificationCalls).toHaveLength(0);
+        });
+    });
+  });
+
+  // 12.15: setSideEffectFilter rejected when developmentMode=false
+  test('12.15: setSideEffectFilter rejected when developmentMode=false', () => {
+    registerSharedMqEmitter('filter-guard-prod-events', mqemitter());
+
+    return initializeContext(
+      { serviceId: 'filter-guard-prod' },
+      {
+        readModels: {
+          items: {
+            projections: {
+              ITEM_CREATED: (ctx, event) =>
+                ctx.storage.insertOne('items_data', {
+                  id: event.aggregateId,
+                }),
+            },
+            collections: ['items_data'],
+          },
+        },
+        endpointName: 'ep',
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: 'filter-guard-prod',
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: 'filter-guard-prod-events',
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: () => () => Promise.resolve(),
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        developmentMode: false,
+      },
+    ).then((context) => {
+      getLogger().error.mockClear();
+
+      context.projectionHandler.setSideEffectFilter('items', {
+        byName: { type: 'include', names: ['sendEmail'] },
+      });
+
+      // Should have logged a REJECTED error
+      expect(getLogger().error).toHaveBeenCalledWith(
+        expect.stringContaining('REJECTED'),
+      );
+
+      // Filter should NOT be stored
+      const filter = context.projectionHandler.getSideEffectFilter('items');
+      expect(filter).toBeNull();
+    });
+  });
+
+  // 12.15 (positive): setSideEffectFilter accepted when developmentMode=true
+  test('12.15: setSideEffectFilter accepted when developmentMode=true', () => {
+    registerSharedMqEmitter('filter-guard-dev-events', mqemitter());
+
+    return initializeContext(
+      { serviceId: 'filter-guard-dev' },
+      {
+        readModels: {
+          items: {
+            projections: {
+              ITEM_CREATED: (ctx, event) =>
+                ctx.storage.insertOne('items_data', {
+                  id: event.aggregateId,
+                }),
+            },
+            collections: ['items_data'],
+          },
+        },
+        endpointName: 'ep',
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: 'filter-guard-dev',
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: 'filter-guard-dev-events',
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: () => () => Promise.resolve(),
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        developmentMode: true,
+      },
+    ).then((context) => {
+      getLogger().error.mockClear();
+
+      context.projectionHandler.setSideEffectFilter('items', {
+        byName: { type: 'include', names: ['sendEmail'] },
+      });
+
+      // Should NOT have logged a rejection
+      expect(getLogger().error).not.toHaveBeenCalledWith(
+        expect.stringContaining('REJECTED'),
+      );
+
+      // Filter should be stored
+      const filter = context.projectionHandler.getSideEffectFilter('items');
+      expect(filter).toEqual({
+        byName: { type: 'include', names: ['sendEmail'] },
+      });
+    });
+  });
 });
+
+// ── 10: dismissInvalid + skipCatchup tests ────────────────────────────
+
+describe('10: dismissInvalid and skipCatchup', { timeout: 30000 }, () => {
+  let container;
+  let connectionString;
+  let cleanupClient;
+
+  beforeAll(() =>
+    new MongoDBContainer('mongo:7')
+      .start()
+      .then((c) => {
+        container = c;
+        connectionString = c.getConnectionString() + '?directConnection=true';
+        return MongoClient.connect(connectionString);
+      })
+      .then((client) => {
+        cleanupClient = client;
+      }),
+  );
+
+  afterAll(() =>
+    Promise.resolve()
+      .then(() => (cleanupClient ? cleanupClient.close() : undefined))
+      .then(() => (container ? container.stop() : undefined)),
+  );
+
+  const createDevModeRmContext = (prefix, devMode) => {
+    registerSharedMqEmitter(`dismiss-${prefix}-events`, mqemitter());
+
+    return startReadModels(
+      { serviceId: `dismiss-${prefix}` },
+      {
+        readModels: {
+          myRM: {
+            projections: {
+              EV: ({ storage }, event) =>
+                storage.insertOne('myRM_data', {
+                  id: event.aggregateId,
+                }),
+            },
+            collections: ['myRM_data'],
+          },
+        },
+        endpointName: 'ep',
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: `dismiss-${prefix}`,
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: `dismiss-${prefix}-events`,
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: () => () => Promise.resolve(),
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        developmentMode: devMode,
+        lifecycle: true,
+        listener: (ctx) => ctx,
+      },
+    );
+  };
+
+  // 10.3: dismissInvalid in dev mode transitions invalid → stopped
+  test('10.3: dismissInvalid transitions invalid→stopped in dev mode', () =>
+    createDevModeRmContext('dismiss-dev', true)
+      .then((context) => {
+        // Force the RM into invalid state by setting replayInProgress in MongoDB
+        // then re-initializing the lifecycle manager
+        return cleanupClient
+          .db('dismiss-dismiss-dev')
+          .collection('readmodel.state')
+          .updateOne(
+            { name: 'myRM' },
+            { $set: { replayInProgress: true } },
+            { upsert: true },
+          )
+          .then(() => context.lifecycleManager.initialize(['myRM']))
+          .then(() => ({ context }));
+      })
+      .then(({ context }) => {
+        // Verify RM is in invalid state
+        expect(context.lifecycleManager.getState('myRM')).toBe('invalid');
+
+        // Send dismissInvalid instruction
+        context.adminInstructionHandler('corr-dismiss-dev', {
+          type: 'dismissInvalid',
+          targetReadModel: 'myRM',
+          developmentOperation: true,
+        });
+
+        // Should transition to stopped
+        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+      }));
+
+  // 10.5: dismissInvalid rejected in prod mode
+  test('10.5: dismissInvalid rejected when developmentMode=false', () =>
+    createDevModeRmContext('dismiss-prod', false).then((context) => {
+      getLogger().error.mockClear();
+
+      // Send dismissInvalid with developmentOperation flag
+      context.adminInstructionHandler('corr-dismiss-prod', {
+        type: 'dismissInvalid',
+        targetReadModel: 'myRM',
+        developmentOperation: true,
+      });
+
+      // Should have logged a REJECTED error
+      expect(getLogger().error).toHaveBeenCalledWith(
+        expect.stringContaining('REJECTED'),
+      );
+    }));
+
+  // 10.1: activate with skipCatchup goes directly to live (dev mode)
+  // This tests the RM instruction handler level: activate → catchup,
+  // then catchupDone immediately (simulating what the orchestrator does
+  // when skipCatchup=true)
+  test('10.1: activate + immediate catchupDone skips catch-up flow', () =>
+    createDevModeRmContext('skip-catchup', true).then((context) => {
+      // Activate the RM — puts it in catchup state
+      return context.lifecycleManager
+        .activate('myRM', 'corr-skip')
+        .then(() => {
+          expect(context.lifecycleManager.getState('myRM')).toBe('catchup');
+
+          // Immediately send catchupDone (what orchestrator does with skipCatchup)
+          return context.lifecycleManager.catchupDone('myRM', 0, 'corr-skip');
+        })
+        .then(() => {
+          expect(context.lifecycleManager.getState('myRM')).toBe('live');
+        });
+    }));
+
+  // 10.4: Dismiss invalid + activate with catch-up (full sequence)
+  test('10.4: dismiss invalid → stopped → activate with catch-up → live', () =>
+    createDevModeRmContext('dismiss-activate', true)
+      .then((context) =>
+        // Force RM into invalid state
+        cleanupClient
+          .db('dismiss-dismiss-activate')
+          .collection('readmodel.state')
+          .updateOne(
+            { name: 'myRM' },
+            { $set: { replayInProgress: true } },
+            { upsert: true },
+          )
+          .then(() => context.lifecycleManager.initialize(['myRM']))
+          .then(() => context),
+      )
+      .then((context) => {
+        // Verify invalid state
+        expect(context.lifecycleManager.getState('myRM')).toBe('invalid');
+
+        // Dismiss invalid → stopped
+        context.adminInstructionHandler('corr-dismiss-act', {
+          type: 'dismissInvalid',
+          targetReadModel: 'myRM',
+          developmentOperation: true,
+        });
+        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+
+        // Activate with catch-up (normal activate) → catchup → catchupDone → live
+        return context.lifecycleManager
+          .activate('myRM', 'corr-act')
+          .then(() => {
+            expect(context.lifecycleManager.getState('myRM')).toBe('catchup');
+            return context.lifecycleManager.catchupDone('myRM', 0, 'corr-act');
+          })
+          .then(() => {
+            expect(context.lifecycleManager.getState('myRM')).toBe('live');
+          });
+      }));
+
+  // 10.5: Dismiss invalid + activate without catch-up (full sequence)
+  test('10.5: dismiss invalid → stopped → activate with skipCatchup → live', () =>
+    createDevModeRmContext('dismiss-skip', true)
+      .then((context) =>
+        // Force RM into invalid state
+        cleanupClient
+          .db('dismiss-dismiss-skip')
+          .collection('readmodel.state')
+          .updateOne(
+            { name: 'myRM' },
+            { $set: { replayInProgress: true } },
+            { upsert: true },
+          )
+          .then(() => context.lifecycleManager.initialize(['myRM']))
+          .then(() => context),
+      )
+      .then((context) => {
+        // Verify invalid state
+        expect(context.lifecycleManager.getState('myRM')).toBe('invalid');
+
+        // Dismiss invalid → stopped
+        context.adminInstructionHandler('corr-dismiss-skip', {
+          type: 'dismissInvalid',
+          targetReadModel: 'myRM',
+          developmentOperation: true,
+        });
+        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+
+        // Activate → catchup, then immediate catchupDone (skipCatchup)
+        return context.lifecycleManager
+          .activate('myRM', 'corr-skip-act')
+          .then(() => {
+            expect(context.lifecycleManager.getState('myRM')).toBe('catchup');
+            return context.lifecycleManager.catchupDone(
+              'myRM',
+              0,
+              'corr-skip-act',
+            );
+          })
+          .then(() => {
+            expect(context.lifecycleManager.getState('myRM')).toBe('live');
+          });
+      }));
+});
+
+// ── 9.1: developmentMode flag threading ───────────────────────────────
+
+describe('9.1: developmentMode flag threading', { timeout: 30000 }, () => {
+  let container;
+  let connectionString;
+  let cleanupClient;
+
+  beforeAll(() =>
+    new MongoDBContainer('mongo:7')
+      .start()
+      .then((c) => {
+        container = c;
+        connectionString = c.getConnectionString() + '?directConnection=true';
+        return MongoClient.connect(connectionString);
+      })
+      .then((client) => {
+        cleanupClient = client;
+      }),
+  );
+
+  afterAll(() =>
+    Promise.resolve()
+      .then(() => (cleanupClient ? cleanupClient.close() : undefined))
+      .then(() => (container ? container.stop() : undefined)),
+  );
+
+  test('developmentMode=true is accessible in RM context and enables dev features', () =>
+    startReadModels(
+      { serviceId: 'thread-dev' },
+      {
+        readModels: {
+          myRM: { projections: {} },
+        },
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: 'devmode-thread-dev',
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: (() => {
+            registerSharedMqEmitter('thread-dev-events', mqemitter());
+            return 'thread-dev-events';
+          })(),
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: () => () => Promise.resolve(),
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        listener: (ctx) => ctx,
+        developmentMode: true,
+      },
+    ).then((context) => {
+      // Verify the flag is threaded through to the context
+      expect(context.developmentMode).toBe(true);
+
+      // Verify dev operations are accepted (no REJECTED error)
+      getLogger().error.mockClear();
+      context.adminInstructionHandler('corr-thread', {
+        type: 'persistTimestamp',
+        targetReadModel: 'myRM',
+        timestamp: 100,
+        developmentOperation: true,
+      });
+      expect(getLogger().error).not.toHaveBeenCalledWith(
+        expect.stringContaining('REJECTED'),
+      );
+    }));
+
+  test('developmentMode defaults to false when absent and blocks dev features', () =>
+    startReadModels(
+      { serviceId: 'thread-nodev' },
+      {
+        readModels: {
+          myRM: { projections: {} },
+        },
+        storage: readModelStorageMongo({
+          url: connectionString,
+          database: 'devmode-thread-nodev',
+        }),
+        eventBus: readModelEventBusMqEmitter({
+          mqName: (() => {
+            registerSharedMqEmitter('thread-nodev-events', mqemitter());
+            return 'thread-nodev-events';
+          })(),
+        }),
+        changeNotificationSender: {
+          sendChangeNotification: () => () => Promise.resolve(),
+        },
+        commandSender: {
+          sendCommand: () => () => Promise.resolve(),
+        },
+        listener: (ctx) => ctx,
+        // No developmentMode — defaults to false
+      },
+    ).then((context) => {
+      // Verify the flag defaults to falsy
+      expect(context.developmentMode).toBeFalsy();
+
+      // Verify dev operations are rejected
+      getLogger().error.mockClear();
+      context.adminInstructionHandler('corr-nodev', {
+        type: 'persistTimestamp',
+        targetReadModel: 'myRM',
+        timestamp: 100,
+        developmentOperation: true,
+      });
+      expect(getLogger().error).toHaveBeenCalledWith(
+        expect.stringContaining('REJECTED'),
+      );
+    }));
+});
+
+// ── 10.2: skipCatchup rejected in production mode ─────────────────────
+
+describe('10.2: skipCatchup in production mode', { timeout: 30000 }, () => {
+  test('skipCatchup rejected when developmentMode=false', () => {
+    const sseClient = {
+      cache: {
+        getAllReadModels: vi.fn().mockReturnValue({
+          'ep/myRM': { state: 'stopped' },
+        }),
+        getReadModel: vi.fn().mockReturnValue({ state: 'stopped' }),
+      },
+    };
+    const orchestrator = {
+      activationOrchestration: vi.fn().mockResolvedValue({ status: 'live' }),
+    };
+    const eventBus = {
+      publishAdminInstruction: vi.fn().mockReturnValue(vi.fn()),
+    };
+
+    const routes = createRoutes({
+      sseClient,
+      orchestrator,
+      eventBus,
+      developmentMode: false,
+    });
+
+    const req = {
+      params: { ep: 'ep', rm: 'myRM' },
+      body: { skipCatchup: true },
+    };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+
+    routes.activateRm(req, res);
+
+    // skipCatchup should be rejected in production mode
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(orchestrator.activationOrchestration).not.toHaveBeenCalled();
+  });
+
+  test('skipCatchup accepted when developmentMode=true', () => {
+    const sseClient = {
+      cache: {
+        getAllReadModels: vi.fn().mockReturnValue({
+          'ep/myRM': { state: 'stopped' },
+        }),
+        getReadModel: vi.fn().mockReturnValue({ state: 'stopped' }),
+      },
+    };
+    const orchestrator = {
+      activationOrchestration: vi.fn().mockResolvedValue({ status: 'live' }),
+    };
+    const eventBus = {
+      publishAdminInstruction: vi.fn().mockReturnValue(vi.fn()),
+    };
+
+    const routes = createRoutes({
+      sseClient,
+      orchestrator,
+      eventBus,
+      developmentMode: true,
+    });
+
+    const req = {
+      params: { ep: 'ep', rm: 'myRM' },
+      body: { skipCatchup: true },
+    };
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+
+    routes.activateRm(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(202);
+    expect(orchestrator.activationOrchestration).toHaveBeenCalledWith(
+      'ep',
+      'myRM',
+      { skipCatchup: true },
+    );
+  });
+});
+
+// ── 11.2 & 11.4: side-effect options rejected in production mode ──────
+
+describe(
+  '11.2 & 11.4: side-effect options rejected in production mode',
+  { timeout: 30000 },
+  () => {
+    let container;
+    let connectionString;
+    let cleanupClient;
+
+    beforeAll(() =>
+      new MongoDBContainer('mongo:7')
+        .start()
+        .then((c) => {
+          container = c;
+          connectionString = c.getConnectionString() + '?directConnection=true';
+          return MongoClient.connect(connectionString);
+        })
+        .then((client) => {
+          cleanupClient = client;
+        }),
+    );
+
+    afterAll(() =>
+      Promise.resolve()
+        .then(() => (cleanupClient ? cleanupClient.close() : undefined))
+        .then(() => (container ? container.stop() : undefined)),
+    );
+
+    const setupFilterEnvWithDevMode = (prefix, devMode) => {
+      registerSharedMqEmitter(`se-guard-${prefix}-events`, mqemitter());
+
+      return initializeContext(
+        { serviceId: `se-guard-${prefix}` },
+        {
+          readModels: {
+            items: {
+              projections: {
+                ITEM_CREATED: (ctx, event) =>
+                  ctx.storage.insertOne('items_data', {
+                    id: event.aggregateId,
+                  }),
+              },
+              collections: ['items_data'],
+            },
+          },
+          endpointName: 'ep',
+          storage: readModelStorageMongo({
+            url: connectionString,
+            database: `se-guard-${prefix}`,
+          }),
+          eventBus: readModelEventBusMqEmitter({
+            mqName: `se-guard-${prefix}-events`,
+          }),
+          changeNotificationSender: {
+            sendChangeNotification: () => () => Promise.resolve(),
+          },
+          commandSender: {
+            sendCommand: () => () => Promise.resolve(),
+          },
+          developmentMode: devMode,
+        },
+      ).then((context) => ({
+        context,
+        projHandler: context.projectionHandler,
+      }));
+    };
+
+    test('11.2: enableSideEffects rejected when developmentMode=false', () =>
+      setupFilterEnvWithDevMode('enable-prod', false).then(
+        ({ projHandler }) => {
+          getLogger().error.mockClear();
+
+          // Attempt to set enableSideEffects in production mode
+          projHandler.setReplayOptions('items', {
+            enableSideEffects: true,
+          });
+
+          // Should have logged a rejection warning
+          expect(getLogger().error).toHaveBeenCalledWith(
+            expect.stringContaining('REJECTED'),
+          );
+
+          // Option should NOT be stored
+          const opts = projHandler.getReplayOptions('items');
+          expect(opts?.enableSideEffects).toBeFalsy();
+        },
+      ));
+
+    test('11.2: enableSideEffects accepted when developmentMode=true', () =>
+      setupFilterEnvWithDevMode('enable-dev', true).then(({ projHandler }) => {
+        getLogger().error.mockClear();
+
+        projHandler.setReplayOptions('items', {
+          enableSideEffects: true,
+        });
+
+        // Should NOT have logged a rejection
+        expect(getLogger().error).not.toHaveBeenCalledWith(
+          expect.stringContaining('REJECTED'),
+        );
+
+        // Option should be stored
+        const opts = projHandler.getReplayOptions('items');
+        expect(opts.enableSideEffects).toBe(true);
+      }));
+
+    test('11.4: suppressSideEffects rejected when developmentMode=false', () =>
+      setupFilterEnvWithDevMode('suppress-prod', false).then(
+        ({ projHandler }) => {
+          getLogger().error.mockClear();
+
+          projHandler.setReplayOptions('items', {
+            suppressSideEffects: true,
+          });
+
+          // Should have logged a rejection warning
+          expect(getLogger().error).toHaveBeenCalledWith(
+            expect.stringContaining('REJECTED'),
+          );
+
+          // Option should NOT be stored
+          const opts = projHandler.getReplayOptions('items');
+          expect(opts?.suppressSideEffects).toBeFalsy();
+        },
+      ));
+
+    test('11.4: suppressSideEffects accepted when developmentMode=true', () =>
+      setupFilterEnvWithDevMode('suppress-dev', true).then(
+        ({ projHandler }) => {
+          getLogger().error.mockClear();
+
+          projHandler.setReplayOptions('items', {
+            suppressSideEffects: true,
+          });
+
+          // Should NOT have logged a rejection
+          expect(getLogger().error).not.toHaveBeenCalledWith(
+            expect.stringContaining('REJECTED'),
+          );
+
+          // Option should be stored
+          const opts = projHandler.getReplayOptions('items');
+          expect(opts.suppressSideEffects).toBe(true);
+        },
+      ));
+  },
+);
