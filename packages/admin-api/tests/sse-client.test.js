@@ -102,13 +102,13 @@ describe('createStatusCache', () => {
     cache.updateReadModel({
       endpointName: 'ep1',
       readModelName: 'orders',
-      state: 'stopped',
+      state: 'idle',
     });
 
     const all = cache.getAllReadModels();
     expect(Object.keys(all)).toHaveLength(2);
     expect(all['ep1/customers'].state).toBe('live');
-    expect(all['ep1/orders'].state).toBe('stopped');
+    expect(all['ep1/orders'].state).toBe('idle');
   });
 
   test('updateCommandProcessor replaces CP status', () => {
@@ -140,7 +140,7 @@ describe('createStatusCache', () => {
     cache.updateReadModel({
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
     });
     cache.updateReadModel({
       endpointName: 'ep1',
@@ -211,7 +211,7 @@ describe('createStatusCache', () => {
     cache.updateReadModel({
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
     });
     cache.updateReadModel({
       endpointName: 'ep1',
@@ -267,19 +267,19 @@ describe('createSseClient', () => {
   test('waitForStatus resolves when emitter fires matching event', () => {
     const promise = client.waitForStatus((status) => {
       const rm = status.readModels['ep1/customers'];
-      return rm && rm.state === 'stopped';
+      return rm && rm.state === 'idle';
     });
 
     // Simulate SSE update
     client.cache.updateReadModel({
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
     });
     client.emitter.emit('status-change', client.cache.get());
 
     return promise.then((status) => {
-      expect(status.readModels['ep1/customers'].state).toBe('stopped');
+      expect(status.readModels['ep1/customers'].state).toBe('idle');
     });
   });
 

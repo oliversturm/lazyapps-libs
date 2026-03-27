@@ -855,7 +855,7 @@ describe('10: dismissInvalid and skipCatchup', { timeout: 30000 }, () => {
         });
 
         // Should transition to stopped
-        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+        expect(context.lifecycleManager.getState('myRM')).toBe('idle');
       }));
 
   // 10.5: dismissInvalid rejected in prod mode
@@ -922,7 +922,7 @@ describe('10: dismissInvalid and skipCatchup', { timeout: 30000 }, () => {
           targetReadModel: 'myRM',
           developmentOperation: true,
         });
-        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+        expect(context.lifecycleManager.getState('myRM')).toBe('idle');
 
         // Activate with catch-up (normal activate) → catchup → catchupDone → live
         return context.lifecycleManager
@@ -962,7 +962,7 @@ describe('10: dismissInvalid and skipCatchup', { timeout: 30000 }, () => {
           targetReadModel: 'myRM',
           developmentOperation: true,
         });
-        expect(context.lifecycleManager.getState('myRM')).toBe('stopped');
+        expect(context.lifecycleManager.getState('myRM')).toBe('idle');
 
         // Activate → catchup, then immediate catchupDone (skipCatchup)
         return context.lifecycleManager
@@ -1101,9 +1101,9 @@ describe('10.2: skipCatchup in production mode', { timeout: 30000 }, () => {
     const sseClient = {
       cache: {
         getAllReadModels: vi.fn().mockReturnValue({
-          'ep/myRM': { state: 'stopped' },
+          'ep/myRM': { state: 'idle' },
         }),
-        getReadModel: vi.fn().mockReturnValue({ state: 'stopped' }),
+        getReadModel: vi.fn().mockReturnValue({ state: 'idle' }),
       },
     };
     const orchestrator = {
@@ -1140,9 +1140,9 @@ describe('10.2: skipCatchup in production mode', { timeout: 30000 }, () => {
     const sseClient = {
       cache: {
         getAllReadModels: vi.fn().mockReturnValue({
-          'ep/myRM': { state: 'stopped' },
+          'ep/myRM': { state: 'idle' },
         }),
-        getReadModel: vi.fn().mockReturnValue({ state: 'stopped' }),
+        getReadModel: vi.fn().mockReturnValue({ state: 'idle' }),
       },
     };
     const orchestrator = {

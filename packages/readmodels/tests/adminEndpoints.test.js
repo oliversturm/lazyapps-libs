@@ -278,7 +278,7 @@ describe('adminEndpoints', () => {
         {
           endpointName: 'ep1',
           readModelName: 'orders',
-          state: 'stopped',
+          state: 'idle',
           lastProjectedEventTimestamp: 0,
         },
       ]);
@@ -299,7 +299,7 @@ describe('adminEndpoints', () => {
         {
           name: 'orders',
           endpointName: 'ep1',
-          state: 'stopped',
+          state: 'idle',
           stateVersion: expect.any(Number),
           lastProjectedEventTimestamp: 0,
         },

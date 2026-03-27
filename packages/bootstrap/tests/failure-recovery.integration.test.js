@@ -251,7 +251,7 @@ describe('C6: RM dies mid-operation', { timeout: 60000 }, () => {
       .then((restartContext) => {
         // Should NOT be invalid — catch-up doesn't set replayInProgress
         expect(restartContext.lifecycleManager.getState('items')).toBe(
-          'stopped',
+          'idle',
         );
 
         // The lastProjectedEventTimestamp should be at the point reached
@@ -553,7 +553,7 @@ describe('C7: CP dies mid-replay', { timeout: 60000 }, () => {
       .then((restartContext) => {
         // No replayInProgress → stopped (not invalid)
         expect(restartContext.lifecycleManager.getState('items')).toBe(
-          'stopped',
+          'idle',
         );
 
         // Partial catch-up data preserved

@@ -530,7 +530,7 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'stopped';
+              return items && items.state === 'idle';
             }),
           ),
         )
@@ -844,7 +844,7 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'stopped';
+              return items && items.state === 'idle';
             }),
           ),
         )

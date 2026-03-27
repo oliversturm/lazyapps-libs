@@ -457,7 +457,7 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'stopped';
+              return items.state === 'idle';
             }),
           ),
         )
@@ -817,7 +817,7 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'stopped';
+            return items.state === 'idle';
           }),
         ),
       )
@@ -1023,7 +1023,7 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'stopped';
+              return items.state === 'idle';
             }),
           ),
         )
@@ -1190,7 +1190,7 @@ describe('replay then live events', { timeout: 60000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'stopped';
+            return items.state === 'idle';
           }),
         ),
       )
@@ -1440,7 +1440,7 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'stopped';
+            return items.state === 'idle';
           }),
         ),
       )

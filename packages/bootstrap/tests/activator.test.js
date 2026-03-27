@@ -56,7 +56,7 @@ describe('createActivator', () => {
   describe('fetchReadModels', () => {
     test('queries all unique URLs and returns flat results', () => {
       mockFetchResponse([
-        { name: 'customers', endpointName: 'ep1', state: 'stopped' },
+        { name: 'customers', endpointName: 'ep1', state: 'idle' },
       ]);
 
       const activator = createActivator({
@@ -189,13 +189,13 @@ describe('createActivator', () => {
         {
           name: 'customers',
           endpointName: 'ep1',
-          state: 'stopped',
+          state: 'idle',
           lastProjectedEventTimestamp: 100,
         },
         {
           name: 'orders',
           endpointName: 'ep1',
-          state: 'stopped',
+          state: 'idle',
           lastProjectedEventTimestamp: 200,
         },
       ]);
@@ -237,7 +237,7 @@ describe('createActivator', () => {
               {
                 name: 'customers',
                 endpointName: 'ep1',
-                state: 'stopped',
+                state: 'idle',
                 lastProjectedEventTimestamp: 0,
               },
             ]),

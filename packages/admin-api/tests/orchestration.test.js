@@ -79,14 +79,14 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: 5000,
       };
 
       // waitForStatus resolves immediately for each step
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -122,13 +122,13 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: 5000,
       };
 
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -141,7 +141,7 @@ describe('createOrchestrator', () => {
         .replayOrchestration('ep1', 'customers', { activateAfter: false })
         .then((result) => {
           expect(result).toEqual({
-            status: 'stopped',
+            status: 'replay-done',
             endpointName: 'ep1',
             readModel: 'customers',
           });
@@ -161,12 +161,12 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: 1000,
       };
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -272,12 +272,12 @@ describe('createOrchestrator', () => {
         'ep1/customers': {
           endpointName: 'ep1',
           readModelName: 'customers',
-          state: 'stopped',
+          state: 'idle',
         },
         'ep1/orders': {
           endpointName: 'ep1',
           readModelName: 'orders',
-          state: 'stopped',
+          state: 'idle',
         },
       };
       sseClient.cache.getAllReadModels.mockReturnValue({
@@ -317,13 +317,13 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: 0,
       };
 
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -430,7 +430,7 @@ describe('createOrchestrator', () => {
           activateAfter: false,
         })
         .then((result) => {
-          expect(result.status).toBe('stopped');
+          expect(result.status).toBe('idle');
           expect(result.warning).toContain('skipReplayCatchUpOnly');
           expect(sseClient.endOperation).toHaveBeenCalled();
         });
@@ -510,13 +510,13 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: 5000,
       };
 
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -550,13 +550,13 @@ describe('createOrchestrator', () => {
       sseClient.cache.readModels['ep1/customers'] = {
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         lastProjectedEventTimestamp: backupTimestamp,
       };
 
       sseClient.waitForStatus.mockResolvedValue({
         readModels: {
-          'ep1/customers': { state: 'stopped' },
+          'ep1/customers': { state: 'idle' },
         },
         commandProcessor: {
           state: 'idle',
@@ -668,7 +668,7 @@ describe('createOrchestrator', () => {
           activateAfter: false,
         })
         .then((result) => {
-          expect(result.status).toBe('stopped');
+          expect(result.status).toBe('idle');
           expect(sseClient.endOperation).toHaveBeenCalled();
         });
     });

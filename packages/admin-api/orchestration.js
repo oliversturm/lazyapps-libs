@@ -149,7 +149,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
           return sseClient.waitForStatus((status) => {
             const rmStatus = status.readModels[`${ep}/${rm}`];
-            return rmStatus && rmStatus.state === 'stopped';
+            return rmStatus && rmStatus.state === 'idle';
           }, STEP_TIMEOUT_MS);
         })
         .then(() => {
@@ -164,7 +164,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
           return sseClient.waitForStatus((status) => {
             const rmStatus = status.readModels[`${ep}/${rm}`];
-            return rmStatus && rmStatus.state === 'stopped';
+            return rmStatus && rmStatus.state === 'idle';
           }, STEP_TIMEOUT_MS);
         })
         .then(() => {
@@ -177,7 +177,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
             'Skip-replay complete, staying stopped (activateAfter=false)',
           );
           return {
-            status: 'stopped',
+            status: 'idle',
             endpointName: ep,
             readModel: rm,
             warning: 'skipReplayCatchUpOnly with activateAfter=false',
@@ -211,7 +211,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
         return sseClient.waitForStatus((status) => {
           const rmStatus = status.readModels[`${ep}/${rm}`];
-          return rmStatus && rmStatus.state === 'stopped';
+          return rmStatus && rmStatus.state === 'idle';
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
@@ -305,7 +305,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         return sseClient
           .waitForStatus((status) => {
             const rmStatus = status.readModels[`${ep}/${rm}`];
-            return rmStatus && rmStatus.state === 'stopped';
+            return rmStatus && rmStatus.state === 'idle';
           }, STEP_TIMEOUT_MS)
           .then(() => lastTimestamp);
       })
@@ -441,7 +441,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
         return sseClient.waitForStatus((status) => {
           const rmStatus = status.readModels[`${ep}/${rm}`];
-          return rmStatus && rmStatus.state === 'stopped';
+          return rmStatus && rmStatus.state === 'idle';
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
@@ -483,7 +483,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
               const rmStatus = status.readModels[`${ep}/${rm}`];
               return (
                 rmStatus &&
-                rmStatus.state === 'stopped' &&
+                rmStatus.state === 'idle' &&
                 rmStatus.backupProgress?.state === 'idle'
               );
             }, STEP_TIMEOUT_MS);
@@ -536,7 +536,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
               return activationOrchestration(ep, rm);
             }
             return {
-              status: 'stopped',
+              status: 'idle',
               endpointName: ep,
               readModel: rm,
             };

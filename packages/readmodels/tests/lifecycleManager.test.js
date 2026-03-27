@@ -57,8 +57,8 @@ describe('lifecycleManager', () => {
 
       lm.initialize(['customers', 'orders']);
 
-      expect(lm.getState('customers')).toBe('stopped');
-      expect(lm.getState('orders')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
+      expect(lm.getState('orders')).toBe('idle');
     });
 
     test('returns unknown for uninitialized read model', () => {
@@ -137,7 +137,7 @@ describe('lifecycleManager', () => {
           throw new Error('should not resolve');
         },
         () => {
-          expect(lm.getState('customers')).toBe('stopped');
+          expect(lm.getState('customers')).toBe('idle');
           expect(
             context.projectionHandler.clearCatchupState,
           ).toHaveBeenCalledWith('customers');
@@ -237,7 +237,7 @@ describe('lifecycleManager', () => {
             throw new Error('should not resolve');
           },
           () => {
-            expect(lm.getState('customers')).toBe('stopped');
+            expect(lm.getState('customers')).toBe('idle');
             return lm.activate('customers');
           },
         )
@@ -257,7 +257,7 @@ describe('lifecycleManager', () => {
 
       lm.stop('customers');
 
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
     });
 
     test('is no-op when already stopped', () => {
@@ -267,7 +267,7 @@ describe('lifecycleManager', () => {
 
       lm.stop('customers');
 
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
     });
 
     test('clears catchup state when stopping from catchup', () => {
@@ -281,7 +281,7 @@ describe('lifecycleManager', () => {
       expect(context.projectionHandler.clearCatchupState).toHaveBeenCalledWith(
         'customers',
       );
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
     });
   });
 
@@ -340,7 +340,7 @@ describe('lifecycleManager', () => {
       lm.replayDone('customers', 'corr-1');
 
       // Should not crash, state unchanged
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
     });
   });
 
@@ -409,7 +409,7 @@ describe('lifecycleManager', () => {
       lm.setState('customers', 'invalid');
 
       // R4: invalid is a terminal/absorbing state in production
-      expect(lm.isValidTransition('invalid', 'stopped')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'idle')).toBe(false);
       expect(lm.isValidTransition('invalid', 'live')).toBe(false);
       expect(lm.isValidTransition('invalid', 'replay')).toBe(false);
       expect(lm.isValidTransition('invalid', 'catchup')).toBe(false);
@@ -467,14 +467,14 @@ describe('lifecycleManager', () => {
       const context = createMockContext({ developmentMode: true });
       const lm = createLifecycleManager(context);
 
-      expect(lm.isValidTransition('invalid', 'stopped')).toBe(true);
+      expect(lm.isValidTransition('invalid', 'idle')).toBe(true);
     });
 
     test('invalid->stopped is rejected in production mode', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
 
-      expect(lm.isValidTransition('invalid', 'stopped')).toBe(false);
+      expect(lm.isValidTransition('invalid', 'idle')).toBe(false);
     });
 
     test('stop transitions from invalid to stopped in dev mode', () => {
@@ -497,7 +497,7 @@ describe('lifecycleManager', () => {
 
       lm.stop('customers', 'corr-1');
 
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('idle');
     });
 
     test('stop clears replayInProgress flag when recovering from invalid in dev mode', () => {
@@ -539,7 +539,7 @@ describe('lifecycleManager', () => {
     });
 
     test('DEV_TRANSITIONS allows invalid->stopped', () => {
-      expect(__testing__.DEV_TRANSITIONS.invalid).toContain('stopped');
+      expect(__testing__.DEV_TRANSITIONS.invalid).toContain('idle');
     });
 
     test('BASE_TRANSITIONS does not allow invalid->stopped', () => {
@@ -628,7 +628,7 @@ describe('lifecycleManager', () => {
       // and set those read models to 'invalid' state
       return lm.initialize(['customers', 'orders']).then(() => {
         expect(lm.getState('customers')).toBe('invalid');
-        expect(lm.getState('orders')).toBe('stopped');
+        expect(lm.getState('orders')).toBe('idle');
       });
     });
   });

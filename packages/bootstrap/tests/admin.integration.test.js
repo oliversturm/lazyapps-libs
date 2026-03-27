@@ -33,13 +33,13 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
           {
             name: 'customers',
             endpointName: 'ep1',
-            state: 'stopped',
+            state: 'idle',
             lastProjectedEventTimestamp: 1000,
           },
           {
             name: 'orders',
             endpointName: 'ep1',
-            state: 'stopped',
+            state: 'idle',
             lastProjectedEventTimestamp: 2000,
           },
         ]);

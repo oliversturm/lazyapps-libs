@@ -378,7 +378,10 @@ export const activateReadModelHandler = (context) => (req, res) => {
   }
 
   const currentState = context.lifecycleManager.getState(readModelName);
-  if (currentState !== 'waiting' && currentState !== 'stopped') {
+  if (
+    currentState !== 'waiting' &&
+    currentState !== 'idle' &&
+  ) {
     res.status(409).json({
       error:
         `Read model ${readModelName} is in state '${currentState}', ` +

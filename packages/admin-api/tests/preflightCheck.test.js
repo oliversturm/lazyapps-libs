@@ -50,7 +50,7 @@ describe('getPreflightStatus', () => {
     const rmStatus = {
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
       lastProjectedEventTimestamp: 0,
     };
     const result = getPreflightStatus(rmStatus, 5000);
@@ -59,7 +59,7 @@ describe('getPreflightStatus', () => {
       tzero: true,
       lastProjectedEventTimestamp: 0,
       lastEventStoreTimestamp: 5000,
-      state: 'stopped',
+      state: 'idle',
     });
   });
 
@@ -67,7 +67,7 @@ describe('getPreflightStatus', () => {
     const rmStatus = {
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
     };
     const result = getPreflightStatus(rmStatus, 3000);
     expect(result).toEqual({
@@ -75,7 +75,7 @@ describe('getPreflightStatus', () => {
       tzero: true,
       lastProjectedEventTimestamp: 0,
       lastEventStoreTimestamp: 3000,
-      state: 'stopped',
+      state: 'idle',
     });
   });
 
@@ -100,7 +100,7 @@ describe('getPreflightStatus', () => {
     const rmStatus = {
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
       lastProjectedEventTimestamp: 0,
     };
     const result = getPreflightStatus(rmStatus, null);
@@ -124,7 +124,7 @@ describe('getPreflightStatus', () => {
     const rmStatus = {
       endpointName: 'ep1',
       readModelName: 'customers',
-      state: 'stopped',
+      state: 'idle',
       lastProjectedEventTimestamp: 0,
     };
     const result = getPreflightStatus(rmStatus, 0);

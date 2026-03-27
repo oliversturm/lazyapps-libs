@@ -25,7 +25,7 @@ export const createLifecycleManager = (context) => {
   const initialize = (readModelNames) => {
     const log = getLogger('RM/Lifecycle', 'SYS');
     readModelNames.forEach((name) => {
-      states[name] = 'stopped';
+      states[name] = 'idle';
     });
     log.info(
       `Initialized lifecycle for read models: ${readModelNames.join(', ')}`,
@@ -69,8 +69,8 @@ export const createLifecycleManager = (context) => {
   const stop = (readModelName, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const current = getState(readModelName);
-    if (current === 'stopped') {
-      log.info(`Read model '${readModelName}' already stopped`);
+    if (current === 'idle') {
+      log.info(`Read model '${readModelName}' already idle`);
       return;
     }
     if (current === 'invalid' && !context.developmentMode) {
@@ -95,13 +95,13 @@ export const createLifecycleManager = (context) => {
         );
     }
     log.info(`Stopping read model '${readModelName}'`);
-    setState(readModelName, 'stopped', correlationId);
+    setState(readModelName, 'idle', correlationId);
   };
 
   const startReplay = (readModelName, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const current = getState(readModelName);
-    if (current !== 'stopped') {
+    if (current !== 'idle') {
       return Promise.reject(
         new Error(
           `Cannot start replay for '${readModelName}' from state '${current}'`,

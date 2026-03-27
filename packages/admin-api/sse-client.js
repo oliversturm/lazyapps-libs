@@ -306,7 +306,7 @@ const createSseClient = ({
               cache.updateReadModel({
                 endpointName: rm.endpointName,
                 readModelName: rm.name,
-                state: rm.state || 'stopped',
+                state: rm.state || 'idle',
                 stateVersion: rm.stateVersion || 0,
                 lastProjectedEventTimestamp:
                   rm.lastProjectedEventTimestamp || 0,

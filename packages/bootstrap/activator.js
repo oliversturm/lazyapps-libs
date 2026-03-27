@@ -86,7 +86,7 @@ export const createActivator = ({
             sseClient.cache.updateReadModel({
               endpointName: rm.endpointName,
               readModelName: rm.name,
-              state: rm.state || 'stopped',
+              state: rm.state || 'idle',
               lastProjectedEventTimestamp: rm.lastProjectedEventTimestamp || 0,
             });
           }

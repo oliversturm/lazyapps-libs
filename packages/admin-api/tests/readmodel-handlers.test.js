@@ -1040,7 +1040,7 @@ describe('stopReadModelHandler', () => {
 
     expect(context.activator.stopReadModel).toHaveBeenCalledWith('items');
     expect(res.json).toHaveBeenCalledWith({
-      status: 'stopped',
+      status: 'idle',
       readModel: 'items',
     });
   });
@@ -1060,7 +1060,7 @@ describe('stopReadModelHandler', () => {
 
     expect(context.lifecycleManager.stop).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith({
-      status: 'stopped',
+      status: 'idle',
       readModel: 'items',
     });
   });
@@ -1115,7 +1115,7 @@ describe('activateAllHandler', () => {
         getState: vi
           .fn()
           .mockReturnValueOnce('waiting')
-          .mockReturnValueOnce('stopped'),
+          .mockReturnValueOnce('idle'),
         activate: vi.fn().mockResolvedValue(undefined),
       },
     };

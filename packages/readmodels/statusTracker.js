@@ -17,7 +17,7 @@ export const createStatusTracker = (readModels, endpointName) => {
       status[name] = {
         endpointName: endpointName || 'default',
         readModelName: name,
-        state: 'stopped',
+        state: 'idle',
         stateVersion: 0,
         lastProjectedEventTimestamp:
           readModels[name]?.lastProjectedEventTimestamp || 0,

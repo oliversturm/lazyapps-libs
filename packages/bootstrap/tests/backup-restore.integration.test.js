@@ -657,7 +657,7 @@ describe.skipIf(!hasMongoTools)(
             waitForCondition(() =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'stopped';
+                return items && items.state === 'idle';
               }),
             ),
           )
@@ -755,7 +755,7 @@ describe.skipIf(!hasMongoTools)(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'stopped';
+              return items && items.state === 'idle';
             }),
           ),
         )
@@ -788,7 +788,7 @@ describe.skipIf(!hasMongoTools)(
         .then(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            expect(items.state).toBe('stopped');
+            expect(items.state).toBe('idle');
           }),
         )
         // Verify data was reverted to backup point (3 items)
@@ -1118,7 +1118,7 @@ describe('C5: clean restart from known states', { timeout: 60000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items && items.state === 'stopped';
+            return items && items.state === 'idle';
           }),
         ),
       )
@@ -1133,7 +1133,7 @@ describe('C5: clean restart from known states', { timeout: 60000 }, () => {
       .then(({ restartContext, adminPort, rmPort, cleanup }) => {
         // Verify starts stopped with correct timestamp
         expect(restartContext.lifecycleManager.getState('items')).toBe(
-          'stopped',
+          'idle',
         );
         expect(
           restartContext.readModels.items.lastProjectedEventTimestamp,
@@ -1184,7 +1184,7 @@ describe('C5: clean restart from known states', { timeout: 60000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items && items.state === 'stopped';
+            return items && items.state === 'idle';
           }),
         ),
       )
@@ -1543,7 +1543,7 @@ describe.skipIf(!hasMongoTools)(
             waitForCondition(() =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'stopped';
+                return items && items.state === 'idle';
               }),
             ),
           )

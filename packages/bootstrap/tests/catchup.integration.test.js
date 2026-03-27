@@ -420,8 +420,8 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
         expect(body).toHaveLength(2);
         const items = body.find((rm) => rm.name === 'items');
         const stats = body.find((rm) => rm.name === 'stats');
-        expect(items.state).toBe('stopped');
-        expect(stats.state).toBe('stopped');
+        expect(items.state).toBe('idle');
+        expect(stats.state).toBe('idle');
       })
       // Step 2: Insert events directly into event store
       .then(() =>
@@ -503,7 +503,7 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
     fetchRM('/admin/readmodel')
       .then(({ body }) => {
         const stats = body.find((rm) => rm.name === 'stats');
-        expect(stats.state).toBe('stopped');
+        expect(stats.state).toBe('idle');
       })
       // Activate all via admin server (orchestrator)
       .then(() =>
@@ -615,7 +615,7 @@ describe('catch-up after gap', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'stopped';
+            return items.state === 'idle';
           }),
         ),
       )
@@ -932,14 +932,14 @@ describe('admin instructions via message bus', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'stopped';
+            return items.state === 'idle';
           }),
         ),
       )
       .then(() =>
         fetchRM('/admin/readmodel').then(({ body }) => {
           const items = body.find((rm) => rm.name === 'items');
-          expect(items.state).toBe('stopped');
+          expect(items.state).toBe('idle');
         }),
       ));
 });

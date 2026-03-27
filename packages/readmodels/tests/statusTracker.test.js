@@ -35,7 +35,7 @@ describe('statusTracker', () => {
       expect(status).toEqual({
         endpointName: 'ep1',
         readModelName: 'customers',
-        state: 'stopped',
+        state: 'idle',
         stateVersion: 0,
         lastProjectedEventTimestamp: 500,
         correlationId: null,
@@ -65,7 +65,7 @@ describe('statusTracker', () => {
     test('returns a copy, not the original', () => {
       const s1 = tracker.getStatus('customers');
       s1.state = 'live';
-      expect(tracker.getStatus('customers').state).toBe('stopped');
+      expect(tracker.getStatus('customers').state).toBe('idle');
     });
   });
 
@@ -82,7 +82,7 @@ describe('statusTracker', () => {
     test('returns copies', () => {
       const all = tracker.getAllStatuses();
       all[0].state = 'live';
-      expect(tracker.getStatus(all[0].readModelName).state).toBe('stopped');
+      expect(tracker.getStatus(all[0].readModelName).state).toBe('idle');
     });
   });
 
@@ -272,7 +272,7 @@ describe('statusTracker', () => {
       tracker.setState('customers', 'replay');
       const snapshot = listener.mock.calls[0][0];
 
-      tracker.setState('customers', 'stopped');
+      tracker.setState('customers', 'idle');
       expect(snapshot.state).toBe('replay');
     });
   });

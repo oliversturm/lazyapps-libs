@@ -737,7 +737,7 @@ describe(
         .then(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const rm = body.find((r) => r.name === 't0opt2noact');
-            expect(rm.state).toBe('stopped');
+            expect(rm.state).toBe('idle');
           }),
         )
         // Verify no data was projected (skip replay + no activation = no data)
@@ -859,7 +859,7 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'stopped';
+              return items && items.state === 'idle';
             }),
           ),
         )
@@ -1051,7 +1051,7 @@ describe.skipIf(!hasMongoTools)(
                   waitForCondition(() =>
                     fetchRM('/admin/readmodel').then(({ body }) => {
                       const r = body.find((x) => x.name === rm);
-                      return r && r.state === 'stopped';
+                      return r && r.state === 'idle';
                     }),
                   ),
                 ),
