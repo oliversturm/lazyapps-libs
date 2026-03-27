@@ -318,7 +318,7 @@ describe('lifecycleManager', () => {
   });
 
   describe('replayDone', () => {
-    test('transitions replay -> stopped and clears replay state', () => {
+    test('transitions replay -> replay-done and clears replay state', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
       lm.initialize(['customers']);
@@ -326,7 +326,7 @@ describe('lifecycleManager', () => {
 
       lm.replayDone('customers', 'corr-1');
 
-      expect(lm.getState('customers')).toBe('stopped');
+      expect(lm.getState('customers')).toBe('replay-done');
       expect(
         context.projectionHandler.clearReadModelReplayState,
       ).toHaveBeenCalledWith('customers');
@@ -377,21 +377,24 @@ describe('lifecycleManager', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
 
-      expect(lm.isValidTransition('stopped', 'replay')).toBe(true);
-      expect(lm.isValidTransition('stopped', 'catchup')).toBe(true);
-      expect(lm.isValidTransition('live', 'stopped')).toBe(true);
-      expect(lm.isValidTransition('replay', 'stopped')).toBe(true);
+      expect(lm.isValidTransition('idle', 'replay')).toBe(true);
+      expect(lm.isValidTransition('idle', 'catchup')).toBe(true);
+      expect(lm.isValidTransition('live', 'idle')).toBe(true);
+      expect(lm.isValidTransition('replay', 'replay-done')).toBe(true);
+      expect(lm.isValidTransition('replay-done', 'catchup')).toBe(true);
+      expect(lm.isValidTransition('replay-done', 'idle')).toBe(true);
       expect(lm.isValidTransition('catchup', 'live')).toBe(true);
-      expect(lm.isValidTransition('catchup', 'stopped')).toBe(true);
+      expect(lm.isValidTransition('catchup', 'idle')).toBe(true);
     });
 
     test('rejects invalid transitions', () => {
       const context = createMockContext();
       const lm = createLifecycleManager(context);
 
-      expect(lm.isValidTransition('stopped', 'live')).toBe(false);
+      expect(lm.isValidTransition('idle', 'live')).toBe(false);
       expect(lm.isValidTransition('live', 'replay')).toBe(false);
       expect(lm.isValidTransition('replay', 'live')).toBe(false);
+      expect(lm.isValidTransition('replay', 'idle')).toBe(false);
       expect(lm.isValidTransition('replay', 'catchup')).toBe(false);
     });
   });

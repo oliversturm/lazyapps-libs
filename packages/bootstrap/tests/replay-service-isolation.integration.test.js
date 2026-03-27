@@ -519,7 +519,7 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
         return waitForCondition(() =>
           Promise.resolve(
             ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'stopped'),
+          ).then((s) => s === 'replay-done'),
         );
       })
       .then(() => {

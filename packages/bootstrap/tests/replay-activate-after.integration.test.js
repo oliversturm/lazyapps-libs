@@ -516,11 +516,11 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
       })
       // Give the orchestrator a moment to finish the replayDone step
       .then(() => new Promise((r) => setTimeout(r, 2000)))
-      // Verify RM is stopped (NOT live — activateAfter=false)
+      // Verify RM is in replay-done (NOT live — activateAfter=false)
       .then(() => fetchRM('/admin/readmodel'))
       .then(({ body }) => {
         const items = body.find((rm) => rm.name === 'items');
-        expect(items.state).toBe('stopped');
+        expect(items.state).toBe('replay-done');
       })
       // Verify data was replayed (items present)
       .then(() =>
