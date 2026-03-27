@@ -155,7 +155,7 @@
         >
           {actionPending ? 'Stopping...' : 'Stop'}
         </button>
-      {:else if readModel.state === 'stopped'}
+      {:else if readModel.state === 'idle' || readModel.state === 'replay-done'}
         <button
           onclick={handleActivate}
           disabled={actionPending}

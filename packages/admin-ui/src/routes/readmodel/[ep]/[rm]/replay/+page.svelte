@@ -79,36 +79,16 @@
   // Track whether we initiated a replay in this page session
   let replayInitiated = $state(false);
   let activateAfter = $state(true);
-  // stateVersion at the moment replay was initiated — used to distinguish
-  // "already stopped before replay" from "stopped after replay completed"
-  let initiatedAtVersion = $state(null);
 
-  // Derive replay step from store state
+  // Derive replay step from RM state — lifecycle states are unambiguous,
+  // so no version tracking or intermediate-state detection is needed.
   let storeStep = $derived.by(() => {
     if (!readModel) return null;
     const mode = readModel.state;
     if (mode === 'replay') return 'replaying';
     if (mode === 'catchup') return 'catchup';
-    if (replayInitiated) {
-      // Only treat terminal states as "done" when the state has actually
-      // changed since we initiated the replay (stateVersion advanced).
-      // Without this guard, a fast replay that skips the 'replay' SSE
-      // event would show "done" immediately because the RM was already
-      // in 'stopped' or 'live' state when the user clicked Start.
-      const stateAdvanced =
-        initiatedAtVersion == null ||
-        (readModel.stateVersion ?? 0) > initiatedAtVersion;
-      if (stateAdvanced) {
-        if (mode === 'live') return 'done';
-        if (mode === 'stopped' && !activateAfter) return 'done-stopped';
-      }
-      // When activateAfter is true, stopped is a transient state during
-      // orchestration (between replayDone and activate) — show as
-      // replaying to avoid flicker
-      if (mode === 'stopped' && activateAfter) return 'replaying';
-      // State hasn't advanced yet — show as replaying (waiting for SSE)
-      if (!stateAdvanced) return 'replaying';
-    }
+    if (mode === 'live' && replayInitiated) return 'done';
+    if (mode === 'replay-done') return 'done-stopped';
     return null;
   });
 
@@ -230,7 +210,6 @@
     }
 
     replayInitiated = true;
-    initiatedAtVersion = readModel?.stateVersion ?? 0;
     api
       .startReplay(endpointName, data.rm, options)
       .then(() => {
@@ -266,7 +245,6 @@
     replayMode = 'fromScratch';
     fromTimestamp = 0;
     toTimestamp = null;
-    initiatedAtVersion = null;
     resetTzero();
   };
 
@@ -562,7 +540,7 @@
   <div class="bg-white rounded-lg shadow p-6 space-y-4">
     <div class="flex items-center space-x-2">
       <h2 class="text-lg font-semibold text-amber-700">Replay Complete — Stopped</h2>
-      <StatusBadge status="stopped" />
+      <StatusBadge status="replay-done" />
     </div>
     <p class="text-sm text-gray-600">
       The read model has been replayed and is currently stopped. You can inspect the data before activating.

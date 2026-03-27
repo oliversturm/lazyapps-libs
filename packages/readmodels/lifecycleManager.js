@@ -1,18 +1,28 @@
 import { getLogger } from '@lazyapps/logger';
 
-const VALID_STATES = ['stopped', 'live', 'replay', 'catchup', 'invalid'];
+const VALID_STATES = [
+  'idle',
+  'live',
+  'replay',
+  'replay-done',
+  'catchup',
+  'invalid',
+];
 
 const BASE_TRANSITIONS = {
-  stopped: ['replay', 'catchup'],
-  live: ['stopped'],
-  replay: ['stopped'],
-  catchup: ['live', 'stopped'],
+  idle: ['replay', 'catchup'],
+  live: ['idle'],
+  replay: ['replay-done'],
+  'replay-done': ['catchup', 'idle'],
+  catchup: ['live', 'idle'],
   invalid: [],
 };
 
 const DEV_TRANSITIONS = {
   ...BASE_TRANSITIONS,
-  invalid: ['stopped'],
+  idle: ['replay', 'catchup', 'live'],
+  'replay-done': ['catchup', 'idle', 'live'],
+  invalid: ['idle'],
 };
 
 export const createLifecycleManager = (context) => {
@@ -132,8 +142,8 @@ export const createLifecycleManager = (context) => {
       return;
     }
     context.projectionHandler.clearReadModelReplayState(readModelName);
-    setState(readModelName, 'stopped', correlationId);
-    log.info(`Read model '${readModelName}' replay done, now stopped`);
+    setState(readModelName, 'replay-done', correlationId);
+    log.info(`Read model '${readModelName}' replay done`);
     context.storage
       .perRequest(correlationId)
       .updateOne(
@@ -146,7 +156,7 @@ export const createLifecycleManager = (context) => {
   const activate = (readModelName, correlationId) => {
     const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
     const current = getState(readModelName);
-    if (current !== 'stopped') {
+    if (current !== 'idle' && current !== 'replay-done') {
       return Promise.reject(
         new Error(`Cannot activate '${readModelName}' from state '${current}'`),
       );
@@ -171,7 +181,7 @@ export const createLifecycleManager = (context) => {
       .catch((err) => {
         log.error(`Activation failed for ${readModelName}: ${err}`);
         context.projectionHandler.clearCatchupState(readModelName);
-        setState(readModelName, 'stopped', correlationId);
+        setState(readModelName, 'idle', correlationId);
         throw err;
       });
   };
@@ -194,6 +204,42 @@ export const createLifecycleManager = (context) => {
       });
   };
 
+  const goLive = (readModelName, correlationId) => {
+    const log = getLogger('RM/Lifecycle', correlationId || 'SYS');
+    const current = getState(readModelName);
+    if (!context.developmentMode) {
+      log.error(
+        `goLive rejected for '${readModelName}' — not in development mode`,
+      );
+      return Promise.reject(
+        new Error('goLive requires development mode'),
+      );
+    }
+    if (current !== 'idle' && current !== 'replay-done') {
+      return Promise.reject(
+        new Error(
+          `Cannot go live for '${readModelName}' from state '${current}'`,
+        ),
+      );
+    }
+
+    log.info(
+      `Dev mode: activating '${readModelName}' directly to live (skip catch-up)`,
+    );
+
+    if (!connectPromise) {
+      connectPromise = context.connectEventBus().catch((err) => {
+        connectPromise = null;
+        throw err;
+      });
+    }
+
+    return connectPromise.then(() => {
+      setState(readModelName, 'live', correlationId);
+      log.info(`Read model '${readModelName}' is now live (skipped catch-up)`);
+    });
+  };
+
   return {
     initialize,
     getState,
@@ -203,6 +249,7 @@ export const createLifecycleManager = (context) => {
     startReplay,
     replayDone,
     catchupDone,
+    goLive,
     isValidTransition,
   };
 };

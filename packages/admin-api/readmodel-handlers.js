@@ -381,6 +381,7 @@ export const activateReadModelHandler = (context) => (req, res) => {
   if (
     currentState !== 'waiting' &&
     currentState !== 'idle' &&
+    currentState !== 'replay-done'
   ) {
     res.status(409).json({
       error:
@@ -409,7 +410,7 @@ export const stopReadModelHandler = (context) => (req, res) => {
       ? `${endpointName}/${readModelName}`
       : readModelName;
     context.activator.stopReadModel(identifier);
-    res.json({ status: 'stopped', readModel: readModelName });
+    res.json({ status: 'idle', readModel: readModelName });
     return;
   }
 
@@ -419,7 +420,7 @@ export const stopReadModelHandler = (context) => (req, res) => {
   }
 
   context.lifecycleManager.stop(readModelName, nanoid());
-  res.json({ status: 'stopped', readModel: readModelName });
+  res.json({ status: 'idle', readModel: readModelName });
 };
 
 export const activateAllHandler = (context) => (req, res) => {
@@ -447,7 +448,7 @@ export const activateAllHandler = (context) => (req, res) => {
 
   const activated = Object.keys(context.readModels).filter((name) => {
     const state = context.lifecycleManager.getState(name);
-    return state === 'waiting' || state === 'stopped';
+    return state === 'waiting' || state === 'idle' || state === 'replay-done';
   });
 
   activated.forEach((name) => {

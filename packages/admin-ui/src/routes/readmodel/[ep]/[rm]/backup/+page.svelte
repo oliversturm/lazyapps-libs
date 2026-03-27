@@ -241,7 +241,7 @@
       required to recover. Contact your administrator.
     </p>
   </div>
-{:else if readModel?.state === 'stopped'}
+{:else if readModel?.state === 'idle' || readModel?.state === 'replay-done'}
   <div class="mb-4 p-3 bg-amber-50 border border-amber-200 rounded flex items-center justify-between">
     <span class="text-sm text-amber-700">Read model is stopped.</span>
     <button onclick={handleActivate} class="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700">

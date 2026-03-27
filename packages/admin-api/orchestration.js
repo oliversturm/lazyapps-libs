@@ -368,7 +368,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       })
       .then(() => {
         checkAborted('Step 9');
-        // Step 9: Send replayDone, await stopped, then activate
+        // Step 9: Send replayDone, await replay-done, then activate
         log.info('Step 9: Sending replayDone command');
         publishCommand(correlationId, {
           type: 'replayDone',
@@ -378,7 +378,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
         return sseClient.waitForStatus((status) => {
           const rmStatus = status.readModels[`${ep}/${rm}`];
-          return rmStatus && rmStatus.state === 'stopped';
+          return rmStatus && rmStatus.state === 'replay-done';
         }, STEP_TIMEOUT_MS);
       })
       .then(() => {
@@ -387,8 +387,8 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           log.info('Replay complete, chaining to activation');
           return activationOrchestration(ep, rm);
         }
-        log.info('Replay complete, staying stopped (activateAfter=false)');
-        return { status: 'stopped', endpointName: ep, readModel: rm };
+        log.info('Replay complete, in replay-done (activateAfter=false)');
+        return { status: 'replay-done', endpointName: ep, readModel: rm };
       })
       .then((result) => {
         cleanup();
@@ -614,7 +614,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
             );
           })
           .then(() => {
-            // Send replayDone, await stopped
+            // Send replayDone, await replay-done
             log.info('Sending replayDone command');
             publishCommand(correlationId, {
               type: 'replayDone',
@@ -624,7 +624,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
 
             return sseClient.waitForStatus((status) => {
               const rmStatus = status.readModels[`${ep}/${rm}`];
-              return rmStatus && rmStatus.state === 'stopped';
+              return rmStatus && rmStatus.state === 'replay-done';
             }, STEP_TIMEOUT_MS);
           })
           .then(() => {
@@ -633,9 +633,9 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
               return activationOrchestration(ep, rm);
             }
             log.info(
-              'Backup replay complete, staying stopped (activateAfter=false)',
+              'Backup replay complete, in replay-done (activateAfter=false)',
             );
-            return { status: 'stopped', endpointName: ep, readModel: rm };
+            return { status: 'replay-done', endpointName: ep, readModel: rm };
           });
       })
       .then((result) => {
