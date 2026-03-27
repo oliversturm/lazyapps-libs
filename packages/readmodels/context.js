@@ -31,10 +31,16 @@ export const initializeContext = (
         'will not be scoped to this service instance',
     );
   }
+  // Shallow-clone each readModel definition — projection and
+  // timestamp-loading code mutates readModels[name] in place,
+  // and callers must not see those mutations on their originals.
+  const clonedReadModels = Object.fromEntries(
+    Object.entries(readModels).map(([k, v]) => [k, { ...v }]),
+  );
   return storage()
     .then((storage) => ({
       storage,
-      readModels,
+      readModels: clonedReadModels,
       correlationConfig,
       ...(endpointName && { endpointName }),
       ...(developmentMode && { developmentMode: true }),
@@ -46,7 +52,7 @@ export const initializeContext = (
       return readTimestampFromBoth(
         context.storage,
         secondaryTimestampStorage,
-      )(readModels)
+      )(clonedReadModels)
         .then(() => context)
         .catch((err) => {
           const log = getLogger('RM/Context', 'INIT');

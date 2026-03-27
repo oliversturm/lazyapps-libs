@@ -656,15 +656,10 @@ describe.skipIf(!hasMongoTools).sequential(
     // RM, wait for it to be live with projected data. Returns env + helpers.
     const createActiveEnv = (prefix, eventCount) => {
       console.log(`[TEST ${prefix}] Creating active env with ${eventCount} events`);
-      // Deep-clone readModelDefs — the projection code mutates
-      // readModels[name].lastProjectedEventTimestamp in place
-      const defs = Object.fromEntries(
-        Object.entries(readModelDefs).map(([k, v]) => [k, { ...v }]),
-      );
       const testEnv = setupTestEnv(
         prefix,
         prefix,
-        defs,
+        readModelDefs,
         { backupPath, format: 'json' },
         connectionString,
       );
