@@ -10,6 +10,7 @@ export const createReplayHandler = (eventStore, eventBus, statusTracker) => {
     toTimestamp,
     targetEndpointName,
     replayRelevantEvents,
+    replayDelayMs = 0,
   ) => {
     if (replays[readModel] && replays[readModel].status === 'in_progress') {
       return Promise.reject(
@@ -80,7 +81,11 @@ export const createReplayHandler = (eventStore, eventBus, statusTracker) => {
                 `Replay progress: ${replays[readModel].eventsPublished}/${replays[readModel].eventsTotal}`,
               );
             }
-            return processNext();
+            return replayDelayMs > 0
+              ? new Promise((r) => setTimeout(r, replayDelayMs)).then(
+                  processNext,
+                )
+              : processNext();
           });
         return processNext();
       })

@@ -141,6 +141,7 @@ const createRoutes = ({
       t0Option,
       customTimestamp,
       timestampOverride,
+      replayDelayMs,
     } = req.body || {};
     const correlationId = nanoid();
     const log = getLogger('Admin/Replay', correlationId);
@@ -164,6 +165,7 @@ const createRoutes = ({
             t0Option,
             customTimestamp,
             timestampOverride,
+            replayDelayMs,
           })
         : orchestrator.replayOrchestration(ep, rm, {
             backupId,
@@ -172,6 +174,7 @@ const createRoutes = ({
             t0Option,
             customTimestamp,
             timestampOverride,
+            replayDelayMs,
           });
 
     // Fire off orchestration — don't await, return immediately

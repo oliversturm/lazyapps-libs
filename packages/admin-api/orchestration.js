@@ -116,6 +116,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       t0Option,
       customTimestamp,
       timestampOverride,
+      replayDelayMs,
     } = options;
 
     log.info(`Starting replay orchestration for ${ep}/${rm}`);
@@ -347,6 +348,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
           fromTimestamp: 0,
           toTimestamp: lastTimestamp,
           replayRelevantEvents,
+          ...(replayDelayMs && { replayDelayMs }),
         });
 
         // Step 8: Await CP replay done — refresh cache first so we
@@ -412,6 +414,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       t0Option,
       customTimestamp,
       timestampOverride,
+      replayDelayMs,
     } = options;
 
     log.info(
@@ -598,6 +601,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
               fromTimestamp: backupTimestamp,
               toTimestamp: replayBoundary,
               replayRelevantEvents,
+              ...(replayDelayMs && { replayDelayMs }),
             });
 
             // Wait for CP replay completion
