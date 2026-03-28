@@ -39,19 +39,7 @@ const { installReadModelStatusApi } = await import('@lazyapps/admin-api');
 const { installAdminEndpoints } = await import('@lazyapps/readmodels');
 const { startAdmin } = await import('../admin.js');
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -144,22 +132,26 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
   };
 
   const setup = () => {
+    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
     return getPort()
       .then((adminPort) => {
         env.adminPort = adminPort;
+        console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
         return new MongoDBContainer('mongo:7').start();
       })
       .then((c) => {
         env.container = c;
         env.connectionString =
           c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV ${dbPrefix}] MongoDB: ${env.connectionString}`);
         return MongoClient.connect(env.connectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
+        console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
 
         const changeNotificationSender = options.changeNotificationSender || {
           sendChangeNotification: () => () => Promise.resolve(),
@@ -187,6 +179,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
       })
       .then((context) => {
         env.rmContext = context;
+        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -204,12 +197,14 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
+            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
+        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -279,6 +274,17 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
               cb();
             });
 
+            // RM-side admin instruction handler
+            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
+            rmMq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              env.rmContext.adminInstructionHandler(
+                correlationId,
+                instruction,
+              );
+              cb();
+            });
+
             const cpApp = expressApp();
             cpApp.use(bodyParser.json());
             cpApp.get('/admin/commandprocessor/status', (req, res) => {
@@ -315,6 +321,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
+                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -322,8 +329,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
           },
         );
       })
-      .then(() =>
-        startAdmin(
+      .then(() => {
+        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
+        return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
             port: env.adminPort,
@@ -333,10 +343,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, options = {}) => {
             readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
             commandProcessorUrl: `http://127.0.0.1:${env.cpPort}`,
           },
-        ),
-      )
+        );
+      })
       .then((server) => {
         env.adminServer = server;
+        console.log(`[ENV ${dbPrefix}] Admin service started, setup complete`);
       });
   };
 
@@ -485,8 +496,8 @@ describe(
         .then(() =>
           waitForCondition(() =>
             fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0,
-            ),
+              ({ body }) => body.length > 0 ? true : 'no read models yet',
+            ), 5000, 100, 'admin sees RM',
           ),
         )
         // Activate items RM → catch-up should only process ITEM_CREATED
@@ -500,8 +511,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live';
-            }),
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → live',
           ),
         )
         // Verify: items_col has 3 ITEM_CREATED events
@@ -530,8 +542,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'idle';
-            }),
+              if (items && items.state === 'idle') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → idle',
           ),
         )
         // Start replay with activateAfter
@@ -547,9 +560,10 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'live';
+                if (items && items.state === 'live') return true;
+                return `state=${items?.state || 'not found'}`;
               }),
-            30000,
+            30000, 100, 'items → live (replay)',
           );
         })
         // After replay + catch-up, items_col should still have 3 items
@@ -665,8 +679,8 @@ describe(
         .then(() =>
           waitForCondition(() =>
             fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0,
-            ),
+              ({ body }) => body.length > 0 ? true : 'no read models yet',
+            ), 5000, 100, 'admin sees RM',
           ),
         )
         // Clear any previous notification calls
@@ -684,8 +698,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live';
-            }),
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → live',
           ),
         )
         // Verify data was projected
@@ -727,7 +742,8 @@ describe(
             rmDb()
               .collection('items_cn')
               .countDocuments()
-              .then((c) => c === 4),
+              .then((c) => c === 4 ? true : `count=${c}`),
+            5000, 100, 'items_cn count=4',
           ),
         )
         // 2.5: Verify change notification WAS sent for live event
@@ -814,8 +830,8 @@ describe(
         .then(() =>
           waitForCondition(() =>
             fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0,
-            ),
+              ({ body }) => body.length > 0 ? true : 'no read models yet',
+            ), 5000, 100, 'admin sees RM',
           ),
         )
         // Activate → live with 3 events
@@ -829,8 +845,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live';
-            }),
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → live',
           ),
         )
         // Stop the RM
@@ -844,8 +861,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'idle';
-            }),
+              if (items && items.state === 'idle') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → idle',
           ),
         )
         // Add new events while RM is stopped (these will be "during replay")
@@ -874,9 +892,10 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'live';
+                if (items && items.state === 'live') return true;
+                return `state=${items?.state || 'not found'}`;
               }),
-            30000,
+            30000, 100, 'items → live (replay)',
           );
         })
         // Verify all 5 items present (3 from replay + 2 from catch-up)
@@ -886,8 +905,8 @@ describe(
               rmDb()
                 .collection('items_gap')
                 .countDocuments()
-                .then((c) => c === 5),
-            5000,
+                .then((c) => c === 5 ? true : `count=${c}`),
+            5000, 100, 'items_gap count=5',
           ),
         )
         .then(() =>

@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm as rmDir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -79,20 +80,6 @@ const createRmDef = (collectionName) => ({
   collections: [collectionName],
   replayRelevantEvents: ['ITEM_CREATED'],
 });
-
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -291,7 +278,6 @@ const createInlineAdminInstructionHandler = (context) => {
 // backupConfig: optional { backupPath, format } to wire backup module
 const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
   const env = {
-    container: null,
     connectionString: null,
     cleanupClient: null,
     adminServer: null,
@@ -305,23 +291,24 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
   };
 
   const setup = () => {
+    env.connectionString = sharedConnectionString;
+    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
     return getPort()
       .then((adminPort) => {
         env.adminPort = adminPort;
-        return new MongoDBContainer('mongo:7').start();
-      })
-      .then((c) => {
-        env.container = c;
-        env.connectionString =
-          c.getConnectionString() + '?directConnection=true';
-        return MongoClient.connect(env.connectionString);
+        console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`);
+        return MongoClient.connect(sharedConnectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
 
+        console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
+        console.log(`[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`);
+        console.log(`[ENV ${dbPrefix}] Backup path: ${backupConfig?.backupPath || 'none'}`);
         const contextConfig = {
           readModels: readModelDefs,
           endpointName: 'rm',
@@ -354,6 +341,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
       })
       .then((context) => {
         env.rmContext = context;
+        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}, backup: ${!!context.backup}`);
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -371,12 +359,15 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
+            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
+        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
+        console.log(`[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`);
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -405,8 +396,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
             );
 
             const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
+
+            // CP-side admin instruction handler
             mq.on('__admin', ({ payload }, cb) => {
               const { correlationId, instruction } = payload;
+              console.log(`[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`);
               switch (instruction.type) {
                 case 'startCatchup':
                   catchupHandler
@@ -417,7 +411,12 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
                       instruction.targetEndpointName,
                       instruction.replayRelevantEvents,
                     )
-                    .catch(() => {});
+                    .then(() => {
+                      console.log(`[CP ${mqPrefix}] startCatchup completed for ${instruction.readModel}`);
+                    })
+                    .catch((err) => {
+                      console.log(`[CP ${mqPrefix}] startCatchup FAILED for ${instruction.readModel}: ${err.message}`);
+                    });
                   break;
                 case 'cancelCatchup':
                   catchupHandler.cancelCatchup(
@@ -434,6 +433,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
                       instruction.toTimestamp || 0,
                       instruction.targetEndpointName,
                       instruction.replayRelevantEvents,
+                      instruction.replayDelayMs || 0,
                     )
                     .catch(() => {});
                   break;
@@ -443,6 +443,17 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
                     .catch(() => {});
                   break;
               }
+              cb();
+            });
+
+            // RM-side admin instruction handler
+            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
+            rmMq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              env.rmContext.adminInstructionHandler(
+                correlationId,
+                instruction,
+              );
               cb();
             });
 
@@ -482,6 +493,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
+                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -489,8 +501,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
           },
         );
       })
-      .then(() =>
-        startAdmin(
+      .then(() => {
+        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
+        return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
             port: env.adminPort,
@@ -500,10 +515,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
             readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
             commandProcessorUrl: `http://127.0.0.1:${env.cpPort}`,
           },
-        ),
-      )
+        );
+      })
       .then((server) => {
         env.adminServer = server;
+        console.log(`[ENV ${dbPrefix}] Admin service started, setup complete`);
       });
   };
 
@@ -527,11 +543,24 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
           ? new Promise((r) => env.adminServer.close(r))
           : undefined,
       )
-      .then(() => (env.cleanupClient ? env.cleanupClient.close() : undefined))
-      .then(() => (env.container ? env.container.stop() : undefined));
+      .then(() => (env.cleanupClient ? env.cleanupClient.close() : undefined));
 
   return { env, setup, teardown };
 };
+
+let sharedContainer;
+let sharedConnectionString;
+
+beforeAll(() =>
+  new MongoDBContainer('mongo:7').start().then((c) => {
+    sharedContainer = c;
+    sharedConnectionString = c.getConnectionString() + '?directConnection=true';
+  }),
+);
+
+afterAll(() =>
+  sharedContainer ? sharedContainer.stop() : undefined,
+);
 
 // ── T=0 Fresh RM Tests ──────────────────────────────────────────────────
 // Each T=0 option uses a separate read model name to avoid resets between tests.
@@ -539,7 +568,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs, backupConfig) => {
 
 describe(
   'T=0 fresh RM detection and replay options',
-  { timeout: 60000 },
+  { timeout: 60000, sequential: true, shuffle: false },
   () => {
     const readModelDefs = {
       t0detect: createRmDef('t0detect_col'),
@@ -552,6 +581,7 @@ describe(
       't0-fresh',
       't0-fresh',
       readModelDefs,
+      null,
     );
 
     beforeAll(setup);
@@ -591,10 +621,14 @@ describe(
         })),
       )
         .then(() =>
-          waitForCondition(() =>
-            fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0,
-            ),
+          waitForCondition(
+            () =>
+              fetchAdmin('/admin/readmodel/status').then(
+                ({ body }) => body.length > 0 ? true : 'no read models yet',
+              ),
+            5000,
+            100,
+            'admin sees RM status',
           ),
         )
         .then(() => fetchAdmin('/admin/replay/preflight/rm/t0detect'))
@@ -620,9 +654,11 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 't0opt1');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            't0opt1 → live',
           );
         })
         .then(() =>
@@ -656,9 +692,11 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 't0opt2');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            't0opt2 → live',
           );
         })
         .then(() =>
@@ -694,9 +732,11 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 't0opt3');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            't0opt3 → live',
           );
         })
         .then(() =>
@@ -764,7 +804,7 @@ describe(
 
 describe(
   'non-T=0 control: RM with existing timestamp',
-  { timeout: 60000 },
+  { timeout: 60000, sequential: true, shuffle: false },
   () => {
     const readModelDefs = {
       items: createRmDef('items_overview'),
@@ -773,6 +813,7 @@ describe(
       't0-ctrl',
       't0-ctrl',
       readModelDefs,
+      null,
     );
 
     beforeAll(setup);
@@ -817,11 +858,15 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items && items.state === 'live' ? true : `state=${items?.state}`;
+              }),
+            5000,
+            100,
+            'items → live',
           ),
         )
         .then(() =>
@@ -856,11 +901,15 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'idle';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items && items.state === 'idle' ? true : `state=${items?.state}`;
+              }),
+            5000,
+            100,
+            'items → idle after stop',
           ),
         )
         .then(() =>
@@ -875,9 +924,11 @@ describe(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'live';
+                return items && items.state === 'live' ? true : `state=${items?.state}`;
               }),
             30000,
+            100,
+            'items → live after replay',
           );
         })
         .then(() =>
@@ -905,7 +956,7 @@ describe(
 
 describe.skipIf(!hasMongoTools)(
   'backup T=0 replay options',
-  { timeout: 120000 },
+  { timeout: 120000, sequential: true, shuffle: false },
   () => {
     let backupPath;
     const readModelDefs = {
@@ -981,10 +1032,14 @@ describe.skipIf(!hasMongoTools)(
         )
         .then(() =>
           // Wait for admin to have RM status
-          waitForCondition(() =>
-            fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0,
-            ),
+          waitForCondition(
+            () =>
+              fetchAdmin('/admin/readmodel/status').then(
+                ({ body }) => body.length > 0 ? true : 'no read models yet',
+              ),
+            5000,
+            100,
+            'bk-t0 admin sees RM status',
           ),
         )
         .then(() =>
@@ -1003,9 +1058,11 @@ describe.skipIf(!hasMongoTools)(
                     () =>
                       fetchRM('/admin/readmodel').then(({ body }) => {
                         const r = body.find((x) => x.name === rm);
-                        return r && r.state === 'live';
+                        return r && r.state === 'live' ? true : `state=${r?.state}`;
                       }),
                     15000,
+                    100,
+                    `${rm} → live`,
                   ),
                 ),
             Promise.resolve(),
@@ -1048,11 +1105,15 @@ describe.skipIf(!hasMongoTools)(
                   }),
                 )
                 .then(() =>
-                  waitForCondition(() =>
-                    fetchRM('/admin/readmodel').then(({ body }) => {
-                      const r = body.find((x) => x.name === rm);
-                      return r && r.state === 'idle';
-                    }),
+                  waitForCondition(
+                    () =>
+                      fetchRM('/admin/readmodel').then(({ body }) => {
+                        const r = body.find((x) => x.name === rm);
+                        return r && r.state === 'idle' ? true : `state=${r?.state}`;
+                      }),
+                    5000,
+                    100,
+                    `${rm} → idle after stop`,
                   ),
                 ),
             Promise.resolve(),
@@ -1089,9 +1150,11 @@ describe.skipIf(!hasMongoTools)(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 'bkOpt1');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            'bkOpt1 → live',
           );
         })
         .then(() =>
@@ -1100,8 +1163,10 @@ describe.skipIf(!hasMongoTools)(
               rmDb()
                 .collection('bkopt1_col')
                 .countDocuments()
-                .then((c) => c === 5),
+                .then((c) => c === 5 ? true : `count=${c}`),
             5000,
+            100,
+            'bkopt1_col count → 5',
           ),
         )
         .then(() =>
@@ -1138,9 +1203,11 @@ describe.skipIf(!hasMongoTools)(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 'bkOpt2');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            'bkOpt2 → live',
           );
         })
         .then(() =>
@@ -1151,8 +1218,10 @@ describe.skipIf(!hasMongoTools)(
               rmDb()
                 .collection('bkopt2_col')
                 .countDocuments()
-                .then((c) => c === 5),
+                .then((c) => c === 5 ? true : `count=${c}`),
             5000,
+            100,
+            'bkopt2_col count → 5',
           ),
         )
         .then(() =>
@@ -1191,9 +1260,11 @@ describe.skipIf(!hasMongoTools)(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const rm = body.find((r) => r.name === 'bkOpt3');
-                return rm && rm.state === 'live';
+                return rm && rm.state === 'live' ? true : `state=${rm?.state}`;
               }),
             30000,
+            100,
+            'bkOpt3 → live',
           );
         })
         .then(() =>
@@ -1202,8 +1273,10 @@ describe.skipIf(!hasMongoTools)(
               rmDb()
                 .collection('bkopt3_col')
                 .countDocuments()
-                .then((c) => c === 5),
+                .then((c) => c === 5 ? true : `count=${c}`),
             5000,
+            100,
+            'bkopt3_col count → 5',
           ),
         )
         .then(() =>

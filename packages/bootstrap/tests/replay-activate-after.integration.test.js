@@ -4,6 +4,7 @@ import { MongoClient } from 'mongodb';
 import expressApp from 'express';
 import bodyParser from 'body-parser';
 import { createServer } from 'node:net';
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -62,20 +63,6 @@ const createRmDef = (collectionName) => ({
   collections: [collectionName],
   replayRelevantEvents: ['ITEM_CREATED'],
 });
-
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -154,7 +141,6 @@ const createInlineAdminInstructionHandler = (context) => {
 
 const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
   const env = {
-    container: null,
     connectionString: null,
     cleanupClient: null,
     adminServer: null,
@@ -168,23 +154,23 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
   };
 
   const setup = () => {
+    env.connectionString = sharedConnectionString;
+    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
     return getPort()
       .then((adminPort) => {
         env.adminPort = adminPort;
-        return new MongoDBContainer('mongo:7').start();
-      })
-      .then((c) => {
-        env.container = c;
-        env.connectionString =
-          c.getConnectionString() + '?directConnection=true';
-        return MongoClient.connect(env.connectionString);
+        console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`);
+        return MongoClient.connect(sharedConnectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
 
+        console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
+        console.log(`[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`);
         return initializeContext(
           { serviceId: `${dbPrefix}-RM` },
           {
@@ -209,6 +195,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
       })
       .then((context) => {
         env.rmContext = context;
+        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -226,12 +213,15 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
+            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
+        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
+        console.log(`[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`);
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -260,8 +250,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
             );
 
             const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
+
+            // CP-side admin instruction handler
             mq.on('__admin', ({ payload }, cb) => {
               const { correlationId, instruction } = payload;
+              console.log(`[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`);
               switch (instruction.type) {
                 case 'startCatchup':
                   catchupHandler
@@ -301,6 +294,17 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
               cb();
             });
 
+            // RM-side admin instruction handler
+            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
+            rmMq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              env.rmContext.adminInstructionHandler(
+                correlationId,
+                instruction,
+              );
+              cb();
+            });
+
             const cpApp = expressApp();
             cpApp.use(bodyParser.json());
             cpApp.get('/admin/commandprocessor/status', (req, res) => {
@@ -337,6 +341,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
+                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -344,8 +349,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
           },
         );
       })
-      .then(() =>
-        startAdmin(
+      .then(() => {
+        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin -> RM: http://127.0.0.1:${env.rmAdminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin -> CP: http://127.0.0.1:${env.cpPort}`);
+        return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
             port: env.adminPort,
@@ -355,10 +363,11 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
             readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
             commandProcessorUrl: `http://127.0.0.1:${env.cpPort}`,
           },
-        ),
-      )
+        );
+      })
       .then((server) => {
         env.adminServer = server;
+        console.log(`[ENV ${dbPrefix}] Admin service started, setup complete`);
       });
   };
 
@@ -382,11 +391,26 @@ const setupTestEnv = (mqPrefix, dbPrefix, readModelDefs) => {
           ? new Promise((r) => env.adminServer.close(r))
           : undefined,
       )
-      .then(() => (env.cleanupClient ? env.cleanupClient.close() : undefined))
-      .then(() => (env.container ? env.container.stop() : undefined));
+      .then(() =>
+        env.cleanupClient ? env.cleanupClient.close() : undefined,
+      );
 
   return { env, setup, teardown };
 };
+
+let sharedContainer;
+let sharedConnectionString;
+
+beforeAll(() =>
+  new MongoDBContainer('mongo:7').start().then((c) => {
+    sharedContainer = c;
+    sharedConnectionString = c.getConnectionString() + '?directConnection=true';
+  }),
+);
+
+afterAll(() =>
+  sharedContainer ? sharedContainer.stop() : undefined,
+);
 
 // ── 1.8: Replay with activateAfter=false ────────────────────────────────
 // Replay completes, RM stays stopped (no auto-activation), data present,
@@ -396,50 +420,56 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
   const readModelDefs = {
     items: createRmDef('items_overview'),
   };
-  const { env, setup, teardown } = setupTestEnv(
-    'rpl-noact',
-    'rpl-noact',
-    readModelDefs,
-  );
 
-  beforeAll(setup);
-  afterAll(teardown);
+  test('replay with activateAfter=false: RM stays stopped, data present, timestamp correct', () => {
+    const { env, setup, teardown } = setupTestEnv(
+      'rpl-noact',
+      'rpl-noact',
+      readModelDefs,
+    );
 
-  const fetchAdmin = (path, options = {}) =>
-    fetch(`http://127.0.0.1:${env.adminPort}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    }).then((res) => res.json().then((body) => ({ status: res.status, body })));
+    const fetchAdmin = (path, options = {}) =>
+      fetch(`http://127.0.0.1:${env.adminPort}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      }).then((res) => res.json().then((body) => ({ status: res.status, body })));
 
-  const fetchRM = (path) =>
-    fetch(`http://127.0.0.1:${env.rmAdminPort}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-    }).then((res) => res.json().then((body) => ({ status: res.status, body })));
+    const fetchRM = (path) =>
+      fetch(`http://127.0.0.1:${env.rmAdminPort}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+      }).then((res) => res.json().then((body) => ({ status: res.status, body })));
 
-  const insertEvents = (events) =>
-    env.cleanupClient
-      .db('rpl-noact-events')
-      .collection('events')
-      .insertMany(events);
+    const insertEvents = (events) =>
+      env.cleanupClient
+        .db('rpl-noact-events')
+        .collection('events')
+        .insertMany(events);
 
-  const rmDb = () => env.cleanupClient.db('rpl-noact-rm');
+    const rmDb = () => env.cleanupClient.db('rpl-noact-rm');
 
-  test('replay with activateAfter=false: RM stays stopped, data present, timestamp correct', () =>
-    // Insert events
-    insertEvents(
-      Array.from({ length: 5 }, (_, i) => ({
-        type: 'ITEM_CREATED',
-        aggregateId: `item-${i + 1}`,
-        timestamp: (i + 1) * 1000,
-        payload: { name: `Item ${i + 1}` },
-      })),
-    )
-      // Activate → live (to establish a non-zero timestamp)
+    return setup()
       .then(() =>
-        waitForCondition(() =>
-          fetchAdmin('/admin/readmodel/status').then(
-            ({ body }) => body.length > 0,
-          ),
+        // Insert events
+        insertEvents(
+          Array.from({ length: 5 }, (_, i) => ({
+            type: 'ITEM_CREATED',
+            aggregateId: `item-${i + 1}`,
+            timestamp: (i + 1) * 1000,
+            payload: { name: `Item ${i + 1}` },
+          })),
+        ),
+      )
+      // Activate -> live (to establish a non-zero timestamp)
+      .then(() =>
+        waitForCondition(
+          () =>
+            fetchAdmin('/admin/readmodel/status').then(
+              ({ body }) =>
+                body.length > 0 ? true : 'no read models yet',
+            ),
+          5000,
+          100,
+          'admin sees RM',
         ),
       )
       .then(() =>
@@ -449,11 +479,16 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items && items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          10000,
+          100,
+          'RM -> live',
         ),
       )
       // Verify 5 items and timestamp=5000
@@ -480,11 +515,16 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items && items.state === 'idle';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'idle') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'RM -> idle after stop',
         ),
       )
       // Reset data before replay so we can detect when replay re-projects it
@@ -510,8 +550,12 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
             rmDb()
               .collection('items_overview')
               .countDocuments()
-              .then((c) => c === 5),
+              .then((c) =>
+                c === 5 ? true : `items_overview count=${c}`,
+              ),
           30000,
+          100,
+          'items_overview has 5 docs after replay',
         );
       })
       // Give the orchestrator a moment to finish the replayDone step
@@ -570,9 +614,12 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
           () =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live';
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
             }),
           30000,
+          100,
+          'RM -> live after manual activate',
         ),
       )
       // Verify all items present (5 from replay + 2 new via catch-up = 7)
@@ -582,8 +629,12 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
             rmDb()
               .collection('items_overview')
               .countDocuments()
-              .then((c) => c === 7),
+              .then((c) =>
+                c === 7 ? true : `items_overview count=${c}`,
+              ),
           5000,
+          100,
+          'items_overview has 7 docs after activate',
         ),
       )
       .then(() =>
@@ -601,5 +652,7 @@ describe('replay with activateAfter=false', { timeout: 60000 }, () => {
       )
       .then((stateDoc) => {
         expect(stateDoc.lastProjectedEventTimestamp).toBe(7000);
-      }));
+      })
+      .finally(() => teardown());
+  });
 });

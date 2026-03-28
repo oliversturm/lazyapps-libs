@@ -77,19 +77,7 @@ const createRmDef = (collectionName) => ({
   replayRelevantEvents: ['ITEM_CREATED'],
 });
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 const flush = () =>
   new Promise((resolve) => {
@@ -138,6 +126,7 @@ describe('C6: RM dies mid-operation', { timeout: 60000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV C6-rm-dies] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
@@ -340,6 +329,7 @@ describe('C7: CP dies mid-replay', { timeout: 60000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV C7-cp-dies] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {

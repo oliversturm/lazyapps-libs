@@ -36,19 +36,7 @@ const { startAdmin } = await import('../admin.js');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -201,10 +189,14 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
         connectionString =
           mongo.getConnectionString() + '?directConnection=true';
         amqpUrl = rabbit.getAmqpUrl();
+        console.log(`[ENV rmq] Admin port: ${port}`);
+        console.log(`[ENV rmq] MongoDB: ${connectionString}`);
+        console.log(`[ENV rmq] RabbitMQ: ${amqpUrl}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
         cleanupClient = client;
+        console.log(`[ENV rmq] RM storage database: rmq-rm`);
 
         // Start RM context with lifecycle + RabbitMQ message bus
         return initializeContext(
@@ -233,6 +225,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
       })
       .then((context) => {
         rmContext = context;
+        console.log(`[ENV rmq] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -246,6 +239,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
           rmAdminServer = app.listen(0, '127.0.0.1');
           rmAdminServer.on('listening', () => {
             rmAdminPort = rmAdminServer.address().port;
+            console.log(`[ENV rmq] RM admin server on port ${rmAdminPort}`);
             resolve();
           });
           rmAdminServer.on('error', reject);
@@ -321,6 +315,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
                   cpServer = cpApp.listen(0, '127.0.0.1');
                   cpServer.on('listening', () => {
                     cpPort = cpServer.address().port;
+                    console.log(`[ENV rmq] CP server on port ${cpPort}`);
                     resolve();
                   });
                   cpServer.on('error', reject);
@@ -347,6 +342,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
       })
       .then((server) => {
         adminServer = server;
+        console.log(`[ENV rmq] Admin service started, setup complete`);
       });
   }, 120000);
 
@@ -384,15 +380,15 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
   const insertEvents = (events) =>
     cleanupClient.db('rmq-events').collection('events').insertMany(events);
 
-  test('full catch-up lifecycle via RabbitMQ: stopped -> activate -> live', () =>
-    // Verify RM starts in stopped state
+  test('full catch-up lifecycle via RabbitMQ: activate, gap, activate-all, stop', () =>
+    // Step 1: Verify RM starts in idle state
     fetchRM('/admin/readmodel')
       .then(({ status, body }) => {
         expect(status).toBe(200);
         const items = body.find((rm) => rm.name === 'items');
         expect(items.state).toBe('idle');
       })
-      // Insert events into event store
+      // Step 2: Insert events into event store
       .then(() =>
         insertEvents(
           Array.from({ length: 5 }, (_, i) => ({
@@ -403,7 +399,7 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
           })),
         ),
       )
-      // Activate via admin server (orchestrator uses RabbitMQ)
+      // Step 3: Activate via admin server (orchestrator uses RabbitMQ)
       .then(() =>
         fetchAdmin('/admin/readmodel/activate/rm/items', {
           method: 'POST',
@@ -413,13 +409,14 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
       .then(({ status }) => {
         expect(status).toBe(202);
       })
-      // Wait for live state (RabbitMQ has network latency)
+      // Step 4: Wait for live state (RabbitMQ has network latency)
       .then(() =>
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live (rmq)',
         ),
       )
       // Wait for all 5 events to be projected (RabbitMQ delivery may lag state transition)
@@ -430,7 +427,8 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
             .collection('items_overview')
             .find({})
             .toArray()
-            .then((items) => items.length === 5),
+            .then((items) => items.length === 5 ? true : `count=${items.length}`),
+          5000, 100, 'rmq items projected (5)',
         ),
       )
       .then(() =>
@@ -453,20 +451,21 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
           name: 'RMQ Item 5',
           ts: 500,
         });
-      }));
-
-  test('catch-up after gap via RabbitMQ', () =>
-    // Stop items RM
-    fetchAdmin('/admin/readmodel/stop/rm/items', {
-      method: 'POST',
-      body: '{}',
-    })
+      })
+      // Step 5: Stop items RM, then catch up after gap
+      .then(() =>
+        fetchAdmin('/admin/readmodel/stop/rm/items', {
+          method: 'POST',
+          body: '{}',
+        }),
+      )
       .then(() =>
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+            if (items && items.state === 'idle') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → idle (rmq gap)',
         ),
       )
       // Insert more events while stopped
@@ -491,8 +490,9 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live (rmq re-activate)',
         ),
       )
       // Verify all 10 unique items present
@@ -508,11 +508,9 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
         expect(uniqueIds).toHaveLength(10);
         expect(uniqueIds).toContain('rmq-item-1');
         expect(uniqueIds).toContain('rmq-item-10');
-      }));
-
-  test('activate-all via RabbitMQ', () =>
-    // Stats should still be in stopped
-    fetchRM('/admin/readmodel')
+      })
+      // Step 6: activate-all — stats should still be idle
+      .then(() => fetchRM('/admin/readmodel'))
       .then(({ body }) => {
         const stats = body.find((rm) => rm.name === 'stats');
         expect(stats.state).toBe('idle');
@@ -530,8 +528,9 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const stats = body.find((rm) => rm.name === 'stats');
-            return stats.state === 'live';
-          }),
+            if (stats && stats.state === 'live') return true;
+            return `state=${stats?.state || 'not found'}`;
+          }), 5000, 100, 'stats → live (rmq)',
         ),
       )
       .then(() =>
@@ -543,18 +542,21 @@ describe('catch-up lifecycle with RabbitMQ', { timeout: 30000 }, () => {
       .then((doc) => {
         expect(doc).not.toBeNull();
         expect(doc.count).toBeGreaterThanOrEqual(5);
-      }));
-
-  test('admin stop instruction via RabbitMQ', () =>
-    fetchAdmin('/admin/readmodel/stop/rm/items', {
-      method: 'POST',
-      body: '{}',
-    }).then(() =>
-      waitForCondition(() =>
-        fetchRM('/admin/readmodel').then(({ body }) => {
-          const items = body.find((rm) => rm.name === 'items');
-          return items.state === 'idle';
+      })
+      // Step 7: Stop items via admin
+      .then(() =>
+        fetchAdmin('/admin/readmodel/stop/rm/items', {
+          method: 'POST',
+          body: '{}',
         }),
-      ),
-    ));
+      )
+      .then(() =>
+        waitForCondition(() =>
+          fetchRM('/admin/readmodel').then(({ body }) => {
+            const items = body.find((rm) => rm.name === 'items');
+            if (items && items.state === 'idle') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → idle (rmq stop)',
+        ),
+      ));
 });

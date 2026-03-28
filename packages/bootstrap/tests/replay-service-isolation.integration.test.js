@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 import { MongoDBContainer } from '@testcontainers/mongodb';
 import { MongoClient } from 'mongodb';
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -168,20 +169,6 @@ const createInlineAdminInstructionHandler = (context) => {
   };
 };
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
-
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('replay service isolation integration', { timeout: 30000 }, () => {
@@ -215,18 +202,21 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
     registerSharedMqEmitter('iso-queries-orders', mqemitter());
     registerSharedMqEmitter('iso-queries-customers', mqemitter());
 
+    console.log('[ISO] Starting MongoDB container...');
     return new MongoDBContainer('mongo:7')
       .start()
       .then((c) => {
         container = c;
         connectionString =
           container.getConnectionString() + '?directConnection=true';
+        console.log('[ISO] Connected to MongoDB:', connectionString);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
         cleanupClient = client;
 
         // Start command processor (has replay/catchup handlers)
+        console.log('[ISO] Starting command processor...');
         return startCommandProcessor(
           { serviceId: 'ISO-CMD' },
           {
@@ -251,6 +241,7 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
         commandPort = server.address().port;
 
         // Initialize orders RM with lifecycle
+        console.log('[ISO] Initializing orders RM context...');
         return initializeRmContext(
           { serviceId: 'ISO-ORDERS' },
           {
@@ -277,6 +268,7 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           createInlineAdminInstructionHandler(context);
 
         // Initialize customers RM with lifecycle
+        console.log('[ISO] Initializing customers RM context...');
         return initializeRmContext(
           { serviceId: 'ISO-CUSTOMERS' },
           {
@@ -303,6 +295,7 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           createInlineAdminInstructionHandler(context);
 
         // Get a message bus instance for publishing admin instructions
+        console.log('[ISO] Event bus instance ready');
         return commandProcessorEventBusMqEmitter({
           mqName: 'iso-events',
         })();
@@ -354,10 +347,12 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
     context.lifecycleManager.activate(rmName, 'test-corr').then(() =>
       // With empty event store, catchup completes instantly via CP.
       // Wait for CP to send catchupDone via admin instruction, then transition to live.
-      waitForCondition(() =>
-        Promise.resolve(context.lifecycleManager.getState(rmName)).then(
-          (state) => state === 'catchup',
-        ),
+      waitForCondition(
+        () =>
+          Promise.resolve(context.lifecycleManager.getState(rmName)).then(
+            (state) => state === 'catchup' ? true : `state=${state}`,
+          ),
+        5000, 100, `${rmName} → catchup`
       ).then(() =>
         // CP sends catchupDone via admin instruction
         publishAdmin({
@@ -373,18 +368,26 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
     // Step 1: Activate both RM services
     activateRm(ordersContext, 'overview')
       .then(() =>
-        waitForCondition(() =>
-          Promise.resolve(
-            ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'live'),
+        waitForCondition(
+          () =>
+            Promise.resolve(
+              ordersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'live' ? true : `state=${s}`,
+            ),
+          5000, 100, 'orders RM → live'
         ),
       )
       .then(() => activateRm(customersContext, 'overview'))
       .then(() =>
-        waitForCondition(() =>
-          Promise.resolve(
-            customersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'live'),
+        waitForCondition(
+          () =>
+            Promise.resolve(
+              customersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'live' ? true : `state=${s}`,
+            ),
+          5000, 100, 'customers RM → live'
         ),
       )
       .then(() => {
@@ -415,14 +418,18 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
         expect(res.status).toBe(200);
 
         // Step 3: Wait for both read models to be projected
-        return waitForCondition(() =>
-          Promise.all([
-            getCollection('customers_overview'),
-            getCollection('orders_overview'),
-          ]).then(
-            ([customers, orders]) =>
-              customers.length === 2 && orders.length === 2,
-          ),
+        return waitForCondition(
+          () =>
+            Promise.all([
+              getCollection('customers_overview'),
+              getCollection('orders_overview'),
+            ]).then(
+              ([customers, orders]) =>
+                customers.length === 2 && orders.length === 2
+                  ? true
+                  : `customers=${customers.length}, orders=${orders.length}`,
+            ),
+          5000, 100, 'both RMs projected'
         );
       })
       .then(() =>
@@ -455,10 +462,14 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           targetReadModel: 'overview',
         });
 
-        return waitForCondition(() =>
-          Promise.resolve(
-            ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'idle'),
+        return waitForCondition(
+          () =>
+            Promise.resolve(
+              ordersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'idle' ? true : `state=${s}`,
+            ),
+          5000, 100, 'orders RM → idle'
         );
       })
       .then(() => {
@@ -476,10 +487,14 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           targetReadModel: 'overview',
         });
 
-        return waitForCondition(() =>
-          Promise.resolve(
-            ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'replay'),
+        return waitForCondition(
+          () =>
+            Promise.resolve(
+              ordersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'replay' ? true : `state=${s}`,
+            ),
+          5000, 100, 'orders RM → replay'
         );
       })
       .then(() => {
@@ -493,15 +508,20 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
         });
 
         // Wait for CP replay to complete (poll CP status)
-        return waitForCondition(() =>
-          Promise.resolve(
-            commandServer.__testing__
-              ? true
-              : // Fallback: check if orders have been re-projected
-                getCollection('orders_overview').then(
-                  (orders) => orders.length === 2,
-                ),
-          ),
+        return waitForCondition(
+          () =>
+            Promise.resolve(
+              commandServer.__testing__
+                ? true
+                : // Fallback: check if orders have been re-projected
+                  getCollection('orders_overview').then(
+                    (orders) =>
+                      orders.length === 2
+                        ? true
+                        : `orders=${orders.length}`,
+                  ),
+            ),
+          5000, 100, 'replay re-projects orders'
         );
       })
       .then(() =>
@@ -516,10 +536,14 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           targetReadModel: 'overview',
         });
 
-        return waitForCondition(() =>
-          Promise.resolve(
-            ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'replay-done'),
+        return waitForCondition(
+          () =>
+            Promise.resolve(
+              ordersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'replay-done' ? true : `state=${s}`,
+            ),
+          5000, 100, 'orders RM → replay-done'
         );
       })
       .then(() => {
@@ -527,10 +551,14 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
         return activateRm(ordersContext, 'overview');
       })
       .then(() =>
-        waitForCondition(() =>
-          Promise.resolve(
-            ordersContext.lifecycleManager.getState('overview'),
-          ).then((s) => s === 'live'),
+        waitForCondition(
+          () =>
+            Promise.resolve(
+              ordersContext.lifecycleManager.getState('overview'),
+            ).then(
+              (s) => s === 'live' ? true : `state=${s}`,
+            ),
+          5000, 100, 'orders RM → live after replay'
         ),
       )
       .then(() =>

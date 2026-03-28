@@ -82,19 +82,7 @@ const testReadModels = {
   },
 };
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -188,6 +176,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
 
   const setup = () => {
     env.readModels = cloneTestReadModels();
+    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
@@ -200,10 +189,13 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         env.container = c;
         env.connectionString =
           c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV ${dbPrefix}] Admin port: ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] MongoDB: ${env.connectionString}`);
         return MongoClient.connect(env.connectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
+        console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
 
         // Start RM context with lifecycle management
         return initializeContext(
@@ -230,6 +222,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
       })
       .then((context) => {
         env.rmContext = context;
+        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
         // Set admin instruction handler (normally done by startReadModels)
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
@@ -254,12 +247,14 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
+            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
+        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
         // Create CP-side event store, message bus, and status tracker
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
@@ -306,6 +301,17 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
               cb();
             });
 
+            // RM-side admin instruction handler
+            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
+            rmMq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              env.rmContext.adminInstructionHandler(
+                correlationId,
+                instruction,
+              );
+              cb();
+            });
+
             // Create CP HTTP server with status + SSE endpoints
             const cpApp = expressApp();
             cpApp.get('/admin/commandprocessor/status', (req, res) => {
@@ -332,6 +338,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
+                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -340,6 +347,9 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
         );
       })
       .then(() => {
+        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
         // Start admin server (orchestrator — delegates via message bus)
         return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
@@ -356,6 +366,7 @@ const setupTestEnv = (mqPrefix, dbPrefix, { token } = {}) => {
       })
       .then((server) => {
         env.adminServer = server;
+        console.log(`[ENV ${dbPrefix}] Admin service started, setup complete`);
       });
   };
 
@@ -412,8 +423,8 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
       .collection('events')
       .insertMany(events);
 
-  test('full catch-up lifecycle: stopped -> activate -> catchup -> live', () =>
-    // Step 1: Verify read models start in stopped state
+  test('full catch-up lifecycle: activate, activate-all, and RM stays live', () =>
+    // Step 1: Verify read models start in idle state
     fetchRM('/admin/readmodel')
       .then(({ status, body }) => {
         expect(status).toBe(200);
@@ -462,8 +473,9 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live',
         ),
       )
       // Step 6: Verify all 5 events were projected
@@ -496,11 +508,9 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
       )
       .then((stateDoc) => {
         expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
-      }));
-
-  test('activate-all brings all read models to live', () =>
-    // Stats should still be in stopped state from previous test
-    fetchRM('/admin/readmodel')
+      })
+      // Step 8: activate-all — stats should still be idle
+      .then(() => fetchRM('/admin/readmodel'))
       .then(({ body }) => {
         const stats = body.find((rm) => rm.name === 'stats');
         expect(stats.state).toBe('idle');
@@ -523,8 +533,9 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const stats = body.find((rm) => rm.name === 'stats');
-            return stats.state === 'live';
-          }),
+            if (stats && stats.state === 'live') return true;
+            return `state=${stats?.state || 'not found'}`;
+          }), 5000, 100, 'stats → live',
         ),
       )
       // Verify stats projected the events
@@ -536,14 +547,13 @@ describe('catch-up lifecycle integration', { timeout: 30000 }, () => {
       )
       .then((doc) => {
         expect(doc.count).toBe(5);
+      })
+      // Step 9: items should still be live after activate-all
+      .then(() => fetchRM('/admin/readmodel'))
+      .then(({ body }) => {
+        const items = body.find((rm) => rm.name === 'items');
+        expect(items.state).toBe('live');
       }));
-
-  test('RM remains live when already activated', () =>
-    // Items is already live from earlier test
-    fetchRM('/admin/readmodel').then(({ body }) => {
-      const items = body.find((rm) => rm.name === 'items');
-      expect(items.state).toBe('live');
-    }));
 });
 
 // ── Scenario 2: Catch-up after gap ─────────────────────────────────────────
@@ -590,8 +600,9 @@ describe('catch-up after gap', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live (gap activate)',
         ),
       )
       // Verify 5 items projected
@@ -615,8 +626,9 @@ describe('catch-up after gap', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+            if (items && items.state === 'idle') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → idle (gap stop)',
         ),
       )
       // Step 4: Insert more events while RM is stopped
@@ -641,8 +653,9 @@ describe('catch-up after gap', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live (gap re-activate)',
         ),
       )
       // Step 6: Verify all 10 events projected
@@ -715,8 +728,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'catchup' || items.state === 'live';
-            }),
+              if (items && (items.state === 'catchup' || items.state === 'live')) return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → catchup or live',
           ),
         )
         .then(() => {
@@ -741,8 +755,9 @@ describe(
           waitForCondition(() =>
             fetchRM('/admin/readmodel').then(({ body }) => {
               const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'live';
-            }),
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }), 5000, 100, 'items → live (live events)',
           ),
         )
         // Step 5: Verify all items projected, check for duplicates
@@ -851,7 +866,8 @@ describe('catch-up backward compatibility', { timeout: 30000 }, () => {
         .db('compat-rm')
         .collection('items_overview')
         .findOne({ id: 'compat-item-1' })
-        .then((doc) => !!doc),
+        .then((doc) => doc ? true : 'doc not found'),
+      5000, 100, 'compat item projected',
     ).then(() =>
       cleanupClient
         .db('compat-rm')
@@ -916,8 +932,9 @@ describe('admin instructions via message bus', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+            if (items && items.state === 'live') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → live (admin msg)',
         ),
       )
       // Stop via admin
@@ -932,8 +949,9 @@ describe('admin instructions via message bus', { timeout: 30000 }, () => {
         waitForCondition(() =>
           fetchRM('/admin/readmodel').then(({ body }) => {
             const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+            if (items && items.state === 'idle') return true;
+            return `state=${items?.state || 'not found'}`;
+          }), 5000, 100, 'items → idle (admin msg stop)',
         ),
       )
       .then(() =>

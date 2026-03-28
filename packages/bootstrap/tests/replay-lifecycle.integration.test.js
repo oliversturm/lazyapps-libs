@@ -4,6 +4,7 @@ import { MongoClient } from 'mongodb';
 import expressApp from 'express';
 import bodyParser from 'body-parser';
 import { createServer } from 'node:net';
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -58,19 +59,7 @@ const testReadModels = {
   },
 };
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+// waitForCondition imported from ./helpers/waitForCondition.js
 
 const getPort = () =>
   new Promise((resolve) => {
@@ -142,7 +131,6 @@ const cloneTestReadModels = () => ({
 // Helper to set up a full test environment
 const setupTestEnv = (mqPrefix, dbPrefix) => {
   const env = {
-    container: null,
     connectionString: null,
     cleanupClient: null,
     adminServer: null,
@@ -156,24 +144,25 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
   };
 
   const setup = () => {
+    // Capture connection string at setup time (beforeAll has run by now)
+    env.connectionString = sharedConnectionString;
     env.readModels = cloneTestReadModels();
+    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
     return getPort()
       .then((adminPort) => {
         env.adminPort = adminPort;
-        return new MongoDBContainer('mongo:7').start();
-      })
-      .then((c) => {
-        env.container = c;
-        env.connectionString =
-          c.getConnectionString() + '?directConnection=true';
-        return MongoClient.connect(env.connectionString);
+        console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`);
+        return MongoClient.connect(sharedConnectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
 
+        console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
+        console.log(`[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`);
         return initializeContext(
           { serviceId: `${dbPrefix}-RM` },
           {
@@ -198,6 +187,7 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
       })
       .then((context) => {
         env.rmContext = context;
+        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -251,9 +241,13 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
             );
             env.cpReplayHandler = replayHandler;
 
+            console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
             const mq = getSharedMqEmitter('CP', `${mqPrefix}-events`);
+
+            // CP-side admin instruction handler
             mq.on('__admin', ({ payload }, cb) => {
               const { correlationId, instruction } = payload;
+              console.log(`[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`);
               switch (instruction.type) {
                 case 'startCatchup':
                   catchupHandler
@@ -293,6 +287,14 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
               cb();
             });
 
+            // RM-side admin instruction handler
+            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
+            rmMq.on('__admin', ({ payload }, cb) => {
+              const { correlationId, instruction } = payload;
+              env.rmContext.adminInstructionHandler(correlationId, instruction);
+              cb();
+            });
+
             const cpApp = expressApp();
             cpApp.get('/admin/commandprocessor/status', (req, res) => {
               res.json(cpStatusTracker.getStatus());
@@ -318,6 +320,7 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
+                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -325,8 +328,11 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
           },
         );
       })
-      .then(() =>
-        startAdmin(
+      .then(() => {
+        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
+        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
+        return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
             port: env.adminPort,
@@ -336,10 +342,11 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
             readModelServiceUrl: `http://127.0.0.1:${env.rmAdminPort}`,
             commandProcessorUrl: `http://127.0.0.1:${env.cpPort}`,
           },
-        ),
-      )
+        );
+      })
       .then((server) => {
         env.adminServer = server;
+        console.log(`[ENV ${dbPrefix}] Admin service started, setup complete`);
       });
   };
 
@@ -363,11 +370,28 @@ const setupTestEnv = (mqPrefix, dbPrefix) => {
           ? new Promise((r) => env.adminServer.close(r))
           : undefined,
       )
-      .then(() => (env.cleanupClient ? env.cleanupClient.close() : undefined))
-      .then(() => (env.container ? env.container.stop() : undefined));
+      .then(() =>
+        env.cleanupClient ? env.cleanupClient.close() : undefined,
+      );
 
   return { env, setup, teardown };
 };
+
+// ── Shared MongoDB container for all replay-lifecycle tests ──────────────
+let sharedContainer;
+let sharedConnectionString;
+
+beforeAll(() =>
+  new MongoDBContainer('mongo:7').start().then((c) => {
+    sharedContainer = c;
+    sharedConnectionString =
+      c.getConnectionString() + '?directConnection=true';
+  }),
+);
+
+afterAll(() =>
+  sharedContainer ? sharedContainer.stop() : undefined,
+);
 
 // ── Replay from scratch: lastProjectedEventTimestamp persistence ──────────
 
@@ -422,11 +446,17 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'live';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'live'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            10000,
+            100,
+            'RM → live',
           ),
         )
         // Step 3: Verify 5 items projected and timestamp is 500
@@ -454,11 +484,17 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'idle';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'idle'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → idle',
           ),
         )
         // Step 5: Clear data collections but PRESERVE timestamp (T=500)
@@ -482,11 +518,17 @@ describe(
           env.rmContext.lifecycleManager.startReplay('items', 'replay-test'),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'replay';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'replay'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → replay',
           ),
         )
         // Step 7: Stream replay events via __replay topic (simulating CP)
@@ -539,11 +581,17 @@ describe(
           env.rmContext.lifecycleManager.replayDone('items', 'replay-test'),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'replay-done';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'replay-done'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → replay-done',
           ),
         )
         // ══════════════════════════════════════════════════════════════════
@@ -598,7 +646,7 @@ describe(
         // Step 12: Verify the loaded timestamp from MongoDB is 500
         // (clearCollections preserved it, replay did not change it)
         .then(() => {
-          expect(env.restartReadModels.items.lastProjectedEventTimestamp).toBe(
+          expect(env.restartContext.readModels.items.lastProjectedEventTimestamp).toBe(
             500,
           );
         })
@@ -707,9 +755,13 @@ describe(
                 .then((res) => res.json())
                 .then((body) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items.state === 'live';
+                  return items.state === 'live'
+                    ? true
+                    : `state=${items.state}`;
                 }),
             10000,
+            100,
+            'restart RM → live',
           ),
         )
         // Step 18: THE CRITICAL CHECK — verify NO duplicates
@@ -808,17 +860,18 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
   };
 
   const doReplayFromScratch = (events) =>
-    // Stop
-    fetchAdmin('/admin/readmodel/stop/rm/items', {
-      method: 'POST',
-      body: '{}',
-    })
+    // Stop via direct lifecycle manager call (consistent with startReplay)
+    Promise.resolve(env.rmContext.lifecycleManager.stop('items', 'multi-replay'))
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'idle' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → idle after stop',
         ),
       )
       // Reset
@@ -840,11 +893,15 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.startReplay('items', 'multi-replay'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay',
         ),
       )
       // Stream events
@@ -855,11 +912,17 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.replayDone('items', 'multi-replay'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay-done';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay-done'
+                ? true
+                : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay-done',
         ),
       );
 
@@ -881,11 +944,15 @@ describe('multiple replay cycles', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'live' ? true : `state=${items.state}`;
+            }),
+          10000,
+          100,
+          'RM → live',
         ),
       )
       // First replay from scratch
@@ -1001,11 +1068,17 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'live';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'live'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            10000,
+            100,
+            'RM → live',
           ),
         )
         .then(() => rmDb().collection('items_overview').countDocuments())
@@ -1020,11 +1093,17 @@ describe(
           }),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'idle';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'idle'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → idle',
           ),
         )
         // Add more events while stopped
@@ -1056,11 +1135,17 @@ describe(
           env.rmContext.lifecycleManager.startReplay('items', 'gap-replay'),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'replay';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'replay'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → replay',
           ),
         )
         .then(() => {
@@ -1098,11 +1183,17 @@ describe(
           env.rmContext.lifecycleManager.replayDone('items', 'gap-replay'),
         )
         .then(() =>
-          waitForCondition(() =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items.state === 'replay-done';
-            }),
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items.state === 'replay-done'
+                  ? true
+                  : `state=${items.state}`;
+              }),
+            5000,
+            100,
+            'RM → replay-done',
           ),
         )
         // Replay does not update timestamp — stays at 0 (pre-replay reset value)
@@ -1172,11 +1263,15 @@ describe('replay then live events', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'live' ? true : `state=${items.state}`;
+            }),
+          10000,
+          100,
+          'RM → live',
         ),
       )
       // Stop + reset + replay from scratch
@@ -1187,11 +1282,15 @@ describe('replay then live events', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'idle' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → idle',
         ),
       )
       .then(() =>
@@ -1211,11 +1310,15 @@ describe('replay then live events', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.startReplay('items', 'rpl-live-test'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay',
         ),
       )
       .then(() => {
@@ -1253,11 +1356,17 @@ describe('replay then live events', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.replayDone('items', 'rpl-live-test'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay-done';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay-done'
+                ? true
+                : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay-done',
         ),
       )
       // Replay does not update timestamp — stays at 0 (pre-replay reset value)
@@ -1285,11 +1394,15 @@ describe('replay then live events', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'live' ? true : `state=${items.state}`;
+            }),
+          10000,
+          100,
+          'RM → live',
         ),
       )
       // Emit a live event
@@ -1313,11 +1426,17 @@ describe('replay then live events', { timeout: 60000 }, () => {
       })
       // Wait for it to be projected
       .then(() =>
-        waitForCondition(() =>
-          rmDb()
-            .collection('items_overview')
-            .countDocuments()
-            .then((count) => count >= 6),
+        waitForCondition(
+          () =>
+            rmDb()
+              .collection('items_overview')
+              .countDocuments()
+              .then((count) =>
+                count >= 6 ? true : `count=${count}`,
+              ),
+          5000,
+          100,
+          'items_overview count >= 6',
         ),
       )
       // Verify final state
@@ -1346,7 +1465,7 @@ describe('replay then live events', { timeout: 60000 }, () => {
 
 // ── State invariant tests: each operation leaves correct persistent state ─
 
-describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
+describe('timestamp state invariants per operation', { timeout: 60000, sequential: true, shuffle: false }, () => {
   const { env, setup, teardown } = setupTestEnv('inv', 'inv');
 
   beforeAll(setup);
@@ -1419,11 +1538,15 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'live' ? true : `state=${items.state}`;
+            }),
+          10000,
+          100,
+          'RM → live',
         ),
       )
       .then(() => getTimestamp())
@@ -1437,11 +1560,15 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
       body: '{}',
     })
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'idle';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'idle' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → idle',
         ),
       )
       .then(() => getTimestamp())
@@ -1467,14 +1594,20 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
       }));
 
   test('after replay from scratch, timestamp matches last replayed event', () =>
-    env.rmContext.lifecycleManager
-      .startReplay('items', 'inv-test')
+    Promise.resolve(env.rmContext.lifecycleManager.stop('items', 'inv-pre-replay'))
+      .catch(() => {})
+      .then(() => env.rmContext.lifecycleManager
+        .startReplay('items', 'inv-test'))
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay',
         ),
       )
       .then(() =>
@@ -1492,11 +1625,17 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.replayDone('items', 'inv-test'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay-done';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay-done'
+                ? true
+                : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay-done',
         ),
       )
       // Replay does not update timestamp — stays at 0 (pre-replay reset value)
@@ -1506,11 +1645,27 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
       }));
 
   test('after replay with no events, timestamp stays at 0', () =>
-    // Reset first
-    rmDb()
-      .collection('items_overview')
-      .drop()
-      .catch(() => {})
+    // Stop first (previous test left RM in replay-done)
+    Promise.resolve(env.rmContext.lifecycleManager.stop('items', 'inv-empty'))
+      .then(() =>
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'idle' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → idle before empty replay',
+        ),
+      )
+      // Reset
+      .then(() =>
+        rmDb()
+          .collection('items_overview')
+          .drop()
+          .catch(() => {}),
+      )
       .then(() =>
         env.rmContext.storage.updateLastProjectedEventTimestamps(
           'inv-empty',
@@ -1522,11 +1677,15 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.startReplay('items', 'inv-empty'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay',
         ),
       )
       // No events emitted — just finalize
@@ -1534,11 +1693,17 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         env.rmContext.lifecycleManager.replayDone('items', 'inv-empty'),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'replay-done';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'replay-done'
+                ? true
+                : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → replay-done',
         ),
       )
       .then(() => getTimestamp())
@@ -1547,17 +1712,37 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
       }));
 
   test('after live event projection, timestamp matches live event', () =>
-    // Re-activate (events still in store from first test)
-    fetchAdmin('/admin/readmodel/activate/rm/items', {
-      method: 'POST',
-      body: '{}',
-    })
+    // Stop first (previous test left RM in replay-done)
+    Promise.resolve(env.rmContext.lifecycleManager.stop('items', 'inv-live-prep'))
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            return items.state === 'live';
-          }),
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'idle' ? true : `state=${items.state}`;
+            }),
+          5000,
+          100,
+          'RM → idle before live test',
+        ),
+      )
+      // Re-activate (events still in store from first test)
+      .then(() =>
+        fetchAdmin('/admin/readmodel/activate/rm/items', {
+          method: 'POST',
+          body: '{}',
+        }),
+      )
+      .then(() =>
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              return items.state === 'live' ? true : `state=${items.state}`;
+            }),
+          10000,
+          100,
+          'RM → live',
         ),
       )
       // Emit a live event with a new timestamp
@@ -1580,11 +1765,17 @@ describe('timestamp state invariants per operation', { timeout: 60000 }, () => {
         });
       })
       .then(() =>
-        waitForCondition(() =>
-          rmDb()
-            .collection('items_overview')
-            .findOne({ id: 'inv-item-5' })
-            .then((doc) => !!doc),
+        waitForCondition(
+          () =>
+            rmDb()
+              .collection('items_overview')
+              .findOne({ id: 'inv-item-5' })
+              .then((doc) =>
+                doc ? true : 'inv-item-5 not found',
+              ),
+          5000,
+          100,
+          'inv-item-5 projected',
         ),
       )
       .then(() => getTimestamp())

@@ -32,19 +32,7 @@ const { createRoutes } = await import('@lazyapps/admin-api/routes.js');
 const { createProjectionHandler } =
   await import('@lazyapps/readmodels/projections.js');
 
-const waitForCondition = (fn, timeout = 5000, interval = 100) => {
-  const start = Date.now();
-  const poll = () =>
-    Promise.resolve()
-      .then(fn)
-      .then((result) => {
-        if (result) return;
-        if (Date.now() - start > timeout)
-          throw new Error('Timeout waiting for condition');
-        return new Promise((r) => setTimeout(r, interval)).then(poll);
-      });
-  return poll();
-};
+import { waitForCondition } from './helpers/waitForCondition.js';
 
 const flush = () =>
   new Promise((resolve) => {
@@ -64,6 +52,7 @@ describe('C6: developmentOperation gatekeeping', { timeout: 30000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV C6-devmode] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
@@ -304,6 +293,7 @@ describe('D6: side-effect filter in projections', { timeout: 30000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV D6-filter] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
@@ -775,6 +765,7 @@ describe('10: dismissInvalid and skipCatchup', { timeout: 30000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV 10-dismiss] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
@@ -994,6 +985,7 @@ describe('9.1: developmentMode flag threading', { timeout: 30000 }, () => {
       .then((c) => {
         container = c;
         connectionString = c.getConnectionString() + '?directConnection=true';
+        console.log(`[ENV 9.1-threading] MongoDB: ${connectionString}`);
         return MongoClient.connect(connectionString);
       })
       .then((client) => {
@@ -1195,6 +1187,7 @@ describe(
         .then((c) => {
           container = c;
           connectionString = c.getConnectionString() + '?directConnection=true';
+          console.log(`[ENV 11.2-se-guard] MongoDB: ${connectionString}`);
           return MongoClient.connect(connectionString);
         })
         .then((client) => {

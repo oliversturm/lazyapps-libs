@@ -71,6 +71,7 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
 
       mockRmServer = app.listen(0, '127.0.0.1', () => {
         mockRmPort = mockRmServer.address().port;
+        console.log(`[ENV admin] Mock RM server on port ${mockRmPort}`);
         resolve();
       });
     });
@@ -100,6 +101,7 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
 
       mockCpServer = app.listen(0, '127.0.0.1', () => {
         mockCpPort = mockCpServer.address().port;
+        console.log(`[ENV admin] Mock CP server on port ${mockCpPort}`);
         resolve();
       });
     });
@@ -129,6 +131,9 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
       ).then((s) => {
         server = s;
         adminPort = server.address().port;
+        console.log(`[ENV admin] Admin server on port ${adminPort}`);
+        console.log(`[ENV admin] Admin → RM: http://127.0.0.1:${mockRmPort}`);
+        console.log(`[ENV admin] Admin → CP: http://127.0.0.1:${mockCpPort}`);
       }),
     ),
   );
