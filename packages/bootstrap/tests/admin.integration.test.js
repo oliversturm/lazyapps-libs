@@ -134,6 +134,9 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
         console.log(`[ENV admin] Admin server on port ${adminPort}`);
         console.log(`[ENV admin] Admin → RM: http://127.0.0.1:${mockRmPort}`);
         console.log(`[ENV admin] Admin → CP: http://127.0.0.1:${mockCpPort}`);
+        // Wait for SSE client to connect and populate cache
+        // (prevents 404s on endpoints that read from cached RM state)
+        return new Promise((resolve) => setTimeout(resolve, 500));
       }),
     ),
   );
@@ -161,13 +164,10 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
   // --- Status endpoints ---
 
   test('GET /admin/readmodel/status returns all RM statuses', () =>
-    // Give SSE client time to connect and populate cache
-    new Promise((resolve) => setTimeout(resolve, 500)).then(() =>
-      fetchJSON('/admin/readmodel/status').then(({ status, body }) => {
-        expect(status).toBe(200);
-        expect(Array.isArray(body)).toBe(true);
-      }),
-    ));
+    fetchJSON('/admin/readmodel/status').then(({ status, body }) => {
+      expect(status).toBe(200);
+      expect(Array.isArray(body)).toBe(true);
+    }));
 
   test('GET /admin/commandprocessor/status returns CP status', () =>
     fetchJSON('/admin/commandprocessor/status').then(({ status, body }) => {

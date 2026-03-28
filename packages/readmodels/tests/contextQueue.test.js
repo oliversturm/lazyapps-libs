@@ -29,11 +29,17 @@ vi.mock('promise-queue', () => {
   return { default: MockQueue };
 });
 
+// Reset module cache to ensure contextQueue.js picks up our mocks
+// (prevents stale real @opentelemetry/api from other test files)
+vi.resetModules();
 const { createContextQueue } = await import('../contextQueue.js');
 
 describe('createContextQueue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Reset mockActive to default — some tests override with
+    // mockImplementation which clearAllMocks does NOT reset
+    mockActive.mockImplementation(() => 'captured-context');
   });
 
   test('returns object with add and getQueueLength', () => {
