@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     hookTimeout: 60000,
     isolate: true,
+    sequence: { shuffle: true },
     projects: [
       {
         extends: true,
