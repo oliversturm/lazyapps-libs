@@ -7,7 +7,8 @@ vi.mock('@lazyapps/logger', () => {
     error: vi.fn(),
     debugBare: vi.fn(),
   });
-  return { getLogger };
+  const safeStringify = (value) => JSON.stringify(value);
+  return { getLogger, safeStringify };
 });
 
 const { adminHandler } = await import('../command-receiver/admin-handler.js');
@@ -34,14 +35,18 @@ describe('adminHandler', () => {
     vi.clearAllMocks();
   });
 
-  test('returns 400 when no handleAdminCommand in context', () => {
+  test('returns 400 with body when no handleAdminCommand in context', () => {
     const handler = adminHandler({});
     const req = mockReq({ correlationId: 'corr-1' }, { command: 'rebuild' });
     const res = mockRes();
 
     handler(req, res);
 
-    expect(res.sendStatus).toHaveBeenCalledWith(400);
+    // Regression: previously used res.sendStatus(400).send(...) which sends
+    // twice (sendStatus already calls send) and triggers ERR_HTTP_HEADERS_SENT.
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith('Invalid admin command');
+    expect(res.sendStatus).not.toHaveBeenCalled();
   });
 
   test('returns 200 when handler resolves', () => {

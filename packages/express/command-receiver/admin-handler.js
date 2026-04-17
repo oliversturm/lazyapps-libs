@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 
 export const adminHandler = (context) => (req, res) => {
   const { correlationId } = req.body;
@@ -8,12 +8,12 @@ export const adminHandler = (context) => (req, res) => {
   const handler = context.handleAdminCommand;
   if (!handler) {
     log.error(`Invalid admin command ${command}`);
-    res.sendStatus(400).send('Invalid admin command');
+    res.status(400).send('Invalid admin command');
     return;
   }
 
   log.debug(
-    `Admin command ${command} with params ${JSON.stringify(req.body.params)}`,
+    `Admin command ${command} with params ${safeStringify(req.body.params)}`,
   );
   return handler(
     context,
