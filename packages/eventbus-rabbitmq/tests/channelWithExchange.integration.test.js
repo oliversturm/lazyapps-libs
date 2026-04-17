@@ -15,6 +15,7 @@ vi.mock('@lazyapps/logger', () => ({
     info: vi.fn(),
     error: vi.fn(),
   }),
+  redactUrl: (v) => v,
 }));
 
 const { channelWithExchange } = await import('../channelWithExchange.js');

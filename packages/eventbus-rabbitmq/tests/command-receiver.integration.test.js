@@ -16,6 +16,7 @@ vi.mock('@lazyapps/logger', () => ({
     info: vi.fn(),
     error: vi.fn(),
   }),
+  redactUrl: (v) => v,
 }));
 
 const { rabbitMq } = await import('../command-receiver/index.js');
