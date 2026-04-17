@@ -63,7 +63,9 @@ describe('mqEmitterRegistry', () => {
 
     expect(mockCsServer).toHaveBeenCalledWith(emitter);
     expect(mockCreateServer).toHaveBeenCalledWith('mock-cs-server');
-    expect(mockServer.listen).toHaveBeenCalledWith(9999);
+    // Regression guard for security review #26: the MQ emitter
+    // TCP socket must only bind to the loopback interface.
+    expect(mockServer.listen).toHaveBeenCalledWith(9999, '127.0.0.1');
   });
 
   test('registerSharedMqEmitter does not create server when no port', () => {

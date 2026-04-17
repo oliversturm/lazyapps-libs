@@ -27,9 +27,9 @@ export const registerSharedMqEmitter = (name, emitter, port = undefined) => {
     log.debug(`Publishing shared MQ emitter ${name} on port ${port}`);
     const server = net.createServer(cs.server(emitter));
     server.on('listening', () => {
-      log.debug(`MQ emitter ${name} listening on port ${port}`);
+      log.debug(`MQ emitter ${name} listening on 127.0.0.1:${port}`);
     });
-    server.listen(port);
+    server.listen(port, '127.0.0.1');
   }
 };
 
