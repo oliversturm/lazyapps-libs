@@ -1,13 +1,17 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockFetch = vi.fn();
-vi.mock('isomorphic-fetch', () => ({ default: mockFetch }));
 
 const { commandSenderFetch } = await import('../index.js');
 
 describe('commandSenderFetch', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal('fetch', mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   test('sends POST request with command as JSON body', () => {

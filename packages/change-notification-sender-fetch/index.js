@@ -1,5 +1,3 @@
-import fetch from 'isomorphic-fetch';
-
 export const changeNotificationSenderFetch = ({ url, jwt }) => ({
   sendChangeNotification: (correlationId, content) => {
     content.correlationId = correlationId;

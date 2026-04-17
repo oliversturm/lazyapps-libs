@@ -1,5 +1,3 @@
-import fetch from 'isomorphic-fetch';
-
 export const commandSenderFetch = ({ url, jwt }) => ({
   sendCommand: (correlationId, cmd) => {
     cmd.correlationId = correlationId;
