@@ -4,7 +4,7 @@
   "description": "Centralized logging with correlation IDs for the LazyApps framework",
   "main": "index.js",
   "files": [
-    "index.js"
+    "*.js"
   ],
   "scripts": {
     "test": "vitest"
