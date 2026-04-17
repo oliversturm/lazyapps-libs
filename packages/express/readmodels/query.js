@@ -1,4 +1,5 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
+import { sanitizeMongoOperators } from './sanitize.js';
 
 const decryptResult = (
   queryDecryptor,
@@ -33,16 +34,20 @@ export const createApiHandler =
   (req, res) => {
     const log = getLogger('RM/Query', req.body.correlationId);
 
+    // SEC-23: req.body is untrusted — strip MongoDB operator tokens and
+    // dotted keys before the resolver forwards it into storage queries.
+    const safeBody = sanitizeMongoOperators(req.body);
+
     log.debug(
-      `Query received for ${readModelName}/${resolverName} with args ${JSON.stringify(
-        req.body,
+      `Query received for ${readModelName}/${resolverName} with args ${safeStringify(
+        safeBody,
       )}`,
     );
     return Promise.resolve()
       .then(() =>
         resolver(
           context.storage.perRequest(req.body.correlationId),
-          req.body,
+          safeBody,
           req.auth,
           req.body.correlationId,
         ),
@@ -61,8 +66,8 @@ export const createApiHandler =
       })
       .catch((err) => {
         log.error(
-          `An error occurred handling query for ${readModelName}/${resolverName} with args ${JSON.stringify(
-            req.body,
+          `An error occurred handling query for ${readModelName}/${resolverName} with args ${safeStringify(
+            safeBody,
           )}: ${err}`,
         );
         if (err.name === 'ValidationError') {

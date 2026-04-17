@@ -7,7 +7,7 @@ vi.mock('@lazyapps/logger', () => {
     error: vi.fn(),
     debugBare: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, safeStringify: (o) => JSON.stringify(o) };
 });
 
 const { createApiHandler } = await import('../readmodels/query.js');
@@ -175,6 +175,65 @@ describe('createApiHandler (query)', () => {
         { id: 1, name: 'encrypted' },
         { roles: ['service'], identity: undefined },
       );
+    });
+  });
+
+  test('sanitizes Mongo operators from req.body before resolver (SEC-23)', () => {
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = { storage: { perRequest: mockPerRequest } };
+    const resolver = vi.fn().mockResolvedValue([]);
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    const req = mockReq({
+      correlationId: 'corr-1',
+      name: { $gt: '' },
+      items: [{ $ne: null }],
+      'a.b': 1,
+      clean: 'ok',
+    });
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      expect(resolver).toHaveBeenCalledTimes(1);
+      const sanitizedArg = resolver.mock.calls[0][1];
+      // Mongo operators stripped at all levels; dotted keys removed; clean
+      // values preserved; correlationId retained.
+      expect(sanitizedArg).toEqual({
+        correlationId: 'corr-1',
+        name: {},
+        items: [{}],
+        clean: 'ok',
+      });
+      // Ensure original body was NOT mutated.
+      expect(req.body.name).toEqual({ $gt: '' });
+      expect(req.body['a.b']).toBe(1);
+    });
+  });
+
+  test('blocks prototype pollution in req.body before resolver (SEC-23)', () => {
+    const mockPerRequest = vi.fn().mockReturnValue('per-request-storage');
+    const context = { storage: { perRequest: mockPerRequest } };
+    const resolver = vi.fn().mockResolvedValue([]);
+    const handler = createApiHandler(context)('items', {}, 'all', resolver);
+    // Use JSON.parse so __proto__ lands as an own enumerable key (matches
+    // the shape an HTTP JSON body parser would produce).
+    const body = JSON.parse(
+      '{"correlationId":"corr-p","__proto__":{"isAdmin":true},"ok":1}',
+    );
+    const req = mockReq(body);
+    const res = mockRes();
+
+    return handler(req, res).then(() => {
+      const arg = resolver.mock.calls[0][1];
+      expect(arg.ok).toBe(1);
+      expect(arg.isAdmin).toBeUndefined();
+      // __proto__ is an inherited accessor; check for no OWN data property.
+      expect(Object.prototype.hasOwnProperty.call(arg, '__proto__')).toBe(
+        false,
+      );
+      expect(Object.getPrototypeOf(arg)).toBe(Object.prototype);
+      // Global prototype must remain untouched.
+      expect(Object.prototype.isAdmin).toBeUndefined();
+      expect({}.isAdmin).toBeUndefined();
     });
   });
 
