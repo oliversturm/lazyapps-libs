@@ -8,6 +8,9 @@ overrides:
   socketio-jwt>jsonwebtoken: ^9.0.0
   socket.io-parser: '>=4.2.6'
   devalue: '>=5.3.2'
+  protobufjs@<7.5.5: ^7.5.5
+  protobufjs@<8.0.1: ^8.0.1
+  protocol-buffers-schema@<3.6.1: ^3.6.1
 
 importers:
 
@@ -84,9 +87,6 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
-      isomorphic-fetch:
-        specifier: ^3.0.0
-        version: 3.0.0
     devDependencies:
       eslint:
         specifier: ^8.46.0
@@ -195,9 +195,6 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
-      isomorphic-fetch:
-        specifier: ^3.0.0
-        version: 3.0.0
     devDependencies:
       eslint:
         specifier: ^8.46.0
@@ -211,6 +208,9 @@ importers:
       '@lazyapps/logger':
         specifier: workspace:^
         version: link:../logger
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       mongodb:
         specifier: ^6.0.0
         version: 6.0.0
@@ -266,8 +266,8 @@ importers:
         specifier: workspace:^
         version: link:../logger
       mongodb:
-        specifier: ^5.7.0
-        version: 5.7.0
+        specifier: ^6.21.0
+        version: 6.21.0
       p-retry:
         specifier: ^6.1.0
         version: 6.1.0
@@ -456,8 +456,8 @@ importers:
         specifier: workspace:^
         version: link:../logger
       mongodb:
-        specifier: ^5.7.0
-        version: 5.7.0
+        specifier: ^6.21.0
+        version: 6.21.0
       p-retry:
         specifier: ^6.1.0
         version: 6.1.0
@@ -951,7 +951,7 @@ packages:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.5.4
+      protobufjs: 8.0.1
       yargs: 17.7.2
     dev: true
 
@@ -962,7 +962,7 @@ packages:
     dependencies:
       lodash.camelcase: 4.3.0
       long: 5.3.2
-      protobufjs: 7.5.4
+      protobufjs: 8.0.1
       yargs: 17.7.2
 
   /@humanwhocodes/config-array@0.11.14:
@@ -1413,7 +1413,7 @@ packages:
       '@opentelemetry/sdk-logs': 0.211.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-metrics': 2.5.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.5.0(@opentelemetry/api@1.9.0)
-      protobufjs: 8.0.0
+      protobufjs: 8.0.1
     dev: false
 
   /@opentelemetry/propagator-b3@2.5.0(@opentelemetry/api@1.9.0):
@@ -1957,6 +1957,12 @@ packages:
     resolution: {integrity: sha512-CiJJvcRtIgzadHCYXw7dqEnMNRjhGZlYK05Mj9OyktqV8uVT8fD2BFOB7S1uwBE3Kj2Z+4UyPmFw/Ixgw/LAlA==}
     dev: false
 
+  /@types/whatwg-url@11.0.5:
+    resolution: {integrity: sha512-coYR071JRaHa+xoEvvYqvnIHaVqaYrLPbsufM9BF63HkwI5Lgmy2QR8Q5K/lYDYo5AK82wOvSOS0UsLTpTG7uQ==}
+    dependencies:
+      '@types/webidl-conversions': 7.0.3
+    dev: false
+
   /@types/whatwg-url@8.2.2:
     resolution: {integrity: sha512-FtQu10RWgn3D9U4aazdwIE2yzphmTJREDqNdODHrbrZmmMqI0vMheC/6NE/J1Yveaj8H+ela+YwWTjq5PGmuhA==}
     dependencies:
@@ -2399,11 +2405,6 @@ packages:
       through2: 2.0.5
     dev: false
 
-  /bson@5.5.1:
-    resolution: {integrity: sha512-ix0EwukN2EpC0SRWIj/7B5+A6uQMQy6KMREI9qQqvgpkV2frH63T0UDVd1SYedL6dNCmDBYB3QtXi4ISk9YT+g==}
-    engines: {node: '>=14.20.1'}
-    dev: false
-
   /bson@6.10.4:
     resolution: {integrity: sha512-WIsKqkSC0ABoBJuT1LEX+2HEvNmNKKgnTAyd0fL8qzK4SH2i9NXg+t08YtdZp/V9IZ33cxe3iV4yM0qg8lMQng==}
     engines: {node: '>=16.20.1'}
@@ -2772,7 +2773,7 @@ packages:
       '@grpc/grpc-js': 1.14.3
       '@grpc/proto-loader': 0.7.15
       docker-modem: 5.0.6
-      protobufjs: 7.5.4
+      protobufjs: 8.0.1
       tar-fs: 2.1.4
       uuid: 10.0.0
     transitivePeerDependencies:
@@ -3643,11 +3644,6 @@ packages:
       - supports-color
     dev: false
 
-  /ip-address@10.1.0:
-    resolution: {integrity: sha512-XXADHxXmvT9+CRxhXg56LJovE+bmWnEWB78LB83VZTprKTmaC5QfruXocxzTZ2Kl0DNwKuBdlIhjL8LeY8Sf8Q==}
-    engines: {node: '>= 12'}
-    dev: false
-
   /ipaddr.js@1.9.1:
     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
     engines: {node: '>= 0.10'}
@@ -3728,15 +3724,6 @@ packages:
   /isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
     dev: true
-
-  /isomorphic-fetch@3.0.0:
-    resolution: {integrity: sha512-qvUtwJ3j6qwsF3jLxkZ72qCgjMysPzDfeV240JHiGZsANBYd+EEuu35v7dfrJ9Up0Ak07D7GGSkGhCHTqg/5wA==}
-    dependencies:
-      node-fetch: 2.7.0
-      whatwg-fetch: 3.6.20
-    transitivePeerDependencies:
-      - encoding
-    dev: false
 
   /istanbul-lib-coverage@3.2.2:
     resolution: {integrity: sha512-O8dpsF+r0WV/8MNRKfnmrtCWhuKjxrq2w+jpzBL5UZKTi2LeVWnWOmWRxFlesJONmc+wLAGvKQZEOanko0LFTg==}
@@ -4168,32 +4155,11 @@ packages:
       whatwg-url: 11.0.0
     dev: false
 
-  /mongodb@5.7.0:
-    resolution: {integrity: sha512-zm82Bq33QbqtxDf58fLWBwTjARK3NSvKYjyz997KSy6hpat0prjeX/kxjbPVyZY60XYPDNETaHkHJI2UCzSLuw==}
-    engines: {node: '>=14.20.1'}
-    peerDependencies:
-      '@aws-sdk/credential-providers': ^3.201.0
-      '@mongodb-js/zstd': ^1.1.0
-      kerberos: ^2.0.1
-      mongodb-client-encryption: '>=2.3.0 <3'
-      snappy: ^7.2.2
-    peerDependenciesMeta:
-      '@aws-sdk/credential-providers':
-        optional: true
-      '@mongodb-js/zstd':
-        optional: true
-      kerberos:
-        optional: true
-      mongodb-client-encryption:
-        optional: true
-      snappy:
-        optional: true
+  /mongodb-connection-string-url@3.0.2:
+    resolution: {integrity: sha512-rMO7CGo/9BFwyZABcKAWL8UJwH/Kc2x0g72uhDWzG48URRax5TCIcJ7Rc3RZqffZzO/Gwff/jyKwCU9TN8gehA==}
     dependencies:
-      bson: 5.5.1
-      mongodb-connection-string-url: 2.6.0
-      socks: 2.8.7
-    optionalDependencies:
-      saslprep: 1.0.3
+      '@types/whatwg-url': 11.0.5
+      whatwg-url: 14.2.0
     dev: false
 
   /mongodb@6.0.0:
@@ -4226,6 +4192,38 @@ packages:
       '@mongodb-js/saslprep': 1.4.6
       bson: 6.10.4
       mongodb-connection-string-url: 2.6.0
+    dev: false
+
+  /mongodb@6.21.0:
+    resolution: {integrity: sha512-URyb/VXMjJ4da46OeSXg+puO39XH9DeQpWCslifrRn9JWugy0D+DvvBvkm2WxmHe61O/H19JM66p1z7RHVkZ6A==}
+    engines: {node: '>=16.20.1'}
+    peerDependencies:
+      '@aws-sdk/credential-providers': ^3.188.0
+      '@mongodb-js/zstd': ^1.1.0 || ^2.0.0
+      gcp-metadata: ^5.2.0
+      kerberos: ^2.0.1
+      mongodb-client-encryption: '>=6.0.0 <7'
+      snappy: ^7.3.2
+      socks: ^2.7.1
+    peerDependenciesMeta:
+      '@aws-sdk/credential-providers':
+        optional: true
+      '@mongodb-js/zstd':
+        optional: true
+      gcp-metadata:
+        optional: true
+      kerberos:
+        optional: true
+      mongodb-client-encryption:
+        optional: true
+      snappy:
+        optional: true
+      socks:
+        optional: true
+    dependencies:
+      '@mongodb-js/saslprep': 1.4.6
+      bson: 6.10.4
+      mongodb-connection-string-url: 3.0.2
     dev: false
 
   /morgan@1.10.0:
@@ -4377,18 +4375,6 @@ packages:
     resolution: {integrity: sha512-/jKZoMpw0F8GRwl4/eLROPA3cfcXtLApP0QzLmUT/HuPCZWyB7IY9ZrMeKw2O/nFIqPQB3PVM9aYm0F312AXDQ==}
     engines: {node: '>=10.5.0'}
     deprecated: Use your platform's native DOMException instead
-    dev: false
-
-  /node-fetch@2.7.0:
-    resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
-    engines: {node: 4.x || >=6.0.0}
-    peerDependencies:
-      encoding: ^0.1.0
-    peerDependenciesMeta:
-      encoding:
-        optional: true
-    dependencies:
-      whatwg-url: 5.0.0
     dev: false
 
   /node-fetch@3.3.0:
@@ -4674,8 +4660,8 @@ packages:
       mkdirp: 1.0.4
     dev: true
 
-  /protobufjs@7.5.4:
-    resolution: {integrity: sha512-CvexbZtbov6jW2eXAvLukXjXUW1TzFaivC46BpWc/3BpcCysb5Vffu+B3XHMm8lVEuy2Mm4XGex8hBSg1yapPg==}
+  /protobufjs@8.0.1:
+    resolution: {integrity: sha512-NWWCCscLjs+cOKF/s/XVNFRW7Yih0fdH+9brffR5NZCy8k42yRdl5KlWKMVXuI1vfCoy4o1z80XR/W/QUb3V3w==}
     engines: {node: '>=12.0.0'}
     requiresBuild: true
     dependencies:
@@ -4692,27 +4678,8 @@ packages:
       '@types/node': 25.2.1
       long: 5.3.2
 
-  /protobufjs@8.0.0:
-    resolution: {integrity: sha512-jx6+sE9h/UryaCZhsJWbJtTEy47yXoGNYI4z8ZaRncM0zBKeRqjO2JEcOUYwrYGb1WLhXM1FfMzW3annvFv0rw==}
-    engines: {node: '>=12.0.0'}
-    requiresBuild: true
-    dependencies:
-      '@protobufjs/aspromise': 1.1.2
-      '@protobufjs/base64': 1.1.2
-      '@protobufjs/codegen': 2.0.4
-      '@protobufjs/eventemitter': 1.1.0
-      '@protobufjs/fetch': 1.1.0
-      '@protobufjs/float': 1.0.2
-      '@protobufjs/inquire': 1.1.0
-      '@protobufjs/path': 1.1.2
-      '@protobufjs/pool': 1.1.0
-      '@protobufjs/utf8': 1.1.0
-      '@types/node': 25.2.1
-      long: 5.3.2
-    dev: false
-
-  /protocol-buffers-schema@3.6.0:
-    resolution: {integrity: sha512-TdDRD+/QNdrCGCE7v8340QyuXd4kIWIgapsE2+n/SaGiSSbomYl4TjHlvIoCWRpE7wFt02EpB35VVA2ImcBVqw==}
+  /protocol-buffers-schema@3.6.1:
+    resolution: {integrity: sha512-VG2K63Igkiv9p76tk1lilczEK1cT+kCjKtkdhw1dQZV3k3IXJbd3o6Ho8b9zJZaHSnT2hKe4I+ObmX9w6m5SmQ==}
     dev: false
 
   /protocol-buffers@3.2.1:
@@ -4721,7 +4688,7 @@ packages:
       brfs: 1.6.1
       generate-function: 2.3.1
       generate-object-property: 1.2.0
-      protocol-buffers-schema: 3.6.0
+      protocol-buffers-schema: 3.6.1
       signed-varint: 2.0.1
       varint: 5.0.2
     dev: false
@@ -4980,15 +4947,6 @@ packages:
   /safer-buffer@2.1.2:
     resolution: {integrity: sha512-YZo3K82SD7Riyi0E1EQPojLz7kpepnSQI9IyPbHHg1XXXevb5dJI7tpyN2ADxGcQbHG7vcyRHk0cbwqcQriUtg==}
 
-  /saslprep@1.0.3:
-    resolution: {integrity: sha512-/MY/PEMbk2SuY5sScONwhUDsV2p77Znkb/q3nSVstq/yQzYJOH/Azh29p9oJLsl3LnQwSvZDKagDGBsBwSooag==}
-    engines: {node: '>=6'}
-    requiresBuild: true
-    dependencies:
-      sparse-bitfield: 3.0.3
-    dev: false
-    optional: true
-
   /semver@7.7.4:
     resolution: {integrity: sha512-vFKC2IEtQnVhpT78h1Yp8wzwrf8CM+MzKMHGJZfBtzhZNycRFnXsHk6E5TxIkkMsgNS7mdX3AGB7x2QM2di4lA==}
     engines: {node: '>=10'}
@@ -5124,11 +5082,6 @@ packages:
     engines: {node: '>=8'}
     dev: true
 
-  /smart-buffer@4.2.0:
-    resolution: {integrity: sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg==}
-    engines: {node: '>= 6.0.0', npm: '>= 3.0.0'}
-    dev: false
-
   /socket.io-adapter@2.5.6:
     resolution: {integrity: sha512-DkkO/dz7MGln0dHn5bmN3pPy+JmywNICWrJqVWiVOyvXjWQFIv9c2h24JrQLLFJ2aQVQf/Cvl1vblnd4r2apLQ==}
     dependencies:
@@ -5172,14 +5125,6 @@ packages:
     dependencies:
       jsonwebtoken: 9.0.3
       xtend: 2.1.2
-    dev: false
-
-  /socks@2.8.7:
-    resolution: {integrity: sha512-HLpt+uLy/pxB+bum/9DzAgiKS8CX1EvbWxI4zlmgGCExImLdiad2iCwXT5Z4c9c3Eq8rP2318mPW2c+QbtjK8A==}
-    engines: {node: '>= 10.0.0', npm: '>= 3.0.0'}
-    dependencies:
-      ip-address: 10.1.0
-      smart-buffer: 4.2.0
     dev: false
 
   /source-map-js@1.2.1:
@@ -5553,13 +5498,16 @@ packages:
     engines: {node: '>=6'}
     dev: false
 
-  /tr46@0.0.3:
-    resolution: {integrity: sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==}
-    dev: false
-
   /tr46@3.0.0:
     resolution: {integrity: sha512-l7FvfAHlcmulp8kr+flpQZmVwtu7nfRV7NZujtN0OqES8EL4O4e0qqzL0DC5gAvx/ZC/9lk6rhcUwYvkBnBnYA==}
     engines: {node: '>=12'}
+    dependencies:
+      punycode: 2.3.1
+    dev: false
+
+  /tr46@5.1.1:
+    resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
+    engines: {node: '>=18'}
     dependencies:
       punycode: 2.3.1
     dev: false
@@ -5812,17 +5760,9 @@ packages:
     engines: {node: '>= 8'}
     dev: false
 
-  /webidl-conversions@3.0.1:
-    resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
-    dev: false
-
   /webidl-conversions@7.0.0:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
-    dev: false
-
-  /whatwg-fetch@3.6.20:
-    resolution: {integrity: sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==}
     dev: false
 
   /whatwg-url@11.0.0:
@@ -5833,11 +5773,12 @@ packages:
       webidl-conversions: 7.0.0
     dev: false
 
-  /whatwg-url@5.0.0:
-    resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
+  /whatwg-url@14.2.0:
+    resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
+    engines: {node: '>=18'}
     dependencies:
-      tr46: 0.0.3
-      webidl-conversions: 3.0.1
+      tr46: 5.1.1
+      webidl-conversions: 7.0.0
     dev: false
 
   /which@2.0.2:
