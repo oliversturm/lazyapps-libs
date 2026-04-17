@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
 import { nanoid } from 'nanoid';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
@@ -22,14 +22,14 @@ export const readModelListenerMqEmitter =
 
           const log = getLogger('RM/LS', correlationId);
           log.debug(
-            `Query received for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
+            `Query received for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${safeStringify(
               args,
             )}`,
           );
           const readModel = context.readModels[readModelName];
           if (!readModel) {
             log.error(
-              `Read model ${readModelName} not found during query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
+              `Read model ${readModelName} not found during query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${safeStringify(
                 args,
               )}`,
             );
@@ -39,7 +39,7 @@ export const readModelListenerMqEmitter =
           const resolver = readModel.resolvers[resolverName];
           if (!resolver) {
             log.error(
-              `Resolver ${resolverName} not found in read model ${readModelName} during query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
+              `Resolver ${resolverName} not found in read model ${readModelName} during query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${safeStringify(
                 args,
               )}`,
             );
@@ -75,7 +75,7 @@ export const readModelListenerMqEmitter =
                   });
                   span.end();
                   log.error(
-                    `An error occurred handling query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${JSON.stringify(
+                    `An error occurred handling query for ${readModelName}/${resolverName} (reply ${replyTopic}) with args ${safeStringify(
                       args,
                     )}: ${err}`,
                   );

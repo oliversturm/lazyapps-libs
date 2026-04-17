@@ -7,6 +7,7 @@ vi.mock('@lazyapps/logger', () => ({
     error: vi.fn(),
     debugBare: vi.fn(),
   }),
+  safeStringify: (obj) => JSON.stringify(obj),
 }));
 
 vi.mock('nanoid', () => ({

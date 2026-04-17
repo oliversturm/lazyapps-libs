@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
 import { getScopedRoomName } from './redaction.js';
 
@@ -26,11 +26,11 @@ export const initSockets = (
     socket.encryptionScopes = scopes;
 
     ioLog.debug(
-      `Connection: ${socket.id} (handshake: ${JSON.stringify(
+      `Connection: ${socket.id} (handshake: ${safeStringify(
         socket.handshake,
       )})${
         socket.decoded_token
-          ? ` (JWT: ${JSON.stringify(socket.decoded_token)})`
+          ? ` (JWT: ${safeStringify(socket.decoded_token)})`
           : ' (no JWT)'
       } (scopes: ${JSON.stringify(scopes)})`,
     );
@@ -47,7 +47,7 @@ export const initSockets = (
       try {
         if (!ioAuthHandler(socket.decoded_token, resolvers)) {
           ioLog.error(
-            `Unauthorized register ${JSON.stringify(resolvers)} (claims ${
+            `Unauthorized register ${safeStringify(resolvers)} (claims ${
               socket.decoded_token
             })`,
           );
@@ -67,14 +67,12 @@ export const initSockets = (
         );
         socket.join(roomNames);
         ioLog.debug(
-          `Registered ${socket.id} for ${JSON.stringify(resolvers)} (rooms: ${JSON.stringify(roomNames)})`,
+          `Registered ${socket.id} for ${safeStringify(resolvers)} (rooms: ${safeStringify(roomNames)})`,
         );
         if (typeof ack === 'function') ack();
       } catch (err) {
         ioLog.error(
-          `Can't register ${socket.id} for ${JSON.stringify(
-            resolvers,
-          )}: ${err}`,
+          `Can't register ${socket.id} for ${safeStringify(resolvers)}: ${err}`,
         );
         if (typeof ack === 'function') ack({ error: 'Registration failed' });
       }
@@ -93,7 +91,7 @@ export const createNotifier = (
 
     if (!changeInfoAuthHandler(auth)) {
       rmLog.error(
-        `Unauthorized changeInfo ${JSON.stringify(req.body)} (claims ${auth})`,
+        `Unauthorized changeInfo ${safeStringify(req.body)} (claims ${auth})`,
       );
       res.sendStatus(403);
       return;
@@ -137,13 +135,13 @@ export const createNotifier = (
       } else {
         // No redaction engine — broadcast to the base room (backwards-compatible)
         io.to(baseRoom).emit('change', changeInfo);
-        rmLog.debug(`Forwarded changeInfo ${JSON.stringify(changeInfo)}`);
+        rmLog.debug(`Forwarded changeInfo ${safeStringify(changeInfo)}`);
       }
 
       res.sendStatus(200);
     } catch (err) {
       rmLog.error(
-        `Can't forward changeInfo ${JSON.stringify(changeInfo)}: ${err}`,
+        `Can't forward changeInfo ${safeStringify(changeInfo)}: ${err}`,
       );
       res.sendStatus(500);
     }

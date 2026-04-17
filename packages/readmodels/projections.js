@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { metrics } from '@opentelemetry/api';
 import { createContextQueue } from './contextQueue.js';
 import { withSpan } from './tracing.js';
@@ -34,7 +34,7 @@ const collectProjections = (readModels, event) =>
 const logProjections = (log, inReplay) => (rmProjections) => {
   if (rmProjections.length)
     log.debug(
-      `Projecting event for read models: ${JSON.stringify(
+      `Projecting event for read models: ${safeStringify(
         rmProjections.map(([rmName]) => rmName),
       )} (inReplay=${inReplay})`,
     );
@@ -72,7 +72,7 @@ const handleProjections =
           )
           .catch((err) => {
             log.error(
-              `Error occurred projecting event ${JSON.stringify(
+              `Error occurred projecting event ${safeStringify(
                 event,
               )} for read model ${rmName}, or during read model timestamp update: ${err}`,
             );

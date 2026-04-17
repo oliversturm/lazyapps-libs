@@ -55,7 +55,7 @@ export const inmemory = () => (aggregates) => {
 
       if (timestamp < lastProjectedEventTimestamp)
         log.debug(
-          `Noticing event out of sequence (lastPET=${lastProjectedEventTimestamp}, ts=${timestamp}): ${JSON.stringify(
+          `Noticing event out of sequence (lastPET=${lastProjectedEventTimestamp}, ts=${timestamp}): ${safeStringify(
             event,
           )}`,
         );

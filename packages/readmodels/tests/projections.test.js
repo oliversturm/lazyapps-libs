@@ -18,7 +18,7 @@ vi.mock('@lazyapps/logger', () => {
     warn: vi.fn(),
     error: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, safeStringify: (obj) => JSON.stringify(obj) };
 });
 
 vi.mock('../tracing.js', () => ({
@@ -35,12 +35,6 @@ vi.mock('@opentelemetry/api', () => ({
 }));
 
 describe('collectProjections', () => {
-  let log;
-
-  beforeEach(() => {
-    log = getLogger();
-  });
-
   afterEach(() => {
     vi.clearAllMocks();
   });

@@ -8,6 +8,7 @@ vi.mock('@lazyapps/logger', () => ({
     error: vi.fn(),
     debugBare: vi.fn(),
   }),
+  safeStringify: (obj) => JSON.stringify(obj),
 }));
 
 const { createApiHandler } = await import('../readmodels/query.js');

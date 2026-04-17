@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 
 const createCommandHandler =
   ({ commandSender }) =>
@@ -9,12 +9,12 @@ const createCommandHandler =
       // which will be evaluated lazily depending on replay state
       execute: (cmd) => () =>
         new Promise((resolve) => {
-          log.debug(`Executing command ${JSON.stringify(cmd)}`);
+          log.debug(`Executing command ${safeStringify(cmd)}`);
           resolve();
         })
           .then(() => commandSender.sendCommand(correlationId, cmd))
           .catch((err) => {
-            log.error(`Can't execute command ${JSON.stringify(cmd)}: ${err}`);
+            log.error(`Can't execute command ${safeStringify(cmd)}: ${err}`);
           }),
     };
   };

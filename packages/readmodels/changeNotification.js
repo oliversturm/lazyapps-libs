@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { createContextQueue } from './contextQueue.js';
 
 const createChangeNotificationHandler =
@@ -12,7 +12,7 @@ const createChangeNotificationHandler =
         queue.add(() =>
           new Promise((resolve) => {
             log.debug(
-              `Sending change notification ${JSON.stringify(changeInfo)}'`,
+              `Sending change notification ${safeStringify(changeInfo)}'`,
             );
             resolve();
           })
@@ -24,7 +24,7 @@ const createChangeNotificationHandler =
             )
             .catch((err) => {
               log.error(
-                `Can't send change notification ${JSON.stringify(
+                `Can't send change notification ${safeStringify(
                   changeInfo,
                 )}: ${err}`,
               );

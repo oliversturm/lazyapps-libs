@@ -6,7 +6,7 @@ vi.mock('@lazyapps/logger', () => {
     debug: vi.fn(),
     error: vi.fn(),
   });
-  return { getLogger };
+  return { getLogger, safeStringify: (obj) => JSON.stringify(obj) };
 });
 
 describe('createChangeNotificationHandler', () => {

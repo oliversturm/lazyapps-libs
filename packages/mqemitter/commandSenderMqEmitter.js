@@ -1,4 +1,4 @@
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify } from '@lazyapps/logger';
 import { getSharedMqEmitter } from './mqEmitterRegistry.js';
 
 export const commandSenderMqEmitter = ({ mqName }) => {
@@ -14,11 +14,11 @@ export const commandSenderMqEmitter = ({ mqName }) => {
           }),
         )
         .then(() => {
-          log.debug(`Sending command ${JSON.stringify(cmd)}`);
+          log.debug(`Sending command ${safeStringify(cmd)}`);
         })
         .catch((e) => {
           log.error(
-            `Error occurred sending command ${JSON.stringify(cmd)}: ${e}`,
+            `Error occurred sending command ${safeStringify(cmd)}: ${e}`,
           );
         });
     },
