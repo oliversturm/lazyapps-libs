@@ -31,6 +31,9 @@ describe('createConfig', () => {
     expect(config.logs).toBe(true);
     expect(config.otlp.endpoint).toBe(undefined);
     expect(config.otlp.protocol).toBe(undefined);
+    // Secure-by-default: OTLP transport encryption is on unless explicitly
+    // opted out. Regression guard for security review #24.
+    expect(config.otlp.insecure).toBe(false);
     expect(config.sampler.type).toBe('always_on');
     expect(config.sampler.ratio).toBe(1.0);
   });
@@ -58,7 +61,7 @@ describe('createConfig', () => {
     });
     expect(config.otlp.endpoint).toBe('http://otel:4317');
     expect(config.otlp.protocol).toBe(undefined);
-    expect(config.otlp.insecure).toBe(true);
+    expect(config.otlp.insecure).toBe(false);
   });
 
   test('deep merges sampler config', () => {
@@ -102,14 +105,14 @@ describe('createConfig', () => {
     });
     expect(config.otlp.protocol).toBe('http/protobuf');
     expect(config.otlp.endpoint).toBe(undefined);
-    expect(config.otlp.insecure).toBe(true);
+    expect(config.otlp.insecure).toBe(false);
   });
 
-  test('overrides otlp insecure flag', () => {
+  test('allows opting into insecure OTLP transport', () => {
     const config = createConfig({
-      otlp: { insecure: false },
+      otlp: { insecure: true },
     });
-    expect(config.otlp.insecure).toBe(false);
+    expect(config.otlp.insecure).toBe(true);
   });
 
   test('overrides sampler ratio', () => {

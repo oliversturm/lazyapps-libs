@@ -12,7 +12,7 @@ const defaults = {
   otlp: {
     endpoint: undefined,
     protocol: undefined,
-    insecure: true,
+    insecure: false,
   },
   traces: true,
   metrics: true,
