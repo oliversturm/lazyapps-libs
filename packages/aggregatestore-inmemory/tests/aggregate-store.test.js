@@ -13,9 +13,9 @@ vi.mock('@lazyapps/logger', () => {
 
 const aggregates = {
   thing: {
-    initial: () => {
-      flag: 'initial';
-    },
+    // The "no aggregate projection type" test below asserts the resolved
+    // state is `undefined` — so initial deliberately returns nothing.
+    initial: () => {},
     projections: {
       CREATED: (/*state, event*/) => ({ flag: 'created' }),
     },

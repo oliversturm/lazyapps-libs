@@ -13,7 +13,7 @@ vi.mock('jwks-rsa', () => ({
 }));
 
 // Mock all other heavy dependencies so runExpress doesn't start a real server
-const mockListen = vi.fn((port, host) => {});
+const mockListen = vi.fn(() => {});
 const mockOn = vi.fn((event, cb) => {
   if (event === 'listening') cb();
 });
