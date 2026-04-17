@@ -34,7 +34,8 @@
     "node": ">=18.20.3 || >=20.18.0"
   },
   "dependencies": {
-    "@lazyapps/logger": "workspace:^"
+    "@lazyapps/logger": "workspace:^",
+    "@opentelemetry/api": "^1.9.0"
   },
   "peerDependencies": {
     "mongodb": "^6.0.0"

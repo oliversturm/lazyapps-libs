@@ -33,9 +33,18 @@ export const createEncryption = ({
       const fallbackHandler = createFallbackHandler(schema);
 
       const decryptEventSafe = (event) =>
-        fieldEncryptor
-          .decryptEvent(event)
-          .catch(() => fallbackHandler.applyFallbacks(event));
+        fieldEncryptor.decryptEvent(event).catch((err) => {
+          // SEC-16 outer guard: fieldEncryptor.decryptEvent is supposed to
+          // handle every per-field failure internally and never throw. If
+          // it does throw, that is a programming bug — log loudly (so it
+          // cannot be silently swallowed) and still apply the legacy
+          // whole-event fallback so projections can continue.
+          log.error(
+            `decryptEvent threw unexpectedly for event type=${event.type} ` +
+              `aggregate=${event.aggregateName}(${event.aggregateId}): ${err}`,
+          );
+          return fallbackHandler.applyFallbacks(event);
+        });
 
       log.info('Encryption service initialized');
 
@@ -154,7 +163,18 @@ export const createEncryption = ({
         createProjectionDecryptor: (role) => (event) =>
           fieldEncryptor
             .decryptEvent(event, { role, contexts })
-            .catch(() => fallbackHandler.applyFallbacks(event)),
+            .catch((err) => {
+              // SEC-16 outer guard (mirror of decryptEventSafe): per-field
+              // failures are handled inside decryptEvent now. A throw here
+              // means decryptEvent itself failed — log loudly and fall back
+              // whole-event so the projection can still make progress.
+              log.error(
+                `projection decryptor threw unexpectedly role=${role} ` +
+                  `event type=${event.type} ` +
+                  `aggregate=${event.aggregateName}(${event.aggregateId}): ${err}`,
+              );
+              return fallbackHandler.applyFallbacks(event);
+            }),
 
         wrapStorage: (storageFactory) =>
           readModelEncryption

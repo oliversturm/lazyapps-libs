@@ -955,12 +955,14 @@ describe('createEncryption', () => {
         );
       }));
 
-    test('replay applies fallback when decryption fails', () =>
+    test('replay applies decryptionFailed marker on tampered non-forgotten data', () =>
       makeEncryption().then((enc) => {
         const capturedProjectionEvents = [];
 
         // Create an event with a fake encrypted field that will fail
-        // decryption (wrong key data)
+        // decryption (wrong key data). The subject 'cust-fail' is NOT
+        // forgotten, so the new behavior (SEC-16 fix) must produce a
+        // DISTINCT marker rather than the forgotten fallback.
         const fakeEncryptedEvent = {
           type: 'CUSTOMER_CREATED',
           aggregateName: 'customer',
@@ -1006,10 +1008,10 @@ describe('createEncryption', () => {
             .replay('corr-replay')(mockCmdProcContext)
             .then(() => {
               expect(capturedProjectionEvents).toHaveLength(1);
-              // Decryption should fail, fallback applied
+              // Decryption fails, subject is NOT forgotten → distinct marker.
               expect(capturedProjectionEvents[0].payload.name).toEqual({
-                forgotten: true,
-                text: '[deleted]',
+                decryptionFailed: true,
+                text: '[ENCRYPTED — DECRYPTION FAILED]',
               });
             });
         });
