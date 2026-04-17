@@ -10,6 +10,7 @@ vi.mock('@lazyapps/logger', () => ({
     warn: vi.fn(),
   }),
   safeStringify: (obj) => JSON.stringify(obj),
+  redactUrl: (v) => v,
 }));
 
 // Mock OpenTelemetry — command processor imports these

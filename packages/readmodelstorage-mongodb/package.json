@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@lazyapps/logger": "workspace:^",
-    "mongodb": "^5.7.0",
+    "mongodb": "^6.21.0",
     "p-retry": "^6.1.0"
   },
   "type": "module"

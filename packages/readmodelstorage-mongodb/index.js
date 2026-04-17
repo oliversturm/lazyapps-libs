@@ -1,7 +1,7 @@
 import { MongoClient } from 'mongodb';
 import pRetry from 'p-retry';
 
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, safeStringify, redactUrl } from '@lazyapps/logger';
 
 const wrapCalls = (correlationId, dbContext, names) => {
   const log = getLogger('RM/MongoAPI', correlationId);
@@ -9,7 +9,7 @@ const wrapCalls = (correlationId, dbContext, names) => {
     (r, v) => ({
       ...r,
       [v]: (collection, ...args) => {
-        log.debug(`Calling ${v}(${JSON.stringify(args)}) on ${collection}`);
+        log.debug(`Calling ${v}(${safeStringify(args)}) on ${collection}`);
         return dbContext.db.collection(collection)[v](...args);
       },
     }),
@@ -26,28 +26,21 @@ export const mongodb =
         ? (url = `${scheme}://${user}:${pwd}@${host}/${urlPath}`)
         : 'mongodb://127.0.0.1:27017';
 
-    // This is meant to be a logging-safe URL, but obviously we don't do
-    // anything about a URL that may already include sensitive details.
-    // Not perfect.
-    const logLocation = user ? host : connectUrl;
+    // Always redact credentials from the URL before any log emission — the
+    // same URL may already carry embedded user:password (#9/#13) even when
+    // caller did not use the explicit user/pwd fields.
+    const logLocation = redactUrl(connectUrl);
 
     const initLog = getLogger('RM/Mongo', 'INIT');
 
-    return pRetry(
-      () =>
-        MongoClient.connect(connectUrl, {
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-        }),
-      {
-        onFailedAttempt: (error) => {
-          initLog.error(
-            `Attempt ${error.attemptNumber} failed connecting to MongoDB at ${logLocation}: '${error}'. Will retry another ${error.retriesLeft} times.`,
-          );
-        },
-        retries: 10,
+    return pRetry(() => MongoClient.connect(connectUrl), {
+      onFailedAttempt: (error) => {
+        initLog.error(
+          `Attempt ${error.attemptNumber} failed connecting to MongoDB at ${logLocation}: '${error}'. Will retry another ${error.retriesLeft} times.`,
+        );
       },
-    )
+      retries: 10,
+    })
       .catch((err) => {
         initLog.error(`Can't connect to MongoDB at ${logLocation}: ${err}`);
       })

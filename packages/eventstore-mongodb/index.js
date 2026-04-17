@@ -1,7 +1,7 @@
 import { MongoClient } from 'mongodb';
 import pRetry from 'p-retry';
 
-import { getLogger } from '@lazyapps/logger';
+import { getLogger, redactUrl } from '@lazyapps/logger';
 
 const replay = (dbContext) => (correlationId) => (cmdProcContext) =>
   Promise.all([
@@ -49,27 +49,20 @@ export const mongodb =
         ? (url = `${scheme}://${user}:${pwd}@${host}/${urlPath}`)
         : 'mongodb://127.0.0.1:27017';
 
-    // Keep location separate for logging, so that the password
-    // doesn't get into the log.
-    const logLocation = user ? host : connectUrl;
+    // Always redact credentials from the URL before any log emission — a
+    // caller-supplied `url` may carry embedded user:password (#9/#13).
+    const logLocation = redactUrl(connectUrl);
 
     const initLog = getLogger('CmdProc/ES', 'INIT');
 
-    return pRetry(
-      () =>
-        MongoClient.connect(connectUrl, {
-          useNewUrlParser: true,
-          useUnifiedTopology: true,
-        }),
-      {
-        onFailedAttempt: (error) => {
-          initLog.error(
-            `Attempt ${error.attemptNumber} failed connecting to MongoDB at ${logLocation}: '${error}'. Will retry another ${error.retriesLeft} times.`,
-          );
-        },
-        retries: 10,
+    return pRetry(() => MongoClient.connect(connectUrl), {
+      onFailedAttempt: (error) => {
+        initLog.error(
+          `Attempt ${error.attemptNumber} failed connecting to MongoDB at ${logLocation}: '${error}'. Will retry another ${error.retriesLeft} times.`,
+        );
       },
-    )
+      retries: 10,
+    })
       .catch((err) => {
         initLog.error(`Can't connect to MongoDB at ${logLocation}: ${err}`);
       })

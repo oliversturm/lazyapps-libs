@@ -17,6 +17,7 @@ vi.mock('@lazyapps/logger', () => ({
     info: vi.fn(),
     error: vi.fn(),
   }),
+  redactUrl: (v) => v,
 }));
 
 const { mongodb } = await import('../index.js');
