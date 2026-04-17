@@ -36,10 +36,20 @@ export const rabbitMq = (config) => (context) => {
             return channel.consume(
               q.queue,
               (msg) => {
-                if (msg.fields.routingKey.startsWith('__system')) {
-                  const { correlationId, event } = JSON.parse(
-                    msg.content.toString(),
+                // Protect the consumer loop from malformed payloads on the
+                // wire (#25). A SyntaxError here used to crash the whole
+                // process; now we log and keep serving subsequent messages.
+                let parsed;
+                try {
+                  parsed = JSON.parse(msg.content.toString());
+                } catch (err) {
+                  initLog.error(
+                    `Dropping malformed JSON message on topic '${msg.fields.routingKey}': ${err}`,
                   );
+                  return;
+                }
+                const { correlationId, event } = parsed;
+                if (msg.fields.routingKey.startsWith('__system')) {
                   const log = getLogger('RM/EB/Rabbit', correlationId);
                   log.debug(
                     `Received '__system' event: ${safeStringify(event)}`,
@@ -50,9 +60,6 @@ export const rabbitMq = (config) => (context) => {
                   // must assume that this message
                   // was caught due to the pattern
                   // passed from the outside
-                  const { correlationId, event } = JSON.parse(
-                    msg.content.toString(),
-                  );
                   const log = getLogger('RM/EB/Rabbit', correlationId);
                   log.debug(
                     `Received message on topic '${
