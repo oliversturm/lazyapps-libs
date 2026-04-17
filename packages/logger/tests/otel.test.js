@@ -38,8 +38,10 @@ const mockOtelApis = {
     WARN: 13,
     ERROR: 17,
   },
-  trace: { getSpanContext: vi.fn() },
-  context: { active: vi.fn() },
+  // The default mock returns no active span — so existing tests that don't
+  // care about correlation see the same emit shape as before.
+  trace: { getSpan: vi.fn().mockReturnValue(undefined) },
+  context: { active: vi.fn().mockReturnValue({}) },
 };
 
 const { getLogger, configureOtel, __resetOtelForTesting } =
@@ -186,5 +188,101 @@ describe('configureOtel graceful degradation', () => {
     const log = getLogger('Test', 'c');
     log.info('hello');
     expect(mockEmit).not.toHaveBeenCalled();
+  });
+});
+
+describe('configureOtel log-to-trace correlation', () => {
+  beforeEach(() => {
+    __resetOtelForTesting();
+    vi.clearAllMocks();
+  });
+
+  test('attaches traceId/spanId from active span to emitted log record', () => {
+    const fakeSpanCtx = {
+      traceId: '0123456789abcdef0123456789abcdef',
+      spanId: '0123456789abcdef',
+      traceFlags: 1,
+    };
+    const fakeSpan = { spanContext: vi.fn().mockReturnValue(fakeSpanCtx) };
+    const fakeContext = Symbol('active-context');
+    const trace = { getSpan: vi.fn().mockReturnValue(fakeSpan) };
+    const context = { active: vi.fn().mockReturnValue(fakeContext) };
+
+    configureOtel({
+      logs: mockOtelApis.logs,
+      SeverityNumber: mockOtelApis.SeverityNumber,
+      trace,
+      context,
+    });
+    const log = getLogger('Test', 'corr-1');
+    log.info('hello');
+
+    expect(context.active).toHaveBeenCalled();
+    expect(trace.getSpan).toHaveBeenCalledWith(fakeContext);
+    expect(mockEmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        traceId: fakeSpanCtx.traceId,
+        spanId: fakeSpanCtx.spanId,
+      }),
+    );
+    // traceId/spanId belong on the record root per OTel logs data model,
+    // not in attributes — backends pivot on the top-level fields.
+    const attrs = mockEmit.mock.calls[0][0].attributes;
+    expect(attrs.traceId).toBeUndefined();
+    expect(attrs.spanId).toBeUndefined();
+  });
+
+  test('omits traceId/spanId when no span is active', () => {
+    const trace = { getSpan: vi.fn().mockReturnValue(undefined) };
+    const context = { active: vi.fn().mockReturnValue({}) };
+
+    configureOtel({
+      logs: mockOtelApis.logs,
+      SeverityNumber: mockOtelApis.SeverityNumber,
+      trace,
+      context,
+    });
+    const log = getLogger('Test', 'corr-1');
+    log.info('hello');
+
+    const record = mockEmit.mock.calls[0][0];
+    expect(record.traceId).toBeUndefined();
+    expect(record.spanId).toBeUndefined();
+  });
+
+  test('omits traceId/spanId when trace and context APIs are not configured', () => {
+    configureOtel({
+      logs: mockOtelApis.logs,
+      SeverityNumber: mockOtelApis.SeverityNumber,
+      // no trace, no context
+    });
+    const log = getLogger('Test', 'corr-1');
+    log.info('hello');
+
+    const record = mockEmit.mock.calls[0][0];
+    expect(record.traceId).toBeUndefined();
+    expect(record.spanId).toBeUndefined();
+  });
+
+  test('skips correlation when span.spanContext returns no traceId', () => {
+    // Defensive: an unsampled or invalid span may produce an empty context.
+    const fakeSpan = {
+      spanContext: vi.fn().mockReturnValue({ traceId: '', spanId: '' }),
+    };
+    const trace = { getSpan: vi.fn().mockReturnValue(fakeSpan) };
+    const context = { active: vi.fn().mockReturnValue({}) };
+
+    configureOtel({
+      logs: mockOtelApis.logs,
+      SeverityNumber: mockOtelApis.SeverityNumber,
+      trace,
+      context,
+    });
+    const log = getLogger('Test', 'corr-1');
+    log.info('hello');
+
+    const record = mockEmit.mock.calls[0][0];
+    expect(record.traceId).toBeUndefined();
+    expect(record.spanId).toBeUndefined();
   });
 });

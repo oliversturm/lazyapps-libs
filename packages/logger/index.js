@@ -85,7 +85,7 @@ export const configureOtel = ({
 const emitOtelLog = (methodName, loggerName, correlationId, msg) => {
   if (!otelEnabled || !otelLogger) return;
 
-  otelLogger.emit({
+  const record = {
     severityNumber: severityMap[methodName],
     severityText: methodName.toUpperCase(),
     body: msg,
@@ -93,7 +93,24 @@ const emitOtelLog = (methodName, loggerName, correlationId, msg) => {
       'logger.name': loggerName,
       'correlation.id': correlationId,
     },
-  });
+  };
+
+  // Log-to-trace correlation: enrich the OTLP log record with the active
+  // span's identifiers so backends can pivot from a log entry to the trace
+  // it occurred in. Per OTel data model, traceId/spanId are top-level fields
+  // on the log record — not in attributes.
+  if (otelTrace && otelContext) {
+    const activeSpan = otelTrace.getSpan(otelContext.active());
+    if (activeSpan) {
+      const spanCtx = activeSpan.spanContext();
+      if (spanCtx && spanCtx.traceId && spanCtx.spanId) {
+        record.traceId = spanCtx.traceId;
+        record.spanId = spanCtx.spanId;
+      }
+    }
+  }
+
+  otelLogger.emit(record);
 };
 
 const getStream = (output) =>
@@ -150,3 +167,4 @@ export const __resetOtelForTesting = () => {
 };
 
 export { getStream };
+export { redactUrl } from './redactUrl.js';
