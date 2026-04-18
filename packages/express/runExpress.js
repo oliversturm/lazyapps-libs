@@ -3,6 +3,7 @@ import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmetLib from 'helmet';
 import { expressjwt } from 'express-jwt';
 import { getLogger, getStream } from '@lazyapps/logger';
 import { nanoid } from 'nanoid';
@@ -26,6 +27,39 @@ morgan.token('correlation-id', function (req) {
   return req.body.correlationId;
 });
 
+/**
+ * Run an Express HTTP server for a LazyApps command receiver / read model
+ * query endpoint.
+ *
+ * @param {object} opts
+ * @param {object} opts.log - Logger.
+ * @param {number} opts.port - Listen port.
+ * @param {string} [opts.interfaceIp] - Interface to bind (default '0.0.0.0').
+ * @param {Function} opts.installHandlers - `(context, app) => void` to mount routes.
+ * @param {string|Function} [opts.jwtAuth] - JWT secret or jwks-rsa secret provider.
+ * @param {string} [opts.jwtSecret] - Deprecated alias for `jwtAuth`.
+ * @param {string[]} [opts.jwtAlgorithms=['HS256']] - JWT algorithms allowed.
+ * @param {string} [opts.authCookieName] - Cookie name to read JWTs from.
+ * @param {boolean} [opts.credentialsRequired] - When false, JWTs are optional.
+ * @param {string|string[]|Function|boolean} [opts.corsOrigin] - Value passed to
+ *   `cors({origin: ...})`. **DEFAULT IS WILDCARD (`*`) which is unsafe in
+ *   production**: any origin can call this server. In production, set this
+ *   explicitly, e.g. `corsOrigin: ['https://app.example.com']`. See README
+ *   for details.
+ * @param {string|number} [opts.bodyLimit='100kb'] - Max JSON body size passed
+ *   to `bodyParser.json({limit})`. Strings like `'1mb'` or numbers in bytes.
+ *   Per-request — applies to a single body, not aggregate traffic.
+ * @param {boolean|object} [opts.helmet] - Enable HTTP security headers via
+ *   `helmet`. `true` uses defaults; an object is passed through as helmet
+ *   options (e.g. `{contentSecurityPolicy: false}`). Falsy/undefined disables.
+ * @param {Function} [opts.rateLimiter] - Express-style middleware
+ *   `(req, res, next) => ...` applied early in the chain (after `helmet`,
+ *   before `bodyParser`). For multiple/conditional limiters or other
+ *   non-standard middleware, use `customizeExpress` instead.
+ * @param {Function} [opts.customizeExpress] - `(context, app) => void` escape
+ *   hatch invoked AFTER `installHandlers`. Use for arbitrary Express
+ *   customisation that does not fit the dedicated parameters.
+ */
 export const runExpress =
   ({
     log,
@@ -37,14 +71,34 @@ export const runExpress =
     jwtAlgorithms = ['HS256'],
     authCookieName,
     credentialsRequired,
+    corsOrigin,
+    bodyLimit = '100kb',
+    helmet,
+    rateLimiter,
     customizeExpress = () => {},
   }) =>
   (context) => {
     const secret = jwtAuth || jwtSecret;
     return new Promise((resolve, reject) => {
       const app = expressApp();
-      app.use(cors());
-      app.use(bodyParser.json());
+
+      // Middleware order is intentional and security-relevant:
+      //   helmet → rateLimiter → bodyParser → cors → routes
+      // helmet first so all responses (including errors) carry security
+      // headers. rateLimiter before bodyParser so DoS-style oversize bodies
+      // are dropped before being parsed. cors last among the cross-cutting
+      // middleware so it sees the already-parsed body if a route inspects it.
+      if (helmet) {
+        app.use(helmet === true ? helmetLib() : helmetLib(helmet));
+      }
+      if (rateLimiter) {
+        app.use(rateLimiter);
+      }
+      app.use(bodyParser.json({ limit: bodyLimit }));
+      // SECURITY: default `corsOrigin` is wildcard (`*`) — any origin can
+      // call this server. UNSAFE in production. Pass `corsOrigin` explicitly
+      // (e.g. `['https://app.example.com']`) to lock it down. See README.
+      app.use(cors(corsOrigin === undefined ? {} : { origin: corsOrigin }));
       app.use(correlationId(context.correlationConfig));
       app.use(
         morgan(

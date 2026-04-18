@@ -3,6 +3,7 @@ import bodyParser from 'body-parser';
 import morgan from 'morgan';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import helmetLib from 'helmet';
 import { expressjwt } from 'express-jwt';
 import { socketIoCookieJwt } from './socketIoCookieJwt.js';
 import { Server as SocketIoServer } from 'socket.io';
@@ -35,6 +36,37 @@ morgan.token('correlation-id', function (req) {
   return req.body.correlationId;
 });
 
+/**
+ * Run the change-notifier HTTP + Socket.io server.
+ *
+ * @param {object} correlationConfig
+ * @param {object} opts
+ * @param {number} [opts.port=3008]
+ * @param {string} [opts.host='0.0.0.0']
+ * @param {string|Function} [opts.jwtAuth]
+ * @param {string} [opts.jwtSecret] - Deprecated alias for `jwtAuth`.
+ * @param {string[]} [opts.jwtAlgorithms]
+ * @param {string} [opts.jwksUri]
+ * @param {string} [opts.authCookieName]
+ * @param {boolean} [opts.credentialsRequired]
+ * @param {Function} [opts.ioAuthHandler]
+ * @param {Function} [opts.changeInfoAuthHandler]
+ * @param {object} [opts.encryptionSchema]
+ * @param {object} [opts.encryptionContexts]
+ * @param {Function} [opts.scopeMapper]
+ * @param {object} [opts.redactionHooks]
+ * @param {string|string[]|Function|boolean} [opts.corsOrigin] - Value passed to
+ *   `cors({origin: ...})` and Socket.io `cors`. **DEFAULT IS WILDCARD (`*`)
+ *   which is unsafe in production**: any origin can call this server. In
+ *   production, set this explicitly, e.g.
+ *   `corsOrigin: ['https://app.example.com']`.
+ * @param {string|number} [opts.bodyLimit='100kb'] - Max JSON body size for
+ *   `/change` POSTs.
+ * @param {boolean|object} [opts.helmet] - Enable HTTP security headers via
+ *   `helmet`. `true` uses defaults; an object passes through as helmet options.
+ * @param {Function} [opts.rateLimiter] - Express-style middleware applied
+ *   between `helmet` and `bodyParser`.
+ */
 const runExpress = (
   correlationConfig,
   {
@@ -52,6 +84,10 @@ const runExpress = (
     encryptionContexts,
     scopeMapper,
     redactionHooks,
+    corsOrigin,
+    bodyLimit = '100kb',
+    helmet,
+    rateLimiter,
   },
 ) => {
   let secret = jwtAuth || jwtSecret;
@@ -75,8 +111,20 @@ const runExpress = (
     }
 
     const app = express();
-    app.use(cors());
-    app.use(bodyParser.json());
+
+    // Middleware order is intentional and security-relevant:
+    //   helmet → rateLimiter → bodyParser → cors → routes
+    if (helmet) {
+      app.use(helmet === true ? helmetLib() : helmetLib(helmet));
+    }
+    if (rateLimiter) {
+      app.use(rateLimiter);
+    }
+    app.use(bodyParser.json({ limit: bodyLimit }));
+    // SECURITY: default `corsOrigin` is wildcard (`*`) — any origin can call
+    // this server. UNSAFE in production. Pass `corsOrigin` explicitly to
+    // restrict.
+    app.use(cors(corsOrigin === undefined ? {} : { origin: corsOrigin }));
     app.use(correlationId(correlationConfig));
     app.use(
       morgan(
@@ -116,7 +164,7 @@ const runExpress = (
 
     const server = http.createServer(app);
     const io = new SocketIoServer(server, {
-      cors: { origin: true },
+      cors: { origin: corsOrigin === undefined ? true : corsOrigin },
     });
     io.use(
       socketIoCookieJwt({
