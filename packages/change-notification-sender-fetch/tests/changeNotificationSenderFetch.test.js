@@ -22,11 +22,14 @@ describe('changeNotificationSenderFetch', () => {
     const content = { readModelName: 'items', changeKind: 'all' };
 
     return sender.sendChangeNotification('corr-1', content).then(() => {
-      expect(mockFetch).toHaveBeenCalledWith('http://localhost:3000/notify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...content, correlationId: 'corr-1' }),
-      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/notify',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...content, correlationId: 'corr-1' }),
+        }),
+      );
     });
   });
 
@@ -88,6 +91,92 @@ describe('changeNotificationSenderFetch', () => {
 
     return sender.sendChangeNotification('corr-42', content).then(() => {
       expect(content.correlationId).toBe('corr-42');
+    });
+  });
+
+  // SEC-T2-A3 — configurable fetch timeouts -----------------------------
+
+  describe('fetchTimeoutMs (SEC-T2-A3)', () => {
+    test('passes an AbortSignal to fetch on every request', () => {
+      mockFetch.mockResolvedValue({ ok: true });
+      const sender = changeNotificationSenderFetch({
+        url: 'http://localhost:3000/notify',
+      });
+      return sender
+        .sendChangeNotification('corr-1', { readModelName: 'items' })
+        .then(() => {
+          const [, opts] = mockFetch.mock.calls[0];
+          expect(opts.signal).toBeDefined();
+          expect(opts.signal).toBeInstanceOf(AbortSignal);
+        });
+    });
+
+    test('custom fetchTimeoutMs aborts a slow fetch', () => {
+      mockFetch.mockImplementation((_url, opts) => {
+        return new Promise((resolve, reject) => {
+          const onAbort = () => {
+            const err = new Error('aborted');
+            err.name = 'AbortError';
+            reject(err);
+          };
+          if (opts.signal) {
+            if (opts.signal.aborted) onAbort();
+            else opts.signal.addEventListener('abort', onAbort);
+          }
+        });
+      });
+      const sender = changeNotificationSenderFetch({
+        url: 'http://localhost:3000/notify',
+        fetchTimeoutMs: 50,
+      });
+      const start = Date.now();
+      return sender
+        .sendChangeNotification('corr-1', { readModelName: 'items' })
+        .then(
+          () => {
+            throw new Error('expected fetch to abort, but it resolved');
+          },
+          (err) => {
+            const elapsed = Date.now() - start;
+            expect(err).toBeDefined();
+            expect(
+              err.name === 'AbortError' || /abort/i.test(err.message),
+            ).toBe(true);
+            expect(elapsed).toBeLessThan(2000);
+          },
+        );
+    });
+
+    test('fast fetch within timeout completes normally', () => {
+      mockFetch.mockImplementation(
+        (_url, _opts) =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ ok: true }), 10);
+          }),
+      );
+      const sender = changeNotificationSenderFetch({
+        url: 'http://localhost:3000/notify',
+        fetchTimeoutMs: 5000,
+      });
+      return sender
+        .sendChangeNotification('corr-1', { readModelName: 'items' })
+        .then((res) => {
+          expect(res.ok).toBe(true);
+        });
+    });
+
+    test('default fetchTimeoutMs is 5000ms when not specified', () => {
+      mockFetch.mockResolvedValue({ ok: true });
+      const sender = changeNotificationSenderFetch({
+        url: 'http://localhost:3000/notify',
+      });
+      return sender
+        .sendChangeNotification('corr-1', { readModelName: 'items' })
+        .then(() => {
+          const [, opts] = mockFetch.mock.calls[0];
+          expect(opts.signal).toBeInstanceOf(AbortSignal);
+          expect(opts.signal.aborted).toBe(false);
+        });
     });
   });
 });
