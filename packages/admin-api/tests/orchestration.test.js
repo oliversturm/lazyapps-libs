@@ -734,4 +734,83 @@ describe('createOrchestrator', () => {
         });
     });
   });
+
+  describe('activationOrchestration operation bracketing', () => {
+    const mockAllWaitsResolved = () => {
+      sseClient.waitForStatus.mockResolvedValue({
+        readModels: {
+          'ep1/customers': { state: 'live' },
+        },
+        commandProcessor: {
+          state: 'idle',
+          activeReplays: [],
+          activeCatchUps: [],
+        },
+      });
+    };
+
+    test('brackets a single activation with startOperation/endOperation', () => {
+      sseClient.cache.readModels['ep1/customers'] = {
+        endpointName: 'ep1',
+        readModelName: 'customers',
+        state: 'idle',
+        lastProjectedEventTimestamp: 5000,
+      };
+      mockAllWaitsResolved();
+
+      return orchestrator
+        .activationOrchestration('ep1', 'customers')
+        .then(() => {
+          expect(sseClient.startOperation).toHaveBeenCalled();
+          expect(sseClient.endOperation).toHaveBeenCalled();
+        });
+    });
+
+    test('calls endOperation when a single activation fails', () => {
+      sseClient.waitForStatus.mockRejectedValue(
+        new Error('Status wait timeout'),
+      );
+
+      return orchestrator.activationOrchestration('ep1', 'customers').then(
+        () => {
+          throw new Error('should not resolve');
+        },
+        (err) => {
+          expect(err.message).toBe('Status wait timeout');
+          expect(sseClient.endOperation).toHaveBeenCalled();
+          expect(sseClient.endOperation.mock.calls.length).toBe(
+            sseClient.startOperation.mock.calls.length,
+          );
+        },
+      );
+    });
+
+    test('activateAll starts the operation before reading the cache', () => {
+      // Simulate a cold cache that only becomes populated once the
+      // operation has started (startOperation connects and fetches status)
+      let opStarted = false;
+      sseClient.startOperation.mockImplementation(() => {
+        opStarted = true;
+        return Promise.resolve();
+      });
+      sseClient.cache.getAllReadModels.mockImplementation(() =>
+        opStarted
+          ? {
+              'ep1/customers': {
+                endpointName: 'ep1',
+                readModelName: 'customers',
+                state: 'idle',
+                lastProjectedEventTimestamp: 0,
+              },
+            }
+          : {},
+      );
+      mockAllWaitsResolved();
+
+      return orchestrator.activateAll().then((results) => {
+        expect(results).toHaveLength(1);
+        expect(sseClient.endOperation).toHaveBeenCalled();
+      });
+    });
+  });
 });

@@ -22,17 +22,21 @@ export const startAdmin = (
     readModelServiceUrl,
     commandProcessorUrl,
     developmentMode,
+    sseIdleGraceMs,
   },
 ) => {
   log.info('Initializing admin service');
 
   return eventBus()
     .then((eventBusInstance) => {
-      // Create SSE client for subscribing to RM and CP SSE streams
+      // Create SSE client for subscribing to RM and CP SSE streams.
+      // Connections are established on demand (first browser SSE connect
+      // or admin operation) and torn down again after an idle grace period.
       const sseClient = createSseClient({
         readModelServiceUrl,
         commandProcessorUrl,
         token,
+        idleGraceMs: sseIdleGraceMs,
       });
 
       // Create orchestrator for replay/catchup sequences
@@ -94,10 +98,13 @@ export const startAdmin = (
                   };
                 }
 
-                // Always connect SSE to maintain live cache
-                sseClient.ensureConnected().catch((err) => {
-                  log.warn(`Initial SSE connection failed: ${err.message}`);
-                });
+                // SSE subscriptions are on-demand (see admin architecture
+                // spec section 9): they come up with the first browser SSE
+                // connect or admin operation, and are torn down again when
+                // idle. No eager connect here.
+                log.info(
+                  'Admin SSE subscriptions are on-demand — not connecting at startup',
+                );
 
                 // Auto-activate read models after server is listening
                 if (autoActivate && readModelServiceUrl) {

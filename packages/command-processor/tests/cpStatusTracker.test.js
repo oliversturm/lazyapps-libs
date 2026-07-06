@@ -114,9 +114,26 @@ describe('createCpStatusTracker', () => {
   });
 
   describe('SSE push', () => {
+    test('sends current status snapshot to a newly connected SSE client', () => {
+      tracker.trackReplayStart('customers', 'ep1', 'corr-1');
+
+      const mockRes = { write: vi.fn() };
+      tracker.addSseClient(mockRes);
+
+      expect(mockRes.write).toHaveBeenCalled();
+      const written = mockRes.write.mock.calls.find((c) =>
+        c[0].includes('status-change'),
+      );
+      expect(written).toBeDefined();
+      const data = JSON.parse(written[0].split('data: ')[1].split('\n')[0]);
+      expect(data.state).toBe('replaying');
+      expect(data.activeReplays).toHaveLength(1);
+    });
+
     test('pushes status to SSE clients on replay start', () => {
       const mockRes = { write: vi.fn() };
       tracker.addSseClient(mockRes);
+      mockRes.write.mockClear();
       tracker.trackReplayStart('customers', 'ep1', 'corr-1');
       expect(mockRes.write).toHaveBeenCalled();
       const written = mockRes.write.mock.calls.find((c) =>
@@ -175,6 +192,7 @@ describe('createCpStatusTracker', () => {
     test('removes SSE client on removeSseClient', () => {
       const mockRes = { write: vi.fn() };
       tracker.addSseClient(mockRes);
+      mockRes.write.mockClear();
       tracker.removeSseClient(mockRes);
       tracker.trackReplayStart('customers', 'ep1', 'corr-1');
       expect(mockRes.write).not.toHaveBeenCalled();

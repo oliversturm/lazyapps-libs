@@ -18,6 +18,16 @@ const createRoutes = ({
     });
   };
 
+  // While no SSE subscriptions are connected (on-demand lifecycle), the
+  // status cache can be cold or stale — refresh it via a plain HTTP fetch
+  // before handling requests that read from it. Does not bring up SSE.
+  const withFreshCache = (handler) => (req, res) => {
+    if (sseClient.isConnected()) return handler(req, res);
+    const log = getLogger('Admin/Routes', 'CACHE');
+    log.debug(`SSE not connected — refreshing status cache for ${req.path}`);
+    return sseClient.fetchAllStatus().then(() => handler(req, res));
+  };
+
   const validateReadModel = (req, res) => {
     const { ep, rm } = req.params;
     const status = sseClient.cache.getReadModel(ep, rm);
@@ -94,7 +104,10 @@ const createRoutes = ({
       );
     };
 
-    sseClient.addBrowserClient();
+    sseClient.addBrowserClient().catch((err) => {
+      const log = getLogger('Admin/Routes', 'SSE');
+      log.warn(`SSE upstream connect on browser attach failed: ${err.message}`);
+    });
     sseClient.emitter.on('readmodel-status', onRmStatus);
     sseClient.emitter.on('commandprocessor-status', onCpStatus);
 
@@ -388,23 +401,23 @@ const createRoutes = ({
   return {
     adminConfig,
     validateFilter,
-    readModelStatusAll,
-    readModelStatusOne,
-    commandProcessorStatus,
+    readModelStatusAll: withFreshCache(readModelStatusAll),
+    readModelStatusOne: withFreshCache(readModelStatusOne),
+    commandProcessorStatus: withFreshCache(commandProcessorStatus),
     sseStream,
-    replayPreflight,
+    replayPreflight: withFreshCache(replayPreflight),
     startReplay,
     cancelReplay,
-    createBackup,
-    cancelBackup,
-    restoreBackup,
-    deleteBackup,
-    listBackups,
-    activateAllRms,
-    activateRm,
-    dismissInvalid,
-    stopRm,
-    resetRm,
+    createBackup: withFreshCache(createBackup),
+    cancelBackup: withFreshCache(cancelBackup),
+    restoreBackup: withFreshCache(restoreBackup),
+    deleteBackup: withFreshCache(deleteBackup),
+    listBackups: withFreshCache(listBackups),
+    activateAllRms: withFreshCache(activateAllRms),
+    activateRm: withFreshCache(activateRm),
+    dismissInvalid: withFreshCache(dismissInvalid),
+    stopRm: withFreshCache(stopRm),
+    resetRm: withFreshCache(resetRm),
   };
 };
 

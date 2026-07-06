@@ -533,6 +533,15 @@ export const createProjectionHandler = (context) => {
     getSideEffectFilter: (rmName) =>
       (readModelReplayOptions.get(rmName) || {}).sideEffectFilter || null,
     flushEventQueue: () => eventQueue.add(() => Promise.resolve()),
+    // Run a function as a task inside the serialized event queue. Used
+    // for decisions that must be atomic with respect to event processing
+    // (e.g. the catch-up completion check) — while the task runs, no
+    // event is mid-projection.
+    runInEventQueue: (fn) => eventQueue.add(() => Promise.resolve(fn())),
+    // Number of tasks waiting in the event queue (excluding the one
+    // currently running). Inside a runInEventQueue task this reveals
+    // whether events are pending behind the current task.
+    getEventQueueLength: () => eventQueue.getQueueLength(),
   };
 };
 

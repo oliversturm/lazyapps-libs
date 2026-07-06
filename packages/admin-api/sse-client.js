@@ -162,6 +162,7 @@ const createSseClient = ({
   readModelServiceUrl,
   commandProcessorUrl,
   token,
+  idleGraceMs = 10000,
 }) => {
   const log = getLogger('Admin/SSE', 'CLIENT');
   const emitter = new EventEmitter();
@@ -170,6 +171,35 @@ const createSseClient = ({
   let browserClients = 0;
   let activeOperations = 0;
   let connected = false;
+  let teardownTimer = null;
+
+  const cancelScheduledTeardown = () => {
+    if (teardownTimer) {
+      log.debug('Cancelling scheduled SSE teardown');
+      clearTimeout(teardownTimer);
+      teardownTimer = null;
+    }
+  };
+
+  const scheduleTeardownIfIdle = () => {
+    if (browserClients > 0 || activeOperations > 0) return;
+    if (!connected) return;
+    cancelScheduledTeardown();
+    log.debug(
+      `No browser clients or active operations — scheduling SSE teardown in ${idleGraceMs}ms`,
+    );
+    teardownTimer = setTimeout(() => {
+      teardownTimer = null;
+      if (browserClients === 0 && activeOperations === 0) {
+        log.info(
+          `Idle grace period (${idleGraceMs}ms) elapsed — closing SSE subscriptions`,
+        );
+        disconnectAll();
+      }
+    }, idleGraceMs);
+    // Don't keep the process alive just for a pending teardown
+    if (typeof teardownTimer.unref === 'function') teardownTimer.unref();
+  };
 
   const getServiceUrls = () => {
     if (typeof readModelServiceUrl === 'string') {
@@ -201,6 +231,12 @@ const createSseClient = ({
       const epNames = getEndpointNames();
 
       const subscribeToEps = (eps) => {
+        // Teardown may have raced an in-flight connect — don't create
+        // subscriptions that nothing would ever close again
+        if (!connected) {
+          log.debug('Skipping RM SSE subscribe — client disconnected');
+          return;
+        }
         eps.forEach((ep) => {
           const url =
             typeof readModelServiceUrl === 'string'
@@ -223,6 +259,10 @@ const createSseClient = ({
 
       // Subscribe to CP SSE endpoint
       const subscribeToCp = () => {
+        if (!connected) {
+          log.debug('Skipping CP SSE subscribe — client disconnected');
+          return;
+        }
         if (commandProcessorUrl) {
           const sub = createSseSubscription(
             `${commandProcessorUrl}/admin/commandprocessor/events`,
@@ -246,6 +286,10 @@ const createSseClient = ({
         // If cache is empty (service not ready yet), retry with backoff.
         // Returns a Promise that resolves when subscriptions are established.
         const discoverAndSubscribe = (attempt, delay) => {
+          if (!connected) {
+            log.debug('Stopping RM endpoint discovery — client disconnected');
+            return Promise.resolve();
+          }
           const knownEps = new Set();
           Object.values(cache.getAllReadModels()).forEach((rm) => {
             if (rm.endpointName) knownEps.add(rm.endpointName);
@@ -286,6 +330,7 @@ const createSseClient = ({
   };
 
   const disconnectAll = () => {
+    cancelScheduledTeardown();
     if (!connected) return;
     connected = false;
     log.info('Closing all SSE subscriptions');
@@ -340,22 +385,32 @@ const createSseClient = ({
     return Promise.resolve();
   };
 
+  const isConnected = () => connected;
+
   const addBrowserClient = () => {
+    cancelScheduledTeardown();
     browserClients++;
+    log.debug(`Browser client connected (now ${browserClients})`);
     return ensureConnected();
   };
 
   const removeBrowserClient = () => {
     browserClients = Math.max(0, browserClients - 1);
+    log.debug(`Browser client disconnected (now ${browserClients})`);
+    scheduleTeardownIfIdle();
   };
 
   const startOperation = () => {
+    cancelScheduledTeardown();
     activeOperations++;
+    log.debug(`Admin operation started (now ${activeOperations} active)`);
     return ensureConnected();
   };
 
   const endOperation = () => {
     activeOperations = Math.max(0, activeOperations - 1);
+    log.debug(`Admin operation ended (now ${activeOperations} active)`);
+    scheduleTeardownIfIdle();
   };
 
   const waitForStatus = (predicate, timeoutMs = 10000) =>
@@ -450,6 +505,7 @@ const createSseClient = ({
     startOperation,
     endOperation,
     ensureConnected,
+    isConnected,
     disconnectAll,
     waitForStatus,
     fetchReplayRelevantEvents,

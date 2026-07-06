@@ -1097,6 +1097,8 @@ describe('10.2: skipCatchup in production mode', { timeout: 30000 }, () => {
         }),
         getReadModel: vi.fn().mockReturnValue({ state: 'idle' }),
       },
+      isConnected: vi.fn().mockReturnValue(true),
+      fetchAllStatus: vi.fn().mockResolvedValue(undefined),
     };
     const orchestrator = {
       activationOrchestration: vi.fn().mockResolvedValue({ status: 'live' }),
@@ -1136,6 +1138,8 @@ describe('10.2: skipCatchup in production mode', { timeout: 30000 }, () => {
         }),
         getReadModel: vi.fn().mockReturnValue({ state: 'idle' }),
       },
+      isConnected: vi.fn().mockReturnValue(true),
+      fetchAllStatus: vi.fn().mockResolvedValue(undefined),
     };
     const orchestrator = {
       activationOrchestration: vi.fn().mockResolvedValue({ status: 'live' }),

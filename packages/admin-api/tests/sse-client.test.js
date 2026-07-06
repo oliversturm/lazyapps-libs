@@ -323,3 +323,154 @@ describe('createSseClient', () => {
     expect(urls).toEqual(['http://rm:3001']);
   });
 });
+
+describe('on-demand connection lifecycle', () => {
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('no network')));
+  });
+
+  const createClient = (idleGraceMs = 50) =>
+    createSseClient({
+      readModelServiceUrl: { ep1: 'http://rm:3001' },
+      commandProcessorUrl: 'http://cp:3000',
+      token: 'test-token',
+      idleGraceMs,
+    });
+
+  test('is not connected initially', () => {
+    expect(createClient().isConnected()).toBe(false);
+  });
+
+  test('connects on first browser client', () => {
+    const c = createClient();
+    return c.addBrowserClient().then(() => {
+      expect(c.isConnected()).toBe(true);
+      c.disconnectAll();
+    });
+  });
+
+  test('connects on first operation', () => {
+    const c = createClient();
+    return c.startOperation().then(() => {
+      expect(c.isConnected()).toBe(true);
+      c.disconnectAll();
+    });
+  });
+
+  test('disconnects after grace period when last browser client leaves', () => {
+    const c = createClient(50);
+    return c
+      .addBrowserClient()
+      .then(() => {
+        c.removeBrowserClient();
+        // Teardown is not immediate — grace period applies
+        expect(c.isConnected()).toBe(true);
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+      });
+  });
+
+  test('stays connected when a browser client returns within the grace period', () => {
+    const c = createClient(50);
+    return c
+      .addBrowserClient()
+      .then(() => {
+        c.removeBrowserClient();
+        return c.addBrowserClient();
+      })
+      .then(() => wait(150))
+      .then(() => {
+        expect(c.isConnected()).toBe(true);
+        c.disconnectAll();
+      });
+  });
+
+  test('stays connected while an operation is active even without browsers', () => {
+    const c = createClient(50);
+    return c
+      .startOperation()
+      .then(() => c.addBrowserClient())
+      .then(() => {
+        c.removeBrowserClient();
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(true);
+        c.endOperation();
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+      });
+  });
+
+  test('disconnects after grace period when last operation ends', () => {
+    const c = createClient(50);
+    return c
+      .startOperation()
+      .then(() => {
+        c.endOperation();
+        expect(c.isConnected()).toBe(true);
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+      });
+  });
+
+  test('stays connected while overlapping operations are active', () => {
+    const c = createClient(50);
+    return c
+      .startOperation()
+      .then(() => c.startOperation())
+      .then(() => {
+        c.endOperation();
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(true);
+        c.endOperation();
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+      });
+  });
+
+  test('reconnects on demand after an idle teardown', () => {
+    const c = createClient(50);
+    return c
+      .startOperation()
+      .then(() => {
+        c.endOperation();
+        return wait(150);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+        return c.addBrowserClient();
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(true);
+        c.disconnectAll();
+      });
+  });
+
+  test('disconnectAll takes effect immediately and cancels pending teardown', () => {
+    const c = createClient(5000);
+    return c
+      .addBrowserClient()
+      .then(() => {
+        c.removeBrowserClient();
+        c.disconnectAll();
+        expect(c.isConnected()).toBe(false);
+        return wait(100);
+      })
+      .then(() => {
+        expect(c.isConnected()).toBe(false);
+      });
+  });
+});

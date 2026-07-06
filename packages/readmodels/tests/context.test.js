@@ -86,6 +86,33 @@ describe('context', () => {
     );
   });
 
+  test('statusTracker seeds lastProjectedEventTimestamp from storage-loaded values', () => {
+    const readModels = { items: {} };
+    const storageResult = {
+      // Simulates loading persisted timestamps: mutates the (cloned)
+      // readModels that initializeContext passes in
+      readLastProjectedEventTimestamps: vi.fn().mockImplementation((rms) => {
+        rms.items.lastProjectedEventTimestamp = 500;
+        return Promise.resolve();
+      }),
+    };
+    const storage = vi.fn().mockResolvedValue(storageResult);
+    const eventBus = vi.fn().mockResolvedValue();
+    return initializeContext({}, { readModels, storage, eventBus }).then(
+      (context) => {
+        // The status tracker must report the loaded timestamp — a fresh
+        // service otherwise advertises 0 over SSE/status endpoints and
+        // an admin orchestrating catch-up would restart from T=0,
+        // re-projecting (duplicating) already-projected events
+        expect(
+          context.statusTracker.getStatus('items').lastProjectedEventTimestamp,
+        ).toBe(500);
+        // The caller's original definitions stay unmutated
+        expect(readModels.items.lastProjectedEventTimestamp).toBeUndefined();
+      },
+    );
+  });
+
   test('developmentMode is stored on context when true', () => {
     const readModels = {};
     const storageResult = {

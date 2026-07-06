@@ -200,4 +200,21 @@ describe('startAdmin', () => {
     startAdmin({ serviceId: 'TEST' }, config).then(() => {
       expect(mockActivator.autoActivateAll).not.toHaveBeenCalled();
     }));
+
+  test('does not eagerly connect SSE at startup', () =>
+    startAdmin({ serviceId: 'TEST' }, config).then(() => {
+      const sseClient = mockCreateSseClient.mock.results[0].value;
+      expect(sseClient.ensureConnected).not.toHaveBeenCalled();
+      expect(sseClient.addBrowserClient).not.toHaveBeenCalled();
+      expect(sseClient.startOperation).not.toHaveBeenCalled();
+    }));
+
+  test('passes sseIdleGraceMs through to the SSE client as idleGraceMs', () =>
+    startAdmin({ serviceId: 'TEST' }, { ...config, sseIdleGraceMs: 1234 }).then(
+      () => {
+        expect(mockCreateSseClient).toHaveBeenCalledWith(
+          expect.objectContaining({ idleGraceMs: 1234 }),
+        );
+      },
+    ));
 });

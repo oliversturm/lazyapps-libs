@@ -25,27 +25,44 @@ export const createCatchupHandler = (context) => {
     const drainNext = () => {
       const entry = state.fifoQueue.shift();
       if (!entry) {
-        // Flush the event queue to ensure all pending live events
-        // have been processed through collectProjections and moved
-        // to the FIFO before we declare the drain complete.
-        return context.projectionHandler.flushEventQueue().then(() => {
-          const late = state.fifoQueue.shift();
-          if (late) {
-            // New events arrived while flushing — continue draining
-            const { correlationId: lateCorrelationId, event: lateEvent } = late;
-            if (isDuplicate(lateEvent, state, toTimestamp)) {
-              return drainNext();
+        // Decide completion INSIDE the serialized event queue. While this
+        // task runs, no live event can be mid-projection: every event that
+        // entered the queue before it has either been projected or pushed
+        // to the FIFO, and every event after it will still see the catchup
+        // state until we clear it here. Deciding outside the queue (e.g.
+        // after a flushEventQueue().then()) leaves a window where events
+        // already sitting in the queue behind the flush marker are
+        // projected as plain live events after the state flips — skipping
+        // dedup and duplicating catch-up events.
+        return context.projectionHandler
+          .runInEventQueue(() => {
+            // Only flip when nothing is pending: an event enqueued after
+            // this check task would still see the catchup state cleared
+            // below even though it was emitted during catch-up — so as
+            // long as tasks wait behind us, defer the decision to a
+            // later check.
+            if (
+              state.fifoQueue.length === 0 &&
+              context.projectionHandler.getEventQueueLength() === 0
+            ) {
+              context.projectionHandler.clearCatchupState(readModel);
+              return true;
             }
-            return context.projectionHandler
-              .projectCatchupEventForReadModel(lateCorrelationId, readModel)(
-                lateEvent,
-              )
-              .then(drainNext);
-          }
-          context.projectionHandler.clearCatchupState(readModel);
-          log.info(`FIFO drain complete for ${readModel}`);
-          return Promise.resolve();
-        });
+            log.debug(
+              `Drain not complete for ${readModel} (FIFO: ` +
+                `${state.fifoQueue.length}, pending queue: ` +
+                `${context.projectionHandler.getEventQueueLength()}) — ` +
+                `continuing drain`,
+            );
+            return false;
+          })
+          .then((complete) => {
+            if (complete) {
+              log.info(`FIFO drain complete for ${readModel}`);
+              return Promise.resolve();
+            }
+            return drainNext();
+          });
       }
 
       const { correlationId: entryCorrelationId, event } = entry;

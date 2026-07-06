@@ -278,9 +278,7 @@ beforeAll(() =>
   }),
 );
 
-afterAll(() =>
-  sharedContainer ? sharedContainer.stop() : undefined,
-);
+afterAll(() => (sharedContainer ? sharedContainer.stop() : undefined));
 
 // Full test environment setup with admin orchestrator (like catchup.integration.test.js)
 const setupTestEnv = (
@@ -305,7 +303,9 @@ const setupTestEnv = (
 
   const setup = () => {
     env.connectionString = sharedConnectionString;
-    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
+    console.log(
+      `[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`,
+    );
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
@@ -313,15 +313,21 @@ const setupTestEnv = (
       .then((adminPort) => {
         env.adminPort = adminPort;
         console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
-        console.log(`[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`);
+        console.log(
+          `[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`,
+        );
         return MongoClient.connect(sharedConnectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
 
         console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
-        console.log(`[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`);
-        console.log(`[ENV ${dbPrefix}] Backup path: ${backupConfig?.backupPath || 'none'}`);
+        console.log(
+          `[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Backup path: ${backupConfig?.backupPath || 'none'}`,
+        );
         const contextConfig = {
           readModels: readModelDefs,
           endpointName: 'rm',
@@ -355,7 +361,9 @@ const setupTestEnv = (
       })
       .then((context) => {
         env.rmContext = context;
-        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}, backup: ${!!context.backup}`);
+        console.log(
+          `[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}, backup: ${!!context.backup}`,
+        );
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -373,15 +381,21 @@ const setupTestEnv = (
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
-            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
+            console.log(
+              `[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`,
+            );
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
-        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
-        console.log(`[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`);
+        console.log(
+          `[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`,
+        );
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -414,7 +428,9 @@ const setupTestEnv = (
             // CP-side admin instruction handler
             mq.on('__admin', ({ payload }, cb) => {
               const { correlationId, instruction } = payload;
-              console.log(`[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`);
+              console.log(
+                `[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`,
+              );
               switch (instruction.type) {
                 case 'startCatchup':
                   catchupHandler
@@ -426,10 +442,14 @@ const setupTestEnv = (
                       instruction.replayRelevantEvents,
                     )
                     .then(() => {
-                      console.log(`[CP ${mqPrefix}] startCatchup completed for ${instruction.readModel}`);
+                      console.log(
+                        `[CP ${mqPrefix}] startCatchup completed for ${instruction.readModel}`,
+                      );
                     })
                     .catch((err) => {
-                      console.log(`[CP ${mqPrefix}] startCatchup FAILED for ${instruction.readModel}: ${err.message}`);
+                      console.log(
+                        `[CP ${mqPrefix}] startCatchup FAILED for ${instruction.readModel}: ${err.message}`,
+                      );
                     });
                   break;
                 case 'cancelCatchup':
@@ -460,16 +480,10 @@ const setupTestEnv = (
               cb();
             });
 
-            // RM-side admin instruction handler
-            const rmMq = getSharedMqEmitter('RM', `${mqPrefix}-events`);
-            rmMq.on('__admin', ({ payload }, cb) => {
-              const { correlationId, instruction } = payload;
-              env.rmContext.adminInstructionHandler(
-                correlationId,
-                instruction,
-              );
-              cb();
-            });
+            // NOTE: no extra __admin subscription here — the RM event bus
+            // (readModelEventBusMqEmitter) already delivers admin instructions
+            // to context.adminInstructionHandler; a second subscription would
+            // double-process every instruction
 
             const cpApp = expressApp();
             cpApp.use(bodyParser.json());
@@ -507,7 +521,9 @@ const setupTestEnv = (
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
-                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
+                console.log(
+                  `[ENV ${dbPrefix}] CP server on port ${env.cpPort}`,
+                );
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -516,9 +532,15 @@ const setupTestEnv = (
         );
       })
       .then(() => {
-        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
-        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
-        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
+        console.log(
+          `[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`,
+        );
         return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
@@ -644,8 +666,8 @@ describe.skipIf(!hasMongoTools)(
           .then(() =>
             waitForCondition(
               () =>
-                fetchAdmin('/admin/readmodel/status').then(
-                  ({ body }) => body.length > 0 ? true : 'no read models yet',
+                fetchAdmin('/admin/readmodel/status').then(({ body }) =>
+                  body.length > 0 ? true : 'no read models yet',
                 ),
               5000,
               100,
@@ -663,7 +685,9 @@ describe.skipIf(!hasMongoTools)(
               () =>
                 fetchRM('/admin/readmodel').then(({ body }) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
+                  return items && items.state === 'live'
+                    ? true
+                    : `state=${items?.state}`;
                 }),
               15000,
               100,
@@ -695,7 +719,9 @@ describe.skipIf(!hasMongoTools)(
               () =>
                 fetchRM('/admin/readmodel').then(({ body }) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'idle' ? true : `state=${items?.state}`;
+                  return items && items.state === 'idle'
+                    ? true
+                    : `state=${items?.state}`;
                 }),
               5000,
               100,
@@ -742,7 +768,9 @@ describe.skipIf(!hasMongoTools)(
               () =>
                 fetchRM('/admin/readmodel').then(({ body }) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
+                  return items && items.state === 'live'
+                    ? true
+                    : `state=${items?.state}`;
                 }),
               15000,
               100,
@@ -755,7 +783,7 @@ describe.skipIf(!hasMongoTools)(
                 rmDb()
                   .collection('items_overview')
                   .countDocuments()
-                  .then((c) => c === 5 ? true : `count=${c}`),
+                  .then((c) => (c === 5 ? true : `count=${c}`)),
               5000,
               100,
               'items_overview count=5',
@@ -801,7 +829,9 @@ describe.skipIf(!hasMongoTools)(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'idle' ? true : `state=${items?.state}`;
+                return items && items.state === 'idle'
+                  ? true
+                  : `state=${items?.state}`;
               }),
             5000,
             100,
@@ -862,7 +892,9 @@ describe.skipIf(!hasMongoTools)(
             () =>
               fetchRM('/admin/readmodel').then(({ body }) => {
                 const items = body.find((rm) => rm.name === 'items');
-                return items && items.state === 'live' ? true : `state=${items?.state}`;
+                return items && items.state === 'live'
+                  ? true
+                  : `state=${items?.state}`;
               }),
             15000,
             100,
@@ -875,7 +907,7 @@ describe.skipIf(!hasMongoTools)(
               rmDb()
                 .collection('items_overview')
                 .countDocuments()
-                .then((c) => c === 5 ? true : `count=${c}`),
+                .then((c) => (c === 5 ? true : `count=${c}`)),
             5000,
             100,
             'items_overview count=5 (4.3)',
@@ -898,462 +930,490 @@ describe.skipIf(!hasMongoTools)(
 // Uses a shared container to avoid per-test startup overhead.
 // Tests share a single describe with sequential test flow.
 
-describe('C5: clean restart from known states', { timeout: 60000, sequential: true, shuffle: false }, () => {
-  const { env, setup, teardown } = setupTestEnv('c5', 'c5', {
-    items: createRmDef('items_overview'),
-  }, null, null);
-
-  beforeAll(setup);
-  afterAll(teardown);
-
-  const fetchAdmin = (path, options = {}) =>
-    fetch(`http://127.0.0.1:${env.adminPort}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    }).then((res) => res.json().then((body) => ({ status: res.status, body })));
-
-  const fetchRM = (path) =>
-    fetch(`http://127.0.0.1:${env.rmAdminPort}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-    }).then((res) => res.json().then((body) => ({ status: res.status, body })));
-
-  const insertEvents = (events) =>
-    env.cleanupClient.db('c5-events').collection('events').insertMany(events);
-
-  const rmDb = () => env.cleanupClient.db('c5-rm');
-
-  // Helper: create a fresh RM context from the same MongoDB (simulates restart)
-  // Returns { restartContext, cleanup } — cleanup closes all restart servers
-  const simulateRestart = (restartPrefix) => {
-    const mqEvName = `c5-${restartPrefix}-events`;
-    const mqQName = `c5-${restartPrefix}-queries`;
-    registerSharedMqEmitter(mqEvName, mqemitter());
-    registerSharedMqEmitter(mqQName, mqemitter());
-
-    const servers = {};
-
-    return initializeContext(
-      { serviceId: `c5-${restartPrefix}-RM` },
+describe(
+  'C5: clean restart from known states',
+  { timeout: 60000, sequential: true, shuffle: false },
+  () => {
+    const { env, setup, teardown } = setupTestEnv(
+      'c5',
+      'c5',
       {
-        readModels: { items: createRmDef('items_overview') },
-        endpointName: 'rm',
-        storage: readModelStorageMongo({
-          url: env.connectionString,
-          database: 'c5-rm',
-        }),
-        eventBus: readModelEventBusMqEmitter({ mqName: mqEvName }),
-        changeNotificationSender: {
-          sendChangeNotification: () => () => Promise.resolve(),
-        },
-        commandSender: {
-          sendCommand: () => () => Promise.resolve(),
-        },
-        lifecycle: true,
+        items: createRmDef('items_overview'),
       },
-    )
-      .then((restartContext) => {
-        restartContext.adminInstructionHandler =
-          createInlineAdminInstructionHandler(restartContext);
+      null,
+      null,
+    );
 
-        // RM admin server
-        const rmApp = expressApp();
-        rmApp.use(bodyParser.json());
-        installReadModelStatusApi(restartContext)(rmApp);
-        installAdminEndpoints(restartContext, rmApp);
+    beforeAll(setup);
+    afterAll(teardown);
 
-        return new Promise((resolve, reject) => {
-          servers.rmServer = rmApp.listen(0, '127.0.0.1');
-          servers.rmServer.on('listening', () => {
-            servers.rmPort = servers.rmServer.address().port;
-            resolve(restartContext);
-          });
-          servers.rmServer.on('error', reject);
-        });
-      })
-      .then((restartContext) => {
-        // CP side
-        const cpEventStoreFactory = eventStoreMongo({
-          url: env.connectionString,
-          database: 'c5-events',
-        });
-        const cpEventBusFactory = commandProcessorEventBusMqEmitter({
-          mqName: mqEvName,
-        });
-        const cpStatusTracker = createCpStatusTracker();
-
-        return Promise.all([cpEventStoreFactory(), cpEventBusFactory()]).then(
-          ([cpEventStore, cpEventBus]) => {
-            const catchupHandler = createCatchupHandler(
-              cpEventStore,
-              cpEventBus,
-              cpStatusTracker,
-            );
-
-            const mq = getSharedMqEmitter('CP', mqEvName);
-            mq.on('__admin', ({ payload }, cb) => {
-              const { correlationId, instruction } = payload;
-              if (instruction.type === 'startCatchup') {
-                catchupHandler
-                  .startCatchup(
-                    correlationId,
-                    instruction.readModel,
-                    instruction.fromTimestamp || 0,
-                    instruction.targetEndpointName,
-                    instruction.replayRelevantEvents,
-                  )
-                  .catch(() => {});
-              }
-              cb();
-            });
-
-            const cpApp = expressApp();
-            cpApp.get('/admin/commandprocessor/status', (req, res) => {
-              res.json(cpStatusTracker.getStatus());
-            });
-            cpApp.get('/admin/commandprocessor/events', (req, res) => {
-              res.writeHead(200, {
-                'Content-Type': 'text/event-stream',
-                'Cache-Control': 'no-cache',
-                Connection: 'keep-alive',
-              });
-              res.write('\n');
-              const status = cpStatusTracker.getStatus();
-              res.write(
-                `event: status-change\ndata: ${JSON.stringify(status)}\n\n`,
-              );
-              cpStatusTracker.addSseClient(res);
-              req.on('close', () => {
-                cpStatusTracker.removeSseClient(res);
-              });
-            });
-
-            return new Promise((resolve, reject) => {
-              servers.cpServer = cpApp.listen(0, '127.0.0.1');
-              servers.cpServer.on('listening', () => {
-                servers.cpPort = servers.cpServer.address().port;
-                resolve(restartContext);
-              });
-              servers.cpServer.on('error', reject);
-            });
-          },
-        );
-      })
-      .then((restartContext) =>
-        // Admin orchestrator
-        startAdmin(
-          { serviceId: `c5-${restartPrefix}-ADMIN` },
-          {
-            port: 0,
-            eventBus: commandProcessorEventBusMqEmitter({ mqName: mqEvName }),
-            readModelServiceUrl: `http://127.0.0.1:${servers.rmPort}`,
-            commandProcessorUrl: `http://127.0.0.1:${servers.cpPort}`,
-          },
-        ).then((adminServer) => {
-          servers.adminServer = adminServer;
-          servers.adminPort = adminServer.address().port;
-          return {
-            restartContext,
-            adminPort: servers.adminPort,
-            rmPort: servers.rmPort,
-            cleanup: () => {
-              if (adminServer.__testing__) {
-                adminServer.__testing__.sseClient.disconnectAll();
-              }
-              return new Promise((r) => servers.rmServer.close(r))
-                .then(() => new Promise((r) => servers.cpServer.close(r)))
-                .then(() => new Promise((r) => adminServer.close(r)));
-            },
-          };
-        }),
+    const fetchAdmin = (path, options = {}) =>
+      fetch(`http://127.0.0.1:${env.adminPort}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      }).then((res) =>
+        res.json().then((body) => ({ status: res.status, body })),
       );
-  };
 
-  const fetchRestart = (port, path, options = {}) =>
-    fetch(`http://127.0.0.1:${port}${path}`, {
-      headers: { 'Content-Type': 'application/json' },
-      ...options,
-    }).then((res) => res.json().then((body) => ({ status: res.status, body })));
+    const fetchRM = (path) =>
+      fetch(`http://127.0.0.1:${env.rmAdminPort}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+      }).then((res) =>
+        res.json().then((body) => ({ status: res.status, body })),
+      );
 
-  // 5.1: Restart while RM was live: auto-activate, no duplicates
-  test('5.1: restart while RM was live — loads timestamp, no duplicates', () =>
-    insertEvents(
-      Array.from({ length: 5 }, (_, i) => ({
-        type: 'ITEM_CREATED',
-        aggregateId: `item-${i + 1}`,
-        timestamp: (i + 1) * 100,
-        payload: { name: `Item ${i + 1}` },
-      })),
-    )
-      .then(() =>
-        waitForCondition(
-          () =>
-            fetchAdmin('/admin/readmodel/status').then(
-              ({ body }) => body.length > 0 ? true : 'no read models yet',
-            ),
-          5000,
-          100,
-          'admin sees RM (5.1)',
-        ),
-      )
-      .then(() =>
-        fetchAdmin('/admin/readmodel/activate/rm/items', {
-          method: 'POST',
-          body: '{}',
-        }),
-      )
-      .then(() =>
-        waitForCondition(
-          () =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'live' ? true : `state=${items?.state}`;
-            }),
-          15000,
-          100,
-          'RM → live (5.1)',
-        ),
-      )
-      .then(() => rmDb().collection('items_overview').countDocuments())
-      .then((count) => {
-        expect(count).toBe(5);
-      })
-      .then(() =>
-        rmDb().collection('readmodel.state').findOne({ name: 'items' }),
-      )
-      .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
-      })
-      // "Restart" — create fresh RM context from same MongoDB
-      .then(() => simulateRestart('restart-live'))
-      .then(({ restartContext, adminPort, rmPort, cleanup }) => {
-        // Verify timestamp loaded from MongoDB
-        expect(
-          restartContext.readModels.items.lastProjectedEventTimestamp,
-        ).toBe(500);
+    const insertEvents = (events) =>
+      env.cleanupClient.db('c5-events').collection('events').insertMany(events);
 
-        return waitForCondition(
-          () =>
-            fetchRestart(adminPort, '/admin/readmodel/status').then(
-              ({ body }) => body.length > 0 ? true : 'no read models yet',
-            ),
-          5000,
-          100,
-          'restart admin sees RM (5.1)',
-        )
-          .then(() =>
-            fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
-              method: 'POST',
-              body: '{}',
-            }),
-          )
-          .then(() =>
-            waitForCondition(
-              () =>
-                fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
-                  const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
-                }),
-              15000,
-              100,
-              'restart RM → live (5.1)',
-            ),
-          )
-          .then(() =>
-            rmDb()
-              .collection('items_overview')
-              .find({}, { projection: { _id: 0 } })
-              .sort({ id: 1 })
-              .toArray(),
-          )
-          .then((items) => {
-            // No duplicates — exactly 5 items
-            expect(items).toHaveLength(5);
-          })
-          .then(() => cleanup());
-      }));
+    const rmDb = () => env.cleanupClient.db('c5-rm');
 
-  // 5.5: Restart while stopped: stays stopped, preserves timestamp
-  test('5.5: restart while stopped — stays stopped, can activate normally', () =>
-    // Stop RM (live from 5.1)
-    fetchAdmin('/admin/readmodel/stop/rm/items', {
-      method: 'POST',
-      body: '{}',
-    })
-      .then(() =>
-        waitForCondition(
-          () =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'idle' ? true : `state=${items?.state}`;
-            }),
-          5000,
-          100,
-          'RM → idle after stop (5.5)',
-        ),
+    // Helper: create a fresh RM context from the same MongoDB (simulates restart)
+    // Returns { restartContext, cleanup } — cleanup closes all restart servers
+    const simulateRestart = (restartPrefix) => {
+      const mqEvName = `c5-${restartPrefix}-events`;
+      const mqQName = `c5-${restartPrefix}-queries`;
+      registerSharedMqEmitter(mqEvName, mqemitter());
+      registerSharedMqEmitter(mqQName, mqemitter());
+
+      const servers = {};
+
+      return initializeContext(
+        { serviceId: `c5-${restartPrefix}-RM` },
+        {
+          readModels: { items: createRmDef('items_overview') },
+          endpointName: 'rm',
+          storage: readModelStorageMongo({
+            url: env.connectionString,
+            database: 'c5-rm',
+          }),
+          eventBus: readModelEventBusMqEmitter({ mqName: mqEvName }),
+          changeNotificationSender: {
+            sendChangeNotification: () => () => Promise.resolve(),
+          },
+          commandSender: {
+            sendCommand: () => () => Promise.resolve(),
+          },
+          lifecycle: true,
+        },
       )
-      .then(() =>
-        rmDb().collection('readmodel.state').findOne({ name: 'items' }),
-      )
-      .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
-      })
-      // "Restart"
-      .then(() => simulateRestart('restart-stopped'))
-      .then(({ restartContext, adminPort, rmPort, cleanup }) => {
-        // Verify starts stopped with correct timestamp
-        expect(restartContext.lifecycleManager.getState('items')).toBe(
-          'idle',
+        .then((restartContext) => {
+          restartContext.adminInstructionHandler =
+            createInlineAdminInstructionHandler(restartContext);
+
+          // RM admin server
+          const rmApp = expressApp();
+          rmApp.use(bodyParser.json());
+          installReadModelStatusApi(restartContext)(rmApp);
+          installAdminEndpoints(restartContext, rmApp);
+
+          return new Promise((resolve, reject) => {
+            servers.rmServer = rmApp.listen(0, '127.0.0.1');
+            servers.rmServer.on('listening', () => {
+              servers.rmPort = servers.rmServer.address().port;
+              resolve(restartContext);
+            });
+            servers.rmServer.on('error', reject);
+          });
+        })
+        .then((restartContext) => {
+          // CP side
+          const cpEventStoreFactory = eventStoreMongo({
+            url: env.connectionString,
+            database: 'c5-events',
+          });
+          const cpEventBusFactory = commandProcessorEventBusMqEmitter({
+            mqName: mqEvName,
+          });
+          const cpStatusTracker = createCpStatusTracker();
+
+          return Promise.all([cpEventStoreFactory(), cpEventBusFactory()]).then(
+            ([cpEventStore, cpEventBus]) => {
+              const catchupHandler = createCatchupHandler(
+                cpEventStore,
+                cpEventBus,
+                cpStatusTracker,
+              );
+
+              const mq = getSharedMqEmitter('CP', mqEvName);
+              mq.on('__admin', ({ payload }, cb) => {
+                const { correlationId, instruction } = payload;
+                if (instruction.type === 'startCatchup') {
+                  catchupHandler
+                    .startCatchup(
+                      correlationId,
+                      instruction.readModel,
+                      instruction.fromTimestamp || 0,
+                      instruction.targetEndpointName,
+                      instruction.replayRelevantEvents,
+                    )
+                    .catch(() => {});
+                }
+                cb();
+              });
+
+              const cpApp = expressApp();
+              cpApp.get('/admin/commandprocessor/status', (req, res) => {
+                res.json(cpStatusTracker.getStatus());
+              });
+              cpApp.get('/admin/commandprocessor/events', (req, res) => {
+                res.writeHead(200, {
+                  'Content-Type': 'text/event-stream',
+                  'Cache-Control': 'no-cache',
+                  Connection: 'keep-alive',
+                });
+                res.write('\n');
+                const status = cpStatusTracker.getStatus();
+                res.write(
+                  `event: status-change\ndata: ${JSON.stringify(status)}\n\n`,
+                );
+                cpStatusTracker.addSseClient(res);
+                req.on('close', () => {
+                  cpStatusTracker.removeSseClient(res);
+                });
+              });
+
+              return new Promise((resolve, reject) => {
+                servers.cpServer = cpApp.listen(0, '127.0.0.1');
+                servers.cpServer.on('listening', () => {
+                  servers.cpPort = servers.cpServer.address().port;
+                  resolve(restartContext);
+                });
+                servers.cpServer.on('error', reject);
+              });
+            },
+          );
+        })
+        .then((restartContext) =>
+          // Admin orchestrator
+          startAdmin(
+            { serviceId: `c5-${restartPrefix}-ADMIN` },
+            {
+              port: 0,
+              eventBus: commandProcessorEventBusMqEmitter({ mqName: mqEvName }),
+              readModelServiceUrl: `http://127.0.0.1:${servers.rmPort}`,
+              commandProcessorUrl: `http://127.0.0.1:${servers.cpPort}`,
+            },
+          ).then((adminServer) => {
+            servers.adminServer = adminServer;
+            servers.adminPort = adminServer.address().port;
+            return {
+              restartContext,
+              adminPort: servers.adminPort,
+              rmPort: servers.rmPort,
+              cleanup: () => {
+                if (adminServer.__testing__) {
+                  adminServer.__testing__.sseClient.disconnectAll();
+                }
+                return new Promise((r) => servers.rmServer.close(r))
+                  .then(() => new Promise((r) => servers.cpServer.close(r)))
+                  .then(() => new Promise((r) => adminServer.close(r)));
+              },
+            };
+          }),
         );
-        expect(
-          restartContext.readModels.items.lastProjectedEventTimestamp,
-        ).toBe(500);
+    };
 
-        return waitForCondition(
-          () =>
-            fetchRestart(adminPort, '/admin/readmodel/status').then(
-              ({ body }) => body.length > 0 ? true : 'no read models yet',
-            ),
-          5000,
-          100,
-          'restart admin sees RM (5.5)',
+    const fetchRestart = (port, path, options = {}) =>
+      fetch(`http://127.0.0.1:${port}${path}`, {
+        headers: { 'Content-Type': 'application/json' },
+        ...options,
+      }).then((res) =>
+        res.json().then((body) => ({ status: res.status, body })),
+      );
+
+    // 5.1: Restart while RM was live: auto-activate, no duplicates
+    test('5.1: restart while RM was live — loads timestamp, no duplicates', () =>
+      insertEvents(
+        Array.from({ length: 5 }, (_, i) => ({
+          type: 'ITEM_CREATED',
+          aggregateId: `item-${i + 1}`,
+          timestamp: (i + 1) * 100,
+          payload: { name: `Item ${i + 1}` },
+        })),
+      )
+        .then(() =>
+          waitForCondition(
+            () =>
+              fetchAdmin('/admin/readmodel/status').then(({ body }) =>
+                body.length > 0 ? true : 'no read models yet',
+              ),
+            5000,
+            100,
+            'admin sees RM (5.1)',
+          ),
         )
-          .then(() =>
-            fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
-              method: 'POST',
-              body: '{}',
-            }),
-          )
-          .then(() =>
-            waitForCondition(
-              () =>
-                fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
-                  const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
-                }),
-              15000,
-              100,
-              'restart RM → live (5.5)',
-            ),
-          )
-          .then(() =>
-            rmDb()
-              .collection('items_overview')
-              .find({}, { projection: { _id: 0 } })
-              .toArray(),
-          )
-          .then((items) => {
-            // No duplicates — exactly 5 items
-            expect(items).toHaveLength(5);
-          })
-          .then(() => cleanup());
-      }));
+        .then(() =>
+          fetchAdmin('/admin/readmodel/activate/rm/items', {
+            method: 'POST',
+            body: '{}',
+          }),
+        )
+        .then(() =>
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items && items.state === 'live'
+                  ? true
+                  : `state=${items?.state}`;
+              }),
+            15000,
+            100,
+            'RM → live (5.1)',
+          ),
+        )
+        .then(() => rmDb().collection('items_overview').countDocuments())
+        .then((count) => {
+          expect(count).toBe(5);
+        })
+        .then(() =>
+          rmDb().collection('readmodel.state').findOne({ name: 'items' }),
+        )
+        .then((stateDoc) => {
+          expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
+        })
+        // "Restart" — create fresh RM context from same MongoDB
+        .then(() => simulateRestart('restart-live'))
+        .then(({ restartContext, adminPort, rmPort, cleanup }) => {
+          // Verify timestamp loaded from MongoDB
+          expect(
+            restartContext.readModels.items.lastProjectedEventTimestamp,
+          ).toBe(500);
 
-  // 5.4: Restart after reset: timestamp 0, full catch-up rebuilds everything
-  test('5.4: restart after reset — timestamp 0, full catch-up rebuilds everything', () =>
-    // Stop RM (live from 5.5)
-    fetchAdmin('/admin/readmodel/stop/rm/items', {
-      method: 'POST',
-      body: '{}',
-    })
-      .then(() =>
-        waitForCondition(
-          () =>
-            fetchRM('/admin/readmodel').then(({ body }) => {
-              const items = body.find((rm) => rm.name === 'items');
-              return items && items.state === 'idle' ? true : `state=${items?.state}`;
-            }),
-          5000,
-          100,
-          'RM → idle after stop (5.4)',
-        ),
-      )
-      // Reset: drop data and set timestamp to 0
-      .then(() =>
-        rmDb()
-          .collection('items_overview')
-          .drop()
-          .catch(() => {}),
-      )
-      .then(() =>
-        env.rmContext.storage.updateLastProjectedEventTimestamps(
-          'reset-corr',
-          ['items'],
-          0,
-        ),
-      )
-      .then(() =>
-        rmDb().collection('readmodel.state').findOne({ name: 'items' }),
-      )
-      .then((stateDoc) => {
-        expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
+          return waitForCondition(
+            () =>
+              fetchRestart(adminPort, '/admin/readmodel/status').then(
+                ({ body }) => (body.length > 0 ? true : 'no read models yet'),
+              ),
+            5000,
+            100,
+            'restart admin sees RM (5.1)',
+          )
+            .then(() =>
+              fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
+                method: 'POST',
+                body: '{}',
+              }),
+            )
+            .then(() =>
+              waitForCondition(
+                () =>
+                  fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
+                    const items = body.find((rm) => rm.name === 'items');
+                    return items && items.state === 'live'
+                      ? true
+                      : `state=${items?.state}`;
+                  }),
+                15000,
+                100,
+                'restart RM → live (5.1)',
+              ),
+            )
+            .then(() =>
+              rmDb()
+                .collection('items_overview')
+                .find({}, { projection: { _id: 0 } })
+                .sort({ id: 1 })
+                .toArray(),
+            )
+            .then((items) => {
+              // No duplicates — exactly 5 items
+              expect(items).toHaveLength(5);
+            })
+            .then(() => cleanup());
+        }));
+
+    // 5.5: Restart while stopped: stays stopped, preserves timestamp
+    test('5.5: restart while stopped — stays stopped, can activate normally', () =>
+      // Stop RM (live from 5.1)
+      fetchAdmin('/admin/readmodel/stop/rm/items', {
+        method: 'POST',
+        body: '{}',
       })
-      // "Restart"
-      .then(() => simulateRestart('restart-reset'))
-      .then(({ restartContext, adminPort, rmPort, cleanup }) => {
-        // Verify timestamp loaded as 0
-        expect(
-          restartContext.readModels.items.lastProjectedEventTimestamp,
-        ).toBe(0);
-
-        return waitForCondition(
-          () =>
-            fetchRestart(adminPort, '/admin/readmodel/status').then(
-              ({ body }) => body.length > 0 ? true : 'no read models yet',
-            ),
-          5000,
-          100,
-          'restart admin sees RM (5.4)',
+        .then(() =>
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items && items.state === 'idle'
+                  ? true
+                  : `state=${items?.state}`;
+              }),
+            5000,
+            100,
+            'RM → idle after stop (5.5)',
+          ),
         )
-          .then(() =>
-            fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
-              method: 'POST',
-              body: '{}',
-            }),
+        .then(() =>
+          rmDb().collection('readmodel.state').findOne({ name: 'items' }),
+        )
+        .then((stateDoc) => {
+          expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
+        })
+        // "Restart"
+        .then(() => simulateRestart('restart-stopped'))
+        .then(({ restartContext, adminPort, rmPort, cleanup }) => {
+          // Verify starts stopped with correct timestamp
+          expect(restartContext.lifecycleManager.getState('items')).toBe(
+            'idle',
+          );
+          expect(
+            restartContext.readModels.items.lastProjectedEventTimestamp,
+          ).toBe(500);
+
+          return waitForCondition(
+            () =>
+              fetchRestart(adminPort, '/admin/readmodel/status').then(
+                ({ body }) => (body.length > 0 ? true : 'no read models yet'),
+              ),
+            5000,
+            100,
+            'restart admin sees RM (5.5)',
           )
-          .then(() =>
-            waitForCondition(
-              () =>
-                fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
-                  const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
-                }),
-              15000,
-              100,
-              'restart RM → live (5.4)',
-            ),
+            .then(() =>
+              fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
+                method: 'POST',
+                body: '{}',
+              }),
+            )
+            .then(() =>
+              waitForCondition(
+                () =>
+                  fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
+                    const items = body.find((rm) => rm.name === 'items');
+                    return items && items.state === 'live'
+                      ? true
+                      : `state=${items?.state}`;
+                  }),
+                15000,
+                100,
+                'restart RM → live (5.5)',
+              ),
+            )
+            .then(() =>
+              rmDb()
+                .collection('items_overview')
+                .find({}, { projection: { _id: 0 } })
+                .toArray(),
+            )
+            .then((items) => {
+              // No duplicates — exactly 5 items
+              expect(items).toHaveLength(5);
+            })
+            .then(() => cleanup());
+        }));
+
+    // 5.4: Restart after reset: timestamp 0, full catch-up rebuilds everything
+    test('5.4: restart after reset — timestamp 0, full catch-up rebuilds everything', () =>
+      // Stop RM (live from 5.5)
+      fetchAdmin('/admin/readmodel/stop/rm/items', {
+        method: 'POST',
+        body: '{}',
+      })
+        .then(() =>
+          waitForCondition(
+            () =>
+              fetchRM('/admin/readmodel').then(({ body }) => {
+                const items = body.find((rm) => rm.name === 'items');
+                return items && items.state === 'idle'
+                  ? true
+                  : `state=${items?.state}`;
+              }),
+            5000,
+            100,
+            'RM → idle after stop (5.4)',
+          ),
+        )
+        // Reset: drop data and set timestamp to 0
+        .then(() =>
+          rmDb()
+            .collection('items_overview')
+            .drop()
+            .catch(() => {}),
+        )
+        .then(() =>
+          env.rmContext.storage.updateLastProjectedEventTimestamps(
+            'reset-corr',
+            ['items'],
+            0,
+          ),
+        )
+        .then(() =>
+          rmDb().collection('readmodel.state').findOne({ name: 'items' }),
+        )
+        .then((stateDoc) => {
+          expect(stateDoc.lastProjectedEventTimestamp).toBe(0);
+        })
+        // "Restart"
+        .then(() => simulateRestart('restart-reset'))
+        .then(({ restartContext, adminPort, rmPort, cleanup }) => {
+          // Verify timestamp loaded as 0
+          expect(
+            restartContext.readModels.items.lastProjectedEventTimestamp,
+          ).toBe(0);
+
+          return waitForCondition(
+            () =>
+              fetchRestart(adminPort, '/admin/readmodel/status').then(
+                ({ body }) => (body.length > 0 ? true : 'no read models yet'),
+              ),
+            5000,
+            100,
+            'restart admin sees RM (5.4)',
           )
-          .then(() =>
-            waitForCondition(
-              () =>
-                rmDb()
-                  .collection('items_overview')
-                  .countDocuments()
-                  .then((c) => c === 5 ? true : `count=${c}`),
-              5000,
-              100,
-              'items_overview count=5 (5.4)',
-            ),
-          )
-          .then(() =>
-            rmDb()
-              .collection('items_overview')
-              .find({}, { projection: { _id: 0 } })
-              .sort({ id: 1 })
-              .toArray(),
-          )
-          .then((items) => {
-            // Full catch-up rebuilt all 5 items from ts=0
-            expect(items).toHaveLength(5);
-          })
-          .then(() =>
-            rmDb().collection('readmodel.state').findOne({ name: 'items' }),
-          )
-          .then((stateDoc) => {
-            expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
-          })
-          .then(() => cleanup());
-      }));
-});
+            .then(() =>
+              fetchRestart(adminPort, '/admin/readmodel/activate/rm/items', {
+                method: 'POST',
+                body: '{}',
+              }),
+            )
+            .then(() =>
+              waitForCondition(
+                () =>
+                  fetchRestart(rmPort, '/admin/readmodel').then(({ body }) => {
+                    const items = body.find((rm) => rm.name === 'items');
+                    return items && items.state === 'live'
+                      ? true
+                      : `state=${items?.state}`;
+                  }),
+                15000,
+                100,
+                'restart RM → live (5.4)',
+              ),
+            )
+            .then(() =>
+              waitForCondition(
+                () =>
+                  rmDb()
+                    .collection('items_overview')
+                    .countDocuments()
+                    .then((c) => (c === 5 ? true : `count=${c}`)),
+                5000,
+                100,
+                'items_overview count=5 (5.4)',
+              ),
+            )
+            .then(() =>
+              rmDb()
+                .collection('items_overview')
+                .find({}, { projection: { _id: 0 } })
+                .sort({ id: 1 })
+                .toArray(),
+            )
+            .then((items) => {
+              // Full catch-up rebuilt all 5 items from ts=0
+              expect(items).toHaveLength(5);
+            })
+            .then(() =>
+              rmDb().collection('readmodel.state').findOne({ name: 'items' }),
+            )
+            .then((stateDoc) => {
+              expect(stateDoc.lastProjectedEventTimestamp).toBe(500);
+            })
+            .then(() => cleanup());
+        }));
+  },
+);
 
 // ── 5.3: Restart after backup restore ─────────────────────────────────
 // Verify that restarting from the same MongoDB after a backup restore
@@ -1588,8 +1648,8 @@ describe.skipIf(!hasMongoTools)(
           .then(() =>
             waitForCondition(
               () =>
-                fetchAdmin('/admin/readmodel/status').then(
-                  ({ body }) => body.length > 0 ? true : 'no read models yet',
+                fetchAdmin('/admin/readmodel/status').then(({ body }) =>
+                  body.length > 0 ? true : 'no read models yet',
                 ),
               5000,
               100,
@@ -1607,7 +1667,9 @@ describe.skipIf(!hasMongoTools)(
               () =>
                 fetchRM('/admin/readmodel').then(({ body }) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'live' ? true : `state=${items?.state}`;
+                  return items && items.state === 'live'
+                    ? true
+                    : `state=${items?.state}`;
                 }),
               15000,
               100,
@@ -1639,7 +1701,9 @@ describe.skipIf(!hasMongoTools)(
               () =>
                 fetchRM('/admin/readmodel').then(({ body }) => {
                   const items = body.find((rm) => rm.name === 'items');
-                  return items && items.state === 'idle' ? true : `state=${items?.state}`;
+                  return items && items.state === 'idle'
+                    ? true
+                    : `state=${items?.state}`;
                 }),
               5000,
               100,
@@ -1676,7 +1740,7 @@ describe.skipIf(!hasMongoTools)(
             return waitForCondition(
               () =>
                 fetchRestart53(adminPort, '/admin/readmodel/status').then(
-                  ({ body }) => body.length > 0 ? true : 'no read models yet',
+                  ({ body }) => (body.length > 0 ? true : 'no read models yet'),
                 ),
               5000,
               100,
@@ -1698,7 +1762,9 @@ describe.skipIf(!hasMongoTools)(
                     fetchRestart53(rmPort, '/admin/readmodel').then(
                       ({ body }) => {
                         const items = body.find((rm) => rm.name === 'items');
-                        return items && items.state === 'live' ? true : `state=${items?.state}`;
+                        return items && items.state === 'live'
+                          ? true
+                          : `state=${items?.state}`;
                       },
                     ),
                   15000,
@@ -1712,7 +1778,7 @@ describe.skipIf(!hasMongoTools)(
                     rmDb()
                       .collection('items_overview')
                       .countDocuments()
-                      .then((c) => c === 7 ? true : `count=${c}`),
+                      .then((c) => (c === 7 ? true : `count=${c}`)),
                   5000,
                   100,
                   'items_overview count=7 (5.3)',
@@ -1804,8 +1870,8 @@ describe(
           // Wait for RM to reach live state
           return waitForCondition(
             () =>
-              fetchAdmin('/admin/readmodel/status/rm/items').then(
-                (r) => r.body.state === 'live' ? true : `state=${r.body.state}`,
+              fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                r.body.state === 'live' ? true : `state=${r.body.state}`,
               ),
             15000,
             100,
@@ -1884,8 +1950,8 @@ describe(
         .then(() =>
           waitForCondition(
             () =>
-              fetchAdmin('/admin/readmodel/status/rm/items').then(
-                (r) => r.body.state === 'live' ? true : `state=${r.body.state}`,
+              fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                r.body.state === 'live' ? true : `state=${r.body.state}`,
               ),
             15000,
             100,
@@ -1910,8 +1976,8 @@ describe(
           // Wait for RM to go back to live after replay+activate
           return waitForCondition(
             () =>
-              fetchAdmin('/admin/readmodel/status/rm/items').then(
-                (r) => r.body.state === 'live' ? true : `state=${r.body.state}`,
+              fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                r.body.state === 'live' ? true : `state=${r.body.state}`,
               ),
             30000,
             100,
@@ -2022,8 +2088,8 @@ describe.skipIf(!hasMongoTools)(
           .then(() =>
             waitForCondition(
               () =>
-                fetchAdmin('/admin/readmodel/status/rm/items').then(
-                  (r) => r.body.state === 'live' ? true : `state=${r.body.state}`,
+                fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                  r.body.state === 'live' ? true : `state=${r.body.state}`,
                 ),
               15000,
               100,
@@ -2037,7 +2103,7 @@ describe.skipIf(!hasMongoTools)(
                 rmDb()
                   .collection('items_overview')
                   .countDocuments()
-                  .then((c) => c === 3 ? true : `count=${c}`),
+                  .then((c) => (c === 3 ? true : `count=${c}`)),
               5000,
               100,
               'items_overview count=3 (10.8)',
@@ -2051,12 +2117,11 @@ describe.skipIf(!hasMongoTools)(
             // Wait for backup to complete
             waitForCondition(
               () =>
-                fetchAdmin('/admin/readmodel/status/rm/items').then(
-                  (r) =>
-                    r.body.backupProgress?.state === 'idle' &&
-                    r.body.backupProgress?.backupId
-                      ? true
-                      : `backupState=${r.body.backupProgress?.state}`,
+                fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                  r.body.backupProgress?.state === 'idle' &&
+                  r.body.backupProgress?.backupId
+                    ? true
+                    : `backupState=${r.body.backupProgress?.state}`,
                 ),
               10000,
               100,
@@ -2099,8 +2164,8 @@ describe.skipIf(!hasMongoTools)(
 
             return waitForCondition(
               () =>
-                fetchAdmin('/admin/readmodel/status/rm/items').then(
-                  (r) => r.body.state === 'live' ? true : `state=${r.body.state}`,
+                fetchAdmin('/admin/readmodel/status/rm/items').then((r) =>
+                  r.body.state === 'live' ? true : `state=${r.body.state}`,
                 ),
               30000,
               100,
@@ -2114,7 +2179,7 @@ describe.skipIf(!hasMongoTools)(
                 rmDb()
                   .collection('items_overview')
                   .countDocuments()
-                  .then((c) => c === 5 ? true : `count=${c}`),
+                  .then((c) => (c === 5 ? true : `count=${c}`)),
               10000,
               100,
               'items_overview count=5 (10.8)',

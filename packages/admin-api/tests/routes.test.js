@@ -66,6 +66,8 @@ const createMockSseClient = () => ({
   removeBrowserClient: vi.fn(),
   fetchBackupList: vi.fn().mockResolvedValue([]),
   fetchLastEventStoreTimestamp: vi.fn().mockResolvedValue(5000),
+  isConnected: vi.fn().mockReturnValue(true),
+  fetchAllStatus: vi.fn().mockResolvedValue(undefined),
 });
 
 const createMockOrchestrator = () => ({
@@ -800,6 +802,95 @@ describe('createRoutes', () => {
 
       expect(res.status).toHaveBeenCalledWith(404);
       expect(eventBus.publishAdminInstruction).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cache freshness when SSE is disconnected', () => {
+    beforeEach(() => {
+      sseClient.isConnected.mockReturnValue(false);
+    });
+
+    test('readModelStatusAll refreshes the cache first', () => {
+      const res = mockRes();
+
+      return Promise.resolve(routes.readModelStatusAll(mockReq(), res)).then(
+        () => {
+          expect(sseClient.fetchAllStatus).toHaveBeenCalled();
+          expect(res.json).toHaveBeenCalledWith([
+            expect.objectContaining({ readModelName: 'customers' }),
+          ]);
+        },
+      );
+    });
+
+    test('readModelStatusAll does not refresh when connected', () => {
+      sseClient.isConnected.mockReturnValue(true);
+      const res = mockRes();
+
+      routes.readModelStatusAll(mockReq(), res);
+
+      expect(sseClient.fetchAllStatus).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalled();
+    });
+
+    test('readModelStatusOne refreshes the cache first', () => {
+      const res = mockRes();
+      const req = mockReq({}, { ep: 'ep1', rm: 'customers' });
+
+      return Promise.resolve(routes.readModelStatusOne(req, res)).then(() => {
+        expect(sseClient.fetchAllStatus).toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ state: 'live' }),
+        );
+      });
+    });
+
+    test('commandProcessorStatus refreshes the cache first', () => {
+      const res = mockRes();
+
+      return Promise.resolve(
+        routes.commandProcessorStatus(mockReq(), res),
+      ).then(() => {
+        expect(sseClient.fetchAllStatus).toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ state: 'idle' }),
+        );
+      });
+    });
+
+    test('validateReadModel-guarded endpoint sees RMs discovered by the refresh', () => {
+      // Simulate a cold cache that only knows the RM after fetchAllStatus ran
+      sseClient.cache.getReadModel.mockImplementation((ep, rm) =>
+        sseClient.fetchAllStatus.mock.calls.length > 0 &&
+        ep === 'ep1' &&
+        rm === 'customers'
+          ? { endpointName: 'ep1', readModelName: 'customers', state: 'live' }
+          : null,
+      );
+      const publishFn = vi.fn();
+      eventBus.publishAdminInstruction.mockReturnValue(publishFn);
+
+      const req = mockReq({}, { ep: 'ep1', rm: 'customers' });
+      const res = mockRes();
+
+      return Promise.resolve(routes.stopRm(req, res)).then(() => {
+        expect(res.status).not.toHaveBeenCalledWith(404);
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ status: 'stopping' }),
+        );
+      });
+    });
+
+    test('replayPreflight refreshes the cache first', () => {
+      const res = mockRes();
+      const req = mockReq({}, { ep: 'ep1', rm: 'customers' });
+
+      return Promise.resolve(routes.replayPreflight(req, res)).then(() => {
+        expect(sseClient.fetchAllStatus).toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith(
+          expect.objectContaining({ found: true }),
+        );
+      });
     });
   });
 });

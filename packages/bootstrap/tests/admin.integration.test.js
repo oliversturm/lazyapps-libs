@@ -134,9 +134,8 @@ describe('startAdmin integration', { timeout: 30000 }, () => {
         console.log(`[ENV admin] Admin server on port ${adminPort}`);
         console.log(`[ENV admin] Admin → RM: http://127.0.0.1:${mockRmPort}`);
         console.log(`[ENV admin] Admin → CP: http://127.0.0.1:${mockCpPort}`);
-        // Wait for SSE client to connect and populate cache
-        // (prevents 404s on endpoints that read from cached RM state)
-        return new Promise((resolve) => setTimeout(resolve, 500));
+        // No SSE warm-up wait needed: endpoints that read from the status
+        // cache refresh it on demand while no SSE is connected
       }),
     ),
   );

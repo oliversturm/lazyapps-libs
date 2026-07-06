@@ -292,7 +292,9 @@ const setupTestEnv = (
   };
 
   const setup = () => {
-    console.log(`[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`);
+    console.log(
+      `[ENV ${dbPrefix}] Registering mqemitters: ${mqPrefix}-events, ${mqPrefix}-queries`,
+    );
     registerSharedMqEmitter(`${mqPrefix}-events`, mqemitter());
     registerSharedMqEmitter(`${mqPrefix}-queries`, mqemitter());
 
@@ -300,15 +302,21 @@ const setupTestEnv = (
       .then((adminPort) => {
         env.adminPort = adminPort;
         console.log(`[ENV ${dbPrefix}] Admin port: ${adminPort}`);
-        console.log(`[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`);
+        console.log(
+          `[ENV ${dbPrefix}] Connecting to MongoDB: ${sharedConnectionString}`,
+        );
         return MongoClient.connect(sharedConnectionString);
       })
       .then((client) => {
         env.cleanupClient = client;
 
         console.log(`[ENV ${dbPrefix}] RM storage database: ${dbPrefix}-rm`);
-        console.log(`[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`);
-        console.log(`[ENV ${dbPrefix}] Backup path: ${backupConfig?.backupPath || 'none'}`);
+        console.log(
+          `[ENV ${dbPrefix}] RM storage URL: ${env.connectionString}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Backup path: ${backupConfig?.backupPath || 'none'}`,
+        );
         const contextConfig = {
           readModels: readModelDefs,
           endpointName: 'rm',
@@ -341,7 +349,9 @@ const setupTestEnv = (
       })
       .then((context) => {
         env.rmContext = context;
-        console.log(`[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}, backup: ${!!context.backup}`);
+        console.log(
+          `[ENV ${dbPrefix}] RM context initialized, lifecycle: ${!!context.lifecycleManager}, backup: ${!!context.backup}`,
+        );
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -359,15 +369,21 @@ const setupTestEnv = (
           env.rmAdminServer = app.listen(0, '127.0.0.1');
           env.rmAdminServer.on('listening', () => {
             env.rmAdminPort = env.rmAdminServer.address().port;
-            console.log(`[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`);
+            console.log(
+              `[ENV ${dbPrefix}] RM admin server on port ${env.rmAdminPort}`,
+            );
             resolve();
           });
           env.rmAdminServer.on('error', reject);
         });
       })
       .then(() => {
-        console.log(`[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`);
-        console.log(`[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`);
+        console.log(
+          `[ENV ${dbPrefix}] CP event store database: ${dbPrefix}-events`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] CP event store URL: ${env.connectionString}`,
+        );
         const cpEventStoreFactory = eventStoreMongo({
           url: env.connectionString,
           database: `${dbPrefix}-events`,
@@ -400,7 +416,9 @@ const setupTestEnv = (
             // CP-side admin instruction handler
             mq.on('__admin', ({ payload }, cb) => {
               const { correlationId, instruction } = payload;
-              console.log(`[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`);
+              console.log(
+                `[CP ${mqPrefix}] ${instruction.type} rm=${instruction.readModel || '?'} fromTs=${instruction.fromTimestamp || '?'} ep=${instruction.targetEndpointName || '?'}`,
+              );
               switch (instruction.type) {
                 case 'startCatchup':
                   catchupHandler
@@ -412,10 +430,14 @@ const setupTestEnv = (
                       instruction.replayRelevantEvents,
                     )
                     .then(() => {
-                      console.log(`[CP ${mqPrefix}] startCatchup completed for ${instruction.readModel}`);
+                      console.log(
+                        `[CP ${mqPrefix}] startCatchup completed for ${instruction.readModel}`,
+                      );
                     })
                     .catch((err) => {
-                      console.log(`[CP ${mqPrefix}] startCatchup FAILED for ${instruction.readModel}: ${err.message}`);
+                      console.log(
+                        `[CP ${mqPrefix}] startCatchup FAILED for ${instruction.readModel}: ${err.message}`,
+                      );
                     });
                   break;
                 case 'cancelCatchup':
@@ -446,19 +468,10 @@ const setupTestEnv = (
               cb();
             });
 
-            // RM-side admin instruction handler
-            const rmMq = getSharedMqEmitter(
-              'RM',
-              `${mqPrefix}-events`,
-            );
-            rmMq.on('__admin', ({ payload }, cb) => {
-              const { correlationId, instruction } = payload;
-              env.rmContext.adminInstructionHandler(
-                correlationId,
-                instruction,
-              );
-              cb();
-            });
+            // NOTE: no extra __admin subscription here — the RM event bus
+            // (readModelEventBusMqEmitter) already delivers admin instructions
+            // to context.adminInstructionHandler; a second subscription would
+            // double-process every instruction
 
             const cpApp = expressApp();
             cpApp.use(bodyParser.json());
@@ -496,7 +509,9 @@ const setupTestEnv = (
               env.cpServer = cpApp.listen(0, '127.0.0.1');
               env.cpServer.on('listening', () => {
                 env.cpPort = env.cpServer.address().port;
-                console.log(`[ENV ${dbPrefix}] CP server on port ${env.cpPort}`);
+                console.log(
+                  `[ENV ${dbPrefix}] CP server on port ${env.cpPort}`,
+                );
                 resolve();
               });
               env.cpServer.on('error', reject);
@@ -505,9 +520,15 @@ const setupTestEnv = (
         );
       })
       .then(() => {
-        console.log(`[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`);
-        console.log(`[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`);
-        console.log(`[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`);
+        console.log(
+          `[ENV ${dbPrefix}] Starting admin service on port ${env.adminPort}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Admin → RM: http://127.0.0.1:${env.rmAdminPort}`,
+        );
+        console.log(
+          `[ENV ${dbPrefix}] Admin → CP: http://127.0.0.1:${env.cpPort}`,
+        );
         return startAdmin(
           { serviceId: `${dbPrefix}-TEST` },
           {
@@ -546,9 +567,7 @@ const setupTestEnv = (
           ? new Promise((r) => env.adminServer.close(r))
           : undefined,
       )
-      .then(() =>
-        env.cleanupClient ? env.cleanupClient.close() : undefined,
-      );
+      .then(() => (env.cleanupClient ? env.cleanupClient.close() : undefined));
 
   return { env, setup, teardown };
 };
@@ -558,10 +577,9 @@ const setupTestEnv = (
 // Each test gets its own isolated environment (own RM context, admin service,
 // event bus) sharing only the MongoDB container.
 
-describe.skipIf(!hasMongoTools).sequential(
-  'backup state invariants',
-  { timeout: 120000 },
-  () => {
+describe
+  .skipIf(!hasMongoTools)
+  .sequential('backup state invariants', { timeout: 120000 }, () => {
     let container;
     let connectionString;
     let backupPath;
@@ -578,10 +596,7 @@ describe.skipIf(!hasMongoTools).sequential(
           .listDatabases()
           .then(({ databases }) =>
             databases
-              .filter(
-                (db) =>
-                  !['admin', 'config', 'local'].includes(db.name),
-              )
+              .filter((db) => !['admin', 'config', 'local'].includes(db.name))
               .reduce(
                 (chain, db) =>
                   chain.then((acc) =>
@@ -636,8 +651,7 @@ describe.skipIf(!hasMongoTools).sequential(
         mkdtemp(join(tmpdir(), 'bk-inv-test-')),
       ]).then(([c, bp]) => {
         container = c;
-        connectionString =
-          c.getConnectionString() + '?directConnection=true';
+        connectionString = c.getConnectionString() + '?directConnection=true';
         backupPath = bp;
       }),
     );
@@ -655,7 +669,9 @@ describe.skipIf(!hasMongoTools).sequential(
     // Helper: create an isolated test environment, insert events, activate
     // RM, wait for it to be live with projected data. Returns env + helpers.
     const createActiveEnv = (prefix, eventCount) => {
-      console.log(`[TEST ${prefix}] Creating active env with ${eventCount} events`);
+      console.log(
+        `[TEST ${prefix}] Creating active env with ${eventCount} events`,
+      );
       const testEnv = setupTestEnv(
         prefix,
         prefix,
@@ -691,14 +707,14 @@ describe.skipIf(!hasMongoTools).sequential(
         rmDb()
           .collection('readmodel.state')
           .findOne({ name: 'items' })
-          .then((doc) =>
-            doc ? doc.lastProjectedEventTimestamp : undefined,
-          );
+          .then((doc) => (doc ? doc.lastProjectedEventTimestamp : undefined));
 
       const ready = testEnv
         .setup()
         .then(() => {
-          console.log(`[TEST ${prefix}] Inserting ${eventCount} events into ${prefix}-events`);
+          console.log(
+            `[TEST ${prefix}] Inserting ${eventCount} events into ${prefix}-events`,
+          );
           return insertEvents(
             Array.from({ length: eventCount }, (_, i) => ({
               type: 'ITEM_CREATED',
@@ -714,15 +730,16 @@ describe.skipIf(!hasMongoTools).sequential(
             .collection('events')
             .countDocuments()
             .then((count) => {
-              console.log(`[TEST ${prefix}] Events in DB after insert: ${count}`);
+              console.log(
+                `[TEST ${prefix}] Events in DB after insert: ${count}`,
+              );
             }),
         )
         .then(() =>
           waitForCondition(
             () =>
-              fetchAdmin('/admin/readmodel/status').then(
-                ({ body }) =>
-                  body.length > 0 ? true : 'no read models yet',
+              fetchAdmin('/admin/readmodel/status').then(({ body }) =>
+                body.length > 0 ? true : 'no read models yet',
               ),
             5000,
             100,
@@ -770,7 +787,9 @@ describe.skipIf(!hasMongoTools).sequential(
             .collection('items_overview')
             .countDocuments()
             .then((count) => {
-              console.log(`[TEST ${prefix}] items_overview count after live: ${count}`);
+              console.log(
+                `[TEST ${prefix}] items_overview count after live: ${count}`,
+              );
             }),
         )
         .then(() => dumpAllDbs(`${prefix} after setup`))
@@ -799,8 +818,10 @@ describe.skipIf(!hasMongoTools).sequential(
 
     // 1.9: Backup create — timestamp unchanged, data unchanged, backup files
     test('1.9: backup create leaves timestamp and data unchanged, backup files exist', () => {
-      const { testEnv, rmDb, getTimestamp, ready } =
-        createActiveEnv('bk-19', 4);
+      const { testEnv, rmDb, getTimestamp, ready } = createActiveEnv(
+        'bk-19',
+        4,
+      );
 
       return ready
         .then(() => getTimestamp())
@@ -899,13 +920,19 @@ describe.skipIf(!hasMongoTools).sequential(
         )
         .then(() => {
           console.log(`[TEST bk-110] Starting restore, backupId=${backupId}`);
-          console.log(`[TEST bk-110] RM context backup: ${!!testEnv.env.rmContext.backup}`);
-          console.log(`[TEST bk-110] RM DB: querying readmodel.state before restore...`);
+          console.log(
+            `[TEST bk-110] RM context backup: ${!!testEnv.env.rmContext.backup}`,
+          );
+          console.log(
+            `[TEST bk-110] RM DB: querying readmodel.state before restore...`,
+          );
           return rmDb()
             .collection('readmodel.state')
             .findOne({ name: 'items' })
             .then((doc) => {
-              console.log(`[TEST bk-110] readmodel.state before restore: ${JSON.stringify(doc)}`);
+              console.log(
+                `[TEST bk-110] readmodel.state before restore: ${JSON.stringify(doc)}`,
+              );
             });
         })
         .then(
@@ -920,11 +947,17 @@ describe.skipIf(!hasMongoTools).sequential(
             }),
         )
         .then(() => {
-          console.log(`[TEST bk-110] Restore timeout elapsed, querying readmodel.state...`);
-          return rmDb().collection('readmodel.state').findOne({ name: 'items' });
+          console.log(
+            `[TEST bk-110] Restore timeout elapsed, querying readmodel.state...`,
+          );
+          return rmDb()
+            .collection('readmodel.state')
+            .findOne({ name: 'items' });
         })
         .then((stateDoc) => {
-          console.log(`[TEST bk-110] readmodel.state after restore: ${JSON.stringify(stateDoc)}`);
+          console.log(
+            `[TEST bk-110] readmodel.state after restore: ${JSON.stringify(stateDoc)}`,
+          );
           expect(stateDoc).not.toBeNull();
           expect(stateDoc.replayInProgress).toBe(true);
         })
@@ -1013,5 +1046,4 @@ describe.skipIf(!hasMongoTools).sequential(
         .then(() => dumpAllDbs(`after ${testEnv.env.adminPort}`))
         .finally(() => testEnv.teardown());
     });
-  },
-);
+  });

@@ -707,7 +707,7 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
     );
 
     return sseClient
-      .ensureConnected()
+      .startOperation()
       .then(() => {
         // Step 1: Send activate command to RM
         log.info('Step 1: Sending activate command');
@@ -803,28 +803,39 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
         }, STEP_TIMEOUT_MS);
       })
       .then((result) => {
-        if (skipCatchup) return result;
+        if (skipCatchup) {
+          sseClient.endOperation();
+          return result;
+        }
         log.info(`Activation complete for ${ep}/${rm}`);
+        sseClient.endOperation();
         return { status: 'live', endpointName: ep, readModel: rm };
+      })
+      .catch((err) => {
+        sseClient.endOperation();
+        throw err;
       });
   };
 
   const activateAll = () => {
     const log = getLogger('Admin/Activate', 'ALL');
-    const allRms = sseClient.cache.getAllReadModels();
-    const keys = Object.keys(allRms);
 
-    if (keys.length === 0) {
-      log.info('No read models discovered, nothing to activate');
-      return Promise.resolve([]);
-    }
-
-    log.info(`Activating all read models: ${keys.join(', ')}`);
-
+    // Start the operation first — connecting populates the status cache,
+    // so a cold (never-connected) admin service still discovers the RMs
     return sseClient
       .startOperation()
-      .then(() =>
-        Promise.all(
+      .then(() => {
+        const allRms = sseClient.cache.getAllReadModels();
+        const keys = Object.keys(allRms);
+
+        if (keys.length === 0) {
+          log.info('No read models discovered, nothing to activate');
+          return [];
+        }
+
+        log.info(`Activating all read models: ${keys.join(', ')}`);
+
+        return Promise.all(
           keys.map((key) => {
             const rm = allRms[key];
             return activationOrchestration(
@@ -835,8 +846,8 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
               return { status: 'error', key, error: err.message };
             });
           }),
-        ),
-      )
+        );
+      })
       .then((results) => {
         sseClient.endOperation();
         return results;

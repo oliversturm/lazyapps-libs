@@ -168,6 +168,13 @@ export const createCpStatusTracker = () => {
 
   const addSseClient = (res) => {
     sseClients.add(res);
+    // Send the current status so a newly connected client doesn't miss
+    // transitions that happened before its stream was established
+    const status = getStatus();
+    res.write(`event: status-change\ndata: ${JSON.stringify(status)}\n\n`);
+    log.debug(
+      `SSE client connected, sent status snapshot (state=${status.state})`,
+    );
   };
 
   const removeSseClient = (res) => {

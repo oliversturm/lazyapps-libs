@@ -83,8 +83,14 @@ export const initializeContext = (
         : Promise.resolve(context),
     )
     .then((context) => {
-      const statusTracker = createStatusTracker(readModels, endpointName);
-      statusTracker.initialize(Object.keys(readModels));
+      // Seed the tracker from the CLONED read models — they carry the
+      // timestamps loaded from storage above; the caller's originals
+      // deliberately do not. Seeding from the originals made a freshly
+      // (re)started service advertise lastProjectedEventTimestamp 0 over
+      // SSE/status, so catch-up orchestration restarted from T=0 and
+      // re-projected everything.
+      const statusTracker = createStatusTracker(clonedReadModels, endpointName);
+      statusTracker.initialize(Object.keys(clonedReadModels));
       return { ...context, statusTracker };
     })
     .then((context) => ({
