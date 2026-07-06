@@ -20,7 +20,7 @@ describe('isDuplicate', () => {
       lastCatchupTimestamp: 200,
       catchupEventFingerprints: new Set(),
     };
-    expect(isDuplicate(event, state, 200)).toBe(true);
+    expect(isDuplicate(event, state)).toBe(true);
   });
 
   test('returns true for fingerprint match at boundary timestamp', () => {
@@ -29,7 +29,7 @@ describe('isDuplicate', () => {
       lastCatchupTimestamp: 200,
       catchupEventFingerprints: new Set(['200:A:1']),
     };
-    expect(isDuplicate(event, state, 200)).toBe(true);
+    expect(isDuplicate(event, state)).toBe(true);
   });
 
   test('returns false for non-matching fingerprint at boundary timestamp', () => {
@@ -38,7 +38,7 @@ describe('isDuplicate', () => {
       lastCatchupTimestamp: 200,
       catchupEventFingerprints: new Set(['200:A:1']),
     };
-    expect(isDuplicate(event, state, 200)).toBe(false);
+    expect(isDuplicate(event, state)).toBe(false);
   });
 
   test('returns false when event timestamp is above lastCatchupTimestamp', () => {
@@ -47,7 +47,7 @@ describe('isDuplicate', () => {
       lastCatchupTimestamp: 200,
       catchupEventFingerprints: new Set(),
     };
-    expect(isDuplicate(event, state, 200)).toBe(false);
+    expect(isDuplicate(event, state)).toBe(false);
   });
 });
 
@@ -114,7 +114,7 @@ describe('catchupHandler', () => {
       });
 
       context.projectionHandler.projectCatchupEventForReadModel.mockImplementation(
-        (correlationId, readModel) => (event) => {
+        (correlationId) => (event) => {
           projectedEvents.push({ correlationId, event });
           return Promise.resolve();
         },
@@ -153,7 +153,7 @@ describe('catchupHandler', () => {
       });
 
       context.projectionHandler.projectCatchupEventForReadModel.mockImplementation(
-        (correlationId, readModel) => (event) => {
+        () => (event) => {
           projectedEvents.push(event);
           return Promise.resolve();
         },
@@ -186,7 +186,7 @@ describe('catchupHandler', () => {
       });
 
       context.projectionHandler.projectCatchupEventForReadModel.mockImplementation(
-        (correlationId, readModel) => (event) => {
+        () => (event) => {
           projectedEvents.push(event);
           return Promise.resolve();
         },
@@ -210,7 +210,7 @@ describe('catchupHandler', () => {
       };
       context.projectionHandler.getCatchupState.mockReturnValue(state);
       context.projectionHandler.projectCatchupEventForReadModel.mockImplementation(
-        (correlationId, readModel) => (event) => {
+        () => (event) => {
           projectedEvents.push(event);
           return Promise.resolve();
         },

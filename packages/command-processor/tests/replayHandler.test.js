@@ -319,11 +319,10 @@ describe('createReplayHandler', () => {
 
   describe('cancelReplay', () => {
     test('cancels an in-progress replay', () => {
-      let resolveNext;
       const neverCursor = {
         next: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
-            resolveNext = resolve;
+          new Promise(() => {
+            // never resolves — replay stays in progress until cancelled
           }),
         ),
         close: vi.fn().mockResolvedValue(),

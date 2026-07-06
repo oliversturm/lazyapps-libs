@@ -63,10 +63,8 @@ vi.mock('promise-queue', () => {
 });
 
 describe('collectProjections', () => {
-  let log;
-
   beforeEach(() => {
-    log = getLogger();
+    getLogger();
   });
 
   afterEach(() => {

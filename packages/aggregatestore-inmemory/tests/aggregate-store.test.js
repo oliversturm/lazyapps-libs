@@ -13,9 +13,7 @@ vi.mock('@lazyapps/logger', () => {
 
 const aggregates = {
   thing: {
-    initial: () => {
-      flag: 'initial';
-    },
+    initial: () => ({ flag: 'initial' }),
     projections: {
       CREATED: (/*state, event*/) => ({ flag: 'created' }),
     },
@@ -66,7 +64,10 @@ describe('applyAggregateProjection', () => {
     // the algorithm does what it should. For now.
     expect(log.debug).toBeCalledTimes(1);
     expect(log.warn).toBeCalledTimes(0);
-    expect(store.getAggregateState('thing', 'id-1')).toBeUndefined();
+    // No projection for the event type — state stays at the initial value
+    expect(store.getAggregateState('thing', 'id-1')).toEqual({
+      flag: 'initial',
+    });
   });
 
   test('event out of sequence', () => {
@@ -123,6 +124,8 @@ describe('applyAggregateProjection', () => {
     store.clear();
 
     // After clear, aggregate state should return initial value
-    expect(store.getAggregateState('thing', 'id-1')).toBeUndefined();
+    expect(store.getAggregateState('thing', 'id-1')).toEqual({
+      flag: 'initial',
+    });
   });
 });

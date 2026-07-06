@@ -42,7 +42,7 @@ const handleCreateBackup = (context, correlationId, instruction) => {
 
 const handleDeleteBackup = (context, correlationId, instruction) => {
   const log = getLogger('RM/Admin', correlationId);
-  const { targetReadModel, backupId } = instruction;
+  const { backupId } = instruction;
 
   if (!context.backup) {
     log.error('Backup not configured on this RM service');

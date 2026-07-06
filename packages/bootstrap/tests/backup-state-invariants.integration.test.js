@@ -636,7 +636,9 @@ describe
             results.forEach(({ db, collection, count, docs }) => {
               console.log(`  ${db}.${collection} (${count} docs)`);
               docs.forEach((doc) => {
-                const { _id, ...rest } = doc;
+                const rest = Object.fromEntries(
+                  Object.entries(doc).filter(([key]) => key !== '_id'),
+                );
                 console.log(`    ${JSON.stringify(rest)}`);
               });
             });
@@ -981,8 +983,10 @@ describe
     // 1.7: Replay cancelled — initiate replay, cancel mid-way,
     // verify backup data restored
     test('1.7: replay cancelled restores to backup state', () => {
-      const { testEnv, fetchAdmin, fetchRM, rmDb, getTimestamp, ready } =
-        createActiveEnv('bk-17', 10);
+      const { testEnv, fetchAdmin, fetchRM, rmDb, ready } = createActiveEnv(
+        'bk-17',
+        10,
+      );
 
       return ready
         .then(() =>

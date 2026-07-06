@@ -349,7 +349,7 @@ describe('createCatchupHandler', () => {
     test('cancels an in-progress catch-up', () => {
       const neverCursor = {
         next: vi.fn().mockReturnValue(
-          new Promise((resolve) => {
+          new Promise(() => {
             // never resolves
           }),
         ),

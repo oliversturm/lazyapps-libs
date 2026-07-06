@@ -162,3 +162,6 @@ command-records/
 
 # Generated license files in packages (root LICENSE is the source of truth)
 packages/*/LICENSE
+
+# SvelteKit build/sync output (generated during test runs)
+.svelte-kit/

@@ -26,7 +26,6 @@ const { startCommandProcessor } = await import('@lazyapps/command-processor');
 const {
   commandProcessorEventBusMqEmitter,
   readModelEventBusMqEmitter,
-  readModelListenerMqEmitter,
   commandSenderMqEmitter,
 } = await import('@lazyapps/mqemitter');
 const { express: expressReceiver } =

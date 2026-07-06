@@ -1,7 +1,7 @@
 import { startCommandProcessor } from '@lazyapps/command-processor';
 import { startReadModels } from '@lazyapps/readmodels';
 import { getLogger } from '@lazyapps/logger';
-import { trace, context } from '@opentelemetry/api';
+import { trace } from '@opentelemetry/api';
 
 const tracer = trace.getTracer('@lazyapps/bootstrap');
 

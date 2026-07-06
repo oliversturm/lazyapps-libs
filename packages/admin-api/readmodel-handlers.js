@@ -46,7 +46,7 @@ export const readModelsHandler = (context) => (req, res) => {
 };
 
 export const replayReadModelStatusHandler = (context) => (req, res) => {
-  const { endpointName, readModelName } = req.params;
+  const { readModelName } = req.params;
 
   const rm = context.readModels?.[readModelName];
   if (!rm) {

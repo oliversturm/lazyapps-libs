@@ -523,7 +523,9 @@ export const createProjectionHandler = (context) => {
     clearSideEffectFilter: (rmName) => {
       const existing = readModelReplayOptions.get(rmName);
       if (!existing) return;
-      const { sideEffectFilter: _, ...rest } = existing;
+      const rest = Object.fromEntries(
+        Object.entries(existing).filter(([key]) => key !== 'sideEffectFilter'),
+      );
       if (Object.keys(rest).length === 0) {
         readModelReplayOptions.delete(rmName);
       } else {

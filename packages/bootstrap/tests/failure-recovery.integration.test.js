@@ -1,12 +1,6 @@
 import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 import { MongoDBContainer } from '@testcontainers/mongodb';
 import { MongoClient } from 'mongodb';
-import expressApp from 'express';
-import bodyParser from 'body-parser';
-import { execFileSync } from 'node:child_process';
-import { mkdtemp, rm as rmDir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -20,38 +14,11 @@ vi.mock('@lazyapps/logger', () => ({
 }));
 
 const mqemitter = (await import('mqemitter')).default;
-const { registerSharedMqEmitter, getSharedMqEmitter } =
-  await import('@lazyapps/mqemitter');
-const { mongodb: eventStoreMongo } =
-  await import('@lazyapps/eventstore-mongodb');
+const { registerSharedMqEmitter } = await import('@lazyapps/mqemitter');
 const { mongodb: readModelStorageMongo } =
   await import('@lazyapps/readmodelstorage-mongodb');
-const {
-  commandProcessorEventBusMqEmitter,
-  readModelEventBusMqEmitter,
-  readModelListenerMqEmitter,
-} = await import('@lazyapps/mqemitter');
-const { createCatchupHandler } =
-  await import('@lazyapps/command-processor/catchupHandler.js');
-const { createReplayHandler } =
-  await import('@lazyapps/command-processor/replayHandler.js');
-const { createCpStatusTracker } =
-  await import('@lazyapps/command-processor/cpStatusTracker.js');
+const { readModelEventBusMqEmitter } = await import('@lazyapps/mqemitter');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
-const { installReadModelStatusApi } = await import('@lazyapps/admin-api');
-const { installAdminEndpoints } = await import('@lazyapps/readmodels');
-const { startAdmin } = await import('../admin.js');
-const { backup: backupFactory } =
-  await import('@lazyapps/readmodelstorage-mongodb/backup.js');
-
-const hasMongoTools = (() => {
-  try {
-    execFileSync('mongoexport', ['--version'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-})();
 
 const createRmDef = (collectionName) => ({
   projections: {
@@ -76,13 +43,6 @@ const createRmDef = (collectionName) => ({
   collections: [collectionName],
   replayRelevantEvents: ['ITEM_CREATED'],
 });
-
-import { waitForCondition } from './helpers/waitForCondition.js';
-
-const flush = () =>
-  new Promise((resolve) => {
-    setTimeout(resolve, 50);
-  });
 
 // Create a fresh RM context against existing MongoDB (simulates restart)
 const createFreshContext = (prefix, connectionString, dbName, opts = {}) => {

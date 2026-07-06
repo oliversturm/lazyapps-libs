@@ -1,6 +1,6 @@
 import { getLogger } from '@lazyapps/logger';
 
-const isDuplicate = (event, catchupState, toTimestamp) => {
+const isDuplicate = (event, catchupState) => {
   if (event.timestamp < catchupState.lastCatchupTimestamp) return true;
 
   if (event.timestamp === catchupState.lastCatchupTimestamp) {
@@ -67,7 +67,7 @@ export const createCatchupHandler = (context) => {
 
       const { correlationId: entryCorrelationId, event } = entry;
 
-      if (isDuplicate(event, state, toTimestamp)) {
+      if (isDuplicate(event, state)) {
         return drainNext();
       }
 

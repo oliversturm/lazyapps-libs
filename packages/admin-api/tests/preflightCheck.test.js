@@ -1,9 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import {
-  getPreflightStatus,
-  isTimestampZero,
-  __testing__,
-} from '../preflightCheck.js';
+import { getPreflightStatus, isTimestampZero } from '../preflightCheck.js';
 
 describe('isTimestampZero', () => {
   test('returns true for 0', () => {

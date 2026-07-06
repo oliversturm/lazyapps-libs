@@ -153,7 +153,7 @@ describe('initializeContext', () => {
       { serviceId: 'TEST' },
       { aggregateStore, eventStore, eventBus, aggregates },
       vi.fn(),
-    ).then((context) => {
+    ).then(() => {
       expect(eventBusResult.subscribeAdminMessages).toHaveBeenCalled();
       expect(subscribedHandler).toBeDefined();
 

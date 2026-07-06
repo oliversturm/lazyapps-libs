@@ -69,7 +69,13 @@ export const mongoBackup =
         .find(metadataCollection, { readModelName })
         .sort({ timestamp: -1 })
         .toArray()
-        .then((docs) => docs.map(({ _id, ...rest }) => rest)),
+        .then((docs) =>
+          docs.map((doc) =>
+            Object.fromEntries(
+              Object.entries(doc).filter(([key]) => key !== '_id'),
+            ),
+          ),
+        ),
 
     restoreBackup: (correlationId, readModelName, backupId) => {
       const log = getLogger('RM/Backup', correlationId);

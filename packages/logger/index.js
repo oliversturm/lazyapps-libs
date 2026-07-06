@@ -28,15 +28,13 @@ prefix.apply(log, {
 
 let otelEnabled = false;
 let otelLogger = null;
-let otelTrace = null;
-let otelContext = null;
 let severityMap = {};
 
+// Note: callers may also pass `trace`/`context` in the options object;
+// they are accepted and ignored (no tracing integration in the logger).
 export const configureOtel = ({
   logs,
   SeverityNumber,
-  trace,
-  context,
   loggerProvider,
 } = {}) => {
   if (!SeverityNumber) return;
@@ -46,8 +44,6 @@ export const configureOtel = ({
   otelLogger = loggerProvider
     ? loggerProvider.getLogger('@lazyapps/logger')
     : logs.getLogger('@lazyapps/logger');
-  otelTrace = trace || null;
-  otelContext = context || null;
   severityMap = {
     trace: SeverityNumber.TRACE,
     debug: SeverityNumber.DEBUG,
@@ -120,8 +116,6 @@ export const getLogger = (name, correlationId) => {
 export const __resetOtelForTesting = () => {
   otelEnabled = false;
   otelLogger = null;
-  otelTrace = null;
-  otelContext = null;
   severityMap = {};
 };
 

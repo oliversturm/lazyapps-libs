@@ -1,8 +1,6 @@
 import { describe, test, expect, vi, beforeAll, afterAll } from 'vitest';
 import { MongoDBContainer } from '@testcontainers/mongodb';
 import { MongoClient } from 'mongodb';
-import expressApp from 'express';
-import bodyParser from 'body-parser';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -18,21 +16,13 @@ vi.mock('@lazyapps/logger', () => ({
 const { getLogger } = await import('@lazyapps/logger');
 
 const mqemitter = (await import('mqemitter')).default;
-const { registerSharedMqEmitter, getSharedMqEmitter } =
-  await import('@lazyapps/mqemitter');
+const { registerSharedMqEmitter } = await import('@lazyapps/mqemitter');
 const { mongodb: readModelStorageMongo } =
   await import('@lazyapps/readmodelstorage-mongodb');
-const { readModelEventBusMqEmitter, readModelListenerMqEmitter } =
-  await import('@lazyapps/mqemitter');
+const { readModelEventBusMqEmitter } = await import('@lazyapps/mqemitter');
 const { initializeContext } = await import('@lazyapps/readmodels/context.js');
-const { startReadModels, installAdminEndpoints } =
-  await import('@lazyapps/readmodels');
-const { installReadModelStatusApi } = await import('@lazyapps/admin-api');
+const { startReadModels } = await import('@lazyapps/readmodels');
 const { createRoutes } = await import('@lazyapps/admin-api/routes.js');
-const { createProjectionHandler } =
-  await import('@lazyapps/readmodels/projections.js');
-
-import { waitForCondition } from './helpers/waitForCondition.js';
 
 const flush = () =>
   new Promise((resolve) => {
@@ -65,46 +55,6 @@ describe('C6: developmentOperation gatekeeping', { timeout: 30000 }, () => {
       .then(() => (cleanupClient ? cleanupClient.close() : undefined))
       .then(() => (container ? container.stop() : undefined)),
   );
-
-  const createRmContext = (opts = {}) => {
-    registerSharedMqEmitter(
-      `devmode-${opts.prefix || 'test'}-events`,
-      mqemitter(),
-    );
-
-    return initializeContext(
-      { serviceId: `devmode-${opts.prefix || 'test'}` },
-      {
-        readModels: {
-          myRM: {
-            projections: {
-              EV: ({ storage }, event) =>
-                storage.insertOne('myRM_data', {
-                  id: event.aggregateId,
-                }),
-            },
-            collections: ['myRM_data'],
-          },
-        },
-        endpointName: 'ep',
-        storage: readModelStorageMongo({
-          url: connectionString,
-          database: `devmode-${opts.prefix || 'test'}`,
-        }),
-        eventBus: readModelEventBusMqEmitter({
-          mqName: `devmode-${opts.prefix || 'test'}-events`,
-        }),
-        changeNotificationSender: {
-          sendChangeNotification: () => () => Promise.resolve(),
-        },
-        commandSender: {
-          sendCommand: () => () => Promise.resolve(),
-        },
-        developmentMode: opts.developmentMode || false,
-        lifecycle: !!opts.lifecycle,
-      },
-    );
-  };
 
   test('rejects developmentOperation when developmentMode=false', () =>
     startReadModels(

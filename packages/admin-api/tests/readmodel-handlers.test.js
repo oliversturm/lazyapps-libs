@@ -51,7 +51,7 @@ const mockEventBus = (replyPayload) => {
       replyHandler = handler;
       return Promise.resolve();
     }),
-    publishAdminInstruction: vi.fn().mockImplementation(() => (instruction) => {
+    publishAdminInstruction: vi.fn().mockImplementation(() => () => {
       if (replyHandler && replyPayload) {
         Promise.resolve().then(() => replyHandler(replyPayload));
       }

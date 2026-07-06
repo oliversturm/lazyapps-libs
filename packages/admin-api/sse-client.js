@@ -227,7 +227,6 @@ const createSseClient = ({
     // Fetch initial status via HTTP before subscribing to SSE
     return fetchAllStatus().then(() => {
       // Subscribe to RM SSE endpoints
-      const serviceUrls = getServiceUrls();
       const epNames = getEndpointNames();
 
       const subscribeToEps = (eps) => {

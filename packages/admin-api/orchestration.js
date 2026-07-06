@@ -114,7 +114,6 @@ const createOrchestrator = ({ sseClient, eventBus, token }) => {
       autoBackup,
       activateAfter = true,
       t0Option,
-      customTimestamp,
       timestampOverride,
       replayDelayMs,
     } = options;
