@@ -211,9 +211,7 @@ export const createLifecycleManager = (context) => {
       log.error(
         `goLive rejected for '${readModelName}' — not in development mode`,
       );
-      return Promise.reject(
-        new Error('goLive requires development mode'),
-      );
+      return Promise.reject(new Error('goLive requires development mode'));
     }
     if (current !== 'idle' && current !== 'replay-done') {
       return Promise.reject(

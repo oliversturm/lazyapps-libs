@@ -220,7 +220,9 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
       })
       .then((context) => {
         rmContext = context;
-        console.log(`[ENV redis] RM context initialized, lifecycle: ${!!context.lifecycleManager}`);
+        console.log(
+          `[ENV redis] RM context initialized, lifecycle: ${!!context.lifecycleManager}`,
+        );
         context.adminInstructionHandler =
           createInlineAdminInstructionHandler(context);
 
@@ -404,12 +406,16 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
       })
       // Step 4: Wait for live state
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            if (items && items.state === 'live') return true;
-            return `state=${items?.state || 'not found'}`;
-          }), 5000, 100, 'items → live (redis)',
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'items → live (redis)',
         ),
       )
       // Verify all 5 events projected
@@ -442,12 +448,16 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            if (items && items.state === 'idle') return true;
-            return `state=${items?.state || 'not found'}`;
-          }), 5000, 100, 'items → idle (redis gap)',
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'idle') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'items → idle (redis gap)',
         ),
       )
       // Insert more events while stopped
@@ -469,12 +479,16 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            if (items && items.state === 'live') return true;
-            return `state=${items?.state || 'not found'}`;
-          }), 5000, 100, 'items → live (redis re-activate)',
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'live') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'items → live (redis re-activate)',
         ),
       )
       // Verify all 10 unique items present
@@ -507,12 +521,16 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
         expect(status).toBe(202);
       })
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const stats = body.find((rm) => rm.name === 'stats');
-            if (stats && stats.state === 'live') return true;
-            return `state=${stats?.state || 'not found'}`;
-          }), 5000, 100, 'stats → live (redis)',
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const stats = body.find((rm) => rm.name === 'stats');
+              if (stats && stats.state === 'live') return true;
+              return `state=${stats?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'stats → live (redis)',
         ),
       )
       .then(() =>
@@ -533,12 +551,16 @@ describe('catch-up lifecycle with Redis MQEmitter', { timeout: 30000 }, () => {
         }),
       )
       .then(() =>
-        waitForCondition(() =>
-          fetchRM('/admin/readmodel').then(({ body }) => {
-            const items = body.find((rm) => rm.name === 'items');
-            if (items && items.state === 'idle') return true;
-            return `state=${items?.state || 'not found'}`;
-          }), 5000, 100, 'items → idle (redis stop)',
+        waitForCondition(
+          () =>
+            fetchRM('/admin/readmodel').then(({ body }) => {
+              const items = body.find((rm) => rm.name === 'items');
+              if (items && items.state === 'idle') return true;
+              return `state=${items?.state || 'not found'}`;
+            }),
+          5000,
+          100,
+          'items → idle (redis stop)',
         ),
       ));
 });

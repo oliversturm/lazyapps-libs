@@ -15,12 +15,7 @@
 //
 // On timeout: "Timeout (RM → live) after 5000ms — state=idle"
 
-export const waitForCondition = (
-  fn,
-  timeout = 5000,
-  interval = 100,
-  label,
-) => {
+export const waitForCondition = (fn, timeout = 5000, interval = 100, label) => {
   const start = Date.now();
   let lastInfo;
   const poll = () =>

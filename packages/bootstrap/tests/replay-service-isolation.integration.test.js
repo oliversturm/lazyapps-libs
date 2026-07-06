@@ -350,9 +350,11 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
       waitForCondition(
         () =>
           Promise.resolve(context.lifecycleManager.getState(rmName)).then(
-            (state) => state === 'catchup' ? true : `state=${state}`,
+            (state) => (state === 'catchup' ? true : `state=${state}`),
           ),
-        5000, 100, `${rmName} → catchup`
+        5000,
+        100,
+        `${rmName} → catchup`,
       ).then(() =>
         // CP sends catchupDone via admin instruction
         publishAdmin({
@@ -372,10 +374,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               ordersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'live' ? true : `state=${s}`,
-            ),
-          5000, 100, 'orders RM → live'
+            ).then((s) => (s === 'live' ? true : `state=${s}`)),
+          5000,
+          100,
+          'orders RM → live',
         ),
       )
       .then(() => activateRm(customersContext, 'overview'))
@@ -384,10 +386,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               customersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'live' ? true : `state=${s}`,
-            ),
-          5000, 100, 'customers RM → live'
+            ).then((s) => (s === 'live' ? true : `state=${s}`)),
+          5000,
+          100,
+          'customers RM → live',
         ),
       )
       .then(() => {
@@ -423,13 +425,14 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
             Promise.all([
               getCollection('customers_overview'),
               getCollection('orders_overview'),
-            ]).then(
-              ([customers, orders]) =>
-                customers.length === 2 && orders.length === 2
-                  ? true
-                  : `customers=${customers.length}, orders=${orders.length}`,
+            ]).then(([customers, orders]) =>
+              customers.length === 2 && orders.length === 2
+                ? true
+                : `customers=${customers.length}, orders=${orders.length}`,
             ),
-          5000, 100, 'both RMs projected'
+          5000,
+          100,
+          'both RMs projected',
         );
       })
       .then(() =>
@@ -466,10 +469,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               ordersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'idle' ? true : `state=${s}`,
-            ),
-          5000, 100, 'orders RM → idle'
+            ).then((s) => (s === 'idle' ? true : `state=${s}`)),
+          5000,
+          100,
+          'orders RM → idle',
         );
       })
       .then(() => {
@@ -491,10 +494,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               ordersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'replay' ? true : `state=${s}`,
-            ),
-          5000, 100, 'orders RM → replay'
+            ).then((s) => (s === 'replay' ? true : `state=${s}`)),
+          5000,
+          100,
+          'orders RM → replay',
         );
       })
       .then(() => {
@@ -514,14 +517,13 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
               commandServer.__testing__
                 ? true
                 : // Fallback: check if orders have been re-projected
-                  getCollection('orders_overview').then(
-                    (orders) =>
-                      orders.length === 2
-                        ? true
-                        : `orders=${orders.length}`,
+                  getCollection('orders_overview').then((orders) =>
+                    orders.length === 2 ? true : `orders=${orders.length}`,
                   ),
             ),
-          5000, 100, 'replay re-projects orders'
+          5000,
+          100,
+          'replay re-projects orders',
         );
       })
       .then(() =>
@@ -540,10 +542,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               ordersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'replay-done' ? true : `state=${s}`,
-            ),
-          5000, 100, 'orders RM → replay-done'
+            ).then((s) => (s === 'replay-done' ? true : `state=${s}`)),
+          5000,
+          100,
+          'orders RM → replay-done',
         );
       })
       .then(() => {
@@ -555,10 +557,10 @@ describe('replay service isolation integration', { timeout: 30000 }, () => {
           () =>
             Promise.resolve(
               ordersContext.lifecycleManager.getState('overview'),
-            ).then(
-              (s) => s === 'live' ? true : `state=${s}`,
-            ),
-          5000, 100, 'orders RM → live after replay'
+            ).then((s) => (s === 'live' ? true : `state=${s}`)),
+          5000,
+          100,
+          'orders RM → live after replay',
         ),
       )
       .then(() =>
