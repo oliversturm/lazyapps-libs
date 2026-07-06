@@ -1,11 +1,11 @@
 ---
-'@lazyapps/readmodels': major
-'@lazyapps/command-processor': major
-'@lazyapps/express': major
-'@lazyapps/mqemitter': major
-'@lazyapps/eventbus-rabbitmq': major
-'@lazyapps/eventbus-mqemitter-redis': major
-'@lazyapps/eventstore-mongodb': major
+'@lazyapps/readmodels': minor
+'@lazyapps/command-processor': minor
+'@lazyapps/express': minor
+'@lazyapps/mqemitter': minor
+'@lazyapps/eventbus-rabbitmq': minor
+'@lazyapps/eventbus-mqemitter-redis': minor
+'@lazyapps/eventstore-mongodb': minor
 ---
 
 Admin architecture rework: SSE-based status monitoring replaces __system topic

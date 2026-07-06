@@ -1,6 +1,6 @@
 ---
-'@lazyapps/admin-api': major
-'@lazyapps/bootstrap': major
+'@lazyapps/admin-api': minor
+'@lazyapps/bootstrap': minor
 '@lazyapps/command-processor': minor
 '@lazyapps/readmodels': minor
 ---
