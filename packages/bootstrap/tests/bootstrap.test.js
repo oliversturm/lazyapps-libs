@@ -53,6 +53,13 @@ vi.mock('../admin.js', () => ({
 
 const { start } = await import('../index.js');
 
+// Warm the module registry with the mocked admin/svelte modules so index.js's
+// fire-and-forget `import('./admin.js')` / `import('./svelte.js')` resolve to
+// the mocks deterministically, instead of racing the real modules under
+// shuffled test order (issue #18).
+await import('../admin.js');
+await import('../svelte.js');
+
 describe('start', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -86,19 +93,15 @@ describe('start', () => {
   test('starts svelte when svelte config provided', async () => {
     const svelte = { port: 5173 };
     const correlation = { serviceId: 'TEST' };
-    start({ correlation, svelte });
-    await vi.waitFor(() => {
-      expect(mockStartSvelteKit).toHaveBeenCalledWith(correlation, svelte);
-    });
+    await start({ correlation, svelte });
+    expect(mockStartSvelteKit).toHaveBeenCalledWith(correlation, svelte);
   });
 
   test('starts admin when admin config provided', async () => {
     const admin = { port: 3005, readModels: {} };
     const correlation = { serviceId: 'TEST' };
-    start({ correlation, admin });
-    await vi.waitFor(() => {
-      expect(mockStartAdmin).toHaveBeenCalledWith(correlation, admin);
-    });
+    await start({ correlation, admin });
+    expect(mockStartAdmin).toHaveBeenCalledWith(correlation, admin);
   });
 
   test('does not start command processor when not configured', () => {
@@ -124,7 +127,7 @@ describe('start', () => {
 
   test('starts all subsystems when fully configured', async () => {
     const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
-    start({
+    await start({
       correlation: { serviceId: 'TEST' },
       commands: { receiver: vi.fn() },
       readModels: { listener: vi.fn() },
@@ -132,13 +135,39 @@ describe('start', () => {
       svelte: { port: 5173 },
       admin: { port: 3005, readModels: {} },
     });
-    await vi.waitFor(() => {
-      expect(mockStartSvelteKit).toHaveBeenCalledOnce();
-      expect(mockStartAdmin).toHaveBeenCalledOnce();
-    });
+    expect(mockStartSvelteKit).toHaveBeenCalledOnce();
+    expect(mockStartAdmin).toHaveBeenCalledOnce();
     expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
     expect(mockStartReadModels).toHaveBeenCalledOnce();
     expect(listener).toHaveBeenCalledOnce();
+  });
+
+  test('returns a promise that resolves only after all subsystems (incl. dynamically imported admin) have started', async () => {
+    const listener = vi.fn().mockResolvedValue({ close: vi.fn() });
+    const result = start({
+      correlation: { serviceId: 'TEST' },
+      commands: { receiver: vi.fn() },
+      readModels: { listener: vi.fn() },
+      changeNotifier: { listener },
+      svelte: { port: 5173 },
+      admin: { port: 3005, readModels: {} },
+    });
+
+    // start() must be awaitable so callers (and tests) can wait for the
+    // fire-and-forget dynamic imports to settle, rather than leaking
+    // stragglers that resolve after mock teardown and hit the real
+    // modules (issue #18).
+    expect(typeof result?.then).toBe('function');
+
+    await result;
+
+    // By the time the returned promise resolves, every subsystem — including
+    // the dynamically imported admin — has started. No polling required.
+    expect(mockStartCommandProcessor).toHaveBeenCalledOnce();
+    expect(mockStartReadModels).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(mockStartSvelteKit).toHaveBeenCalledOnce();
+    expect(mockStartAdmin).toHaveBeenCalledOnce();
   });
 });
 
