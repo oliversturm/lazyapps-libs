@@ -23,6 +23,7 @@ export const startAdmin = (
     commandProcessorUrl,
     developmentMode,
     sseIdleGraceMs,
+    sseHeartbeatMs,
   },
 ) => {
   log.info('Initializing admin service');
@@ -58,6 +59,7 @@ export const startAdmin = (
         eventBus: eventBusInstance,
         token,
         developmentMode,
+        heartbeatMs: sseHeartbeatMs,
       })(app);
 
       return import('@lazyapps/admin-ui/build/handler.js')

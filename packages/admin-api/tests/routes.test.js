@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest';
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@lazyapps/logger', () => ({
   getLogger: vi.fn().mockReturnValue({
@@ -27,6 +27,8 @@ const mockRes = () => {
   res.json = vi.fn().mockReturnValue(res);
   res.writeHead = vi.fn();
   res.write = vi.fn();
+  res.end = vi.fn();
+  res.on = vi.fn();
   res.send = vi.fn().mockReturnValue(res);
   return res;
 };
@@ -246,6 +248,28 @@ describe('createRoutes', () => {
   });
 
   describe('sseStream', () => {
+    // sseStream installs a periodic heartbeat timer — use fake timers so the
+    // interval never fires unexpectedly and dead-connection detection can be
+    // driven deterministically.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    const streamRoutes = (heartbeatMs) =>
+      createRoutes({
+        sseClient,
+        orchestrator,
+        eventBus,
+        token: 'test-token',
+        heartbeatMs,
+      });
+
+    const closeStream = (req) =>
+      req.on.mock.calls.find((c) => c[0] === 'close')[1]();
+
     test('sets SSE headers and sends initial cache', () => {
       const req = mockReq();
       const res = mockRes();
@@ -266,6 +290,8 @@ describe('createRoutes', () => {
         expect.stringContaining('event: commandprocessor-status'),
       );
       expect(sseClient.addBrowserClient).toHaveBeenCalled();
+
+      closeStream(req);
     });
 
     test('removes client on close', () => {
@@ -274,11 +300,85 @@ describe('createRoutes', () => {
 
       routes.sseStream(req, res);
 
-      const closeHandler = req.on.mock.calls.find((c) => c[0] === 'close')[1];
-      closeHandler();
+      closeStream(req);
 
       expect(sseClient.removeBrowserClient).toHaveBeenCalled();
       expect(sseClient.emitter.off).toHaveBeenCalledTimes(2);
+    });
+
+    test('writes a periodic heartbeat after the configured interval', () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      streamRoutes(1000).sseStream(req, res);
+      res.write.mockClear();
+
+      vi.advanceTimersByTime(1000);
+      expect(res.write).toHaveBeenCalledWith(':heartbeat\n\n');
+
+      vi.advanceTimersByTime(1000);
+      expect(res.write).toHaveBeenCalledTimes(2);
+
+      closeStream(req);
+    });
+
+    test('releases the refcount when a heartbeat write throws (dead connection)', () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      streamRoutes(1000).sseStream(req, res);
+
+      // Socket is dead — subsequent writes throw synchronously
+      res.write.mockImplementation(() => {
+        throw new Error('EPIPE');
+      });
+      vi.advanceTimersByTime(1000);
+
+      expect(sseClient.removeBrowserClient).toHaveBeenCalledTimes(1);
+      expect(sseClient.emitter.off).toHaveBeenCalledTimes(2);
+      expect(res.end).toHaveBeenCalled();
+    });
+
+    test('releases the refcount on a response error event', () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      streamRoutes(1000).sseStream(req, res);
+
+      const errorHandler = res.on.mock.calls.find((c) => c[0] === 'error')[1];
+      errorHandler(new Error('ECONNRESET'));
+
+      expect(sseClient.removeBrowserClient).toHaveBeenCalledTimes(1);
+      expect(sseClient.emitter.off).toHaveBeenCalledTimes(2);
+    });
+
+    test('stops heartbeats after cleanup', () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      streamRoutes(1000).sseStream(req, res);
+      closeStream(req);
+
+      res.write.mockClear();
+      vi.advanceTimersByTime(5000);
+      expect(res.write).not.toHaveBeenCalled();
+    });
+
+    test('cleanup is idempotent across close, error and write failure', () => {
+      const req = mockReq();
+      const res = mockRes();
+
+      streamRoutes(1000).sseStream(req, res);
+
+      const errorHandler = res.on.mock.calls.find((c) => c[0] === 'error')[1];
+      closeStream(req);
+      errorHandler(new Error('later'));
+      res.write.mockImplementation(() => {
+        throw new Error('later');
+      });
+      vi.advanceTimersByTime(2000);
+
+      expect(sseClient.removeBrowserClient).toHaveBeenCalledTimes(1);
     });
   });
 

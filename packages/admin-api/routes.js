@@ -9,6 +9,10 @@ const createRoutes = ({
   eventBus,
   token,
   developmentMode = false,
+  // Interval between browser SSE heartbeat comments. Heartbeats force writes
+  // on the socket so a dead browser connection (no clean 'close') surfaces as
+  // a write error and releases its refcount — see sseStream below.
+  heartbeatMs = 15000,
 }) => {
   const publishCommand = (correlationId, command) => {
     eventBus.publishAdminInstruction(correlationId)({
@@ -78,6 +82,8 @@ const createRoutes = ({
   // --- SSE stream to browser ---
 
   const sseStream = (req, res) => {
+    const log = getLogger('Admin/Routes', 'SSE');
+
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
@@ -104,17 +110,55 @@ const createRoutes = ({
       );
     };
 
+    // Single teardown path shared by clean close, response errors, and
+    // heartbeat write failures. Guarded so the refcount is released exactly
+    // once no matter how many of those fire (a dropped connection can raise
+    // both an 'error' and a 'close', or a heartbeat failure then a 'close').
+    let cleanedUp = false;
+    let heartbeatTimer = null;
+    const cleanup = (reason) => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      sseClient.emitter.off('readmodel-status', onRmStatus);
+      sseClient.emitter.off('commandprocessor-status', onCpStatus);
+      sseClient.removeBrowserClient();
+      log.debug(`Browser SSE stream closed (${reason})`);
+    };
+
     sseClient.addBrowserClient().catch((err) => {
-      const log = getLogger('Admin/Routes', 'SSE');
       log.warn(`SSE upstream connect on browser attach failed: ${err.message}`);
     });
     sseClient.emitter.on('readmodel-status', onRmStatus);
     sseClient.emitter.on('commandprocessor-status', onCpStatus);
 
-    req.on('close', () => {
-      sseClient.emitter.off('readmodel-status', onRmStatus);
-      sseClient.emitter.off('commandprocessor-status', onCpStatus);
-      sseClient.removeBrowserClient();
+    // Periodic heartbeat: without it, a browser connection that dies without a
+    // clean TCP close (network drop, sleeping laptop) never emits 'close', so
+    // its refcount stays pinned and upstream RM/CP SSE is held open
+    // indefinitely (issue #16). Writing forces the TCP stack to notice the
+    // dead peer, surfacing an error we treat as a disconnect.
+    heartbeatTimer = setInterval(() => {
+      try {
+        res.write(':heartbeat\n\n');
+      } catch (err) {
+        log.warn(
+          `Heartbeat write failed — releasing browser client: ${err.message}`,
+        );
+        cleanup('heartbeat-write-failed');
+        try {
+          res.end();
+        } catch {
+          // Socket already destroyed — nothing more to do.
+        }
+      }
+    }, heartbeatMs);
+    // Don't keep the process alive just to heartbeat a browser connection.
+    if (typeof heartbeatTimer.unref === 'function') heartbeatTimer.unref();
+
+    req.on('close', () => cleanup('client-close'));
+    res.on('error', (err) => {
+      log.warn(`SSE response error — releasing browser client: ${err.message}`);
+      cleanup('response-error');
     });
   };
 
@@ -427,6 +471,7 @@ const installAdminRoutes = ({
   eventBus,
   token,
   developmentMode,
+  heartbeatMs,
 }) => {
   const routes = createRoutes({
     sseClient,
@@ -434,6 +479,7 @@ const installAdminRoutes = ({
     eventBus,
     token,
     developmentMode,
+    heartbeatMs,
   });
 
   return (app) => {

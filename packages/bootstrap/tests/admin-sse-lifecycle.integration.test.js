@@ -404,3 +404,111 @@ describe('admin SSE lifecycle with auto-activation', { timeout: 30000 }, () => {
         expect(publishedCommands.some((c) => c.type === 'activate')).toBe(true);
       }));
 });
+
+describe('admin SSE browser heartbeat', { timeout: 30000 }, () => {
+  let rmService;
+  let cpService;
+  let adminServer;
+  let adminPort;
+
+  // Fast heartbeat so its emission is observable within the test window,
+  // without racing the assertions.
+  const HEARTBEAT_MS = 100;
+
+  beforeAll(() =>
+    Promise.all([startMockRmService(), startMockCpService()]).then(
+      ([rm, cp]) => {
+        rmService = rm;
+        cpService = cp;
+        return startAdmin(
+          { serviceId: 'SSE-HEARTBEAT-TEST' },
+          {
+            port: 0,
+            eventBus: () =>
+              Promise.resolve({
+                publishAdminInstruction: () => () => {},
+              }),
+            readModelServiceUrl: { ep1: `http://127.0.0.1:${rmService.port}` },
+            commandProcessorUrl: `http://127.0.0.1:${cpService.port}`,
+            sseIdleGraceMs: GRACE_MS,
+            sseHeartbeatMs: HEARTBEAT_MS,
+          },
+        ).then((s) => {
+          adminServer = s;
+          adminPort = s.address().port;
+          console.log(`[ENV sse-heartbeat] Admin server on port ${adminPort}`);
+        });
+      },
+    ),
+  );
+
+  afterAll(() =>
+    Promise.all([
+      closeServer(adminServer),
+      closeServer(rmService?.server),
+      closeServer(cpService?.server),
+    ]),
+  );
+
+  // Reads the SSE response body until `:heartbeat` appears or the deadline
+  // passes. Resolves on success, rejects otherwise.
+  const readUntilHeartbeat = (res, deadline) => {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const step = () =>
+      reader.read().then(({ done, value }) => {
+        if (done) throw new Error('stream ended before a heartbeat arrived');
+        buffer += decoder.decode(value, { stream: true });
+        if (buffer.includes(':heartbeat')) {
+          reader.cancel().catch(() => {});
+          return;
+        }
+        if (Date.now() > deadline) {
+          reader.cancel().catch(() => {});
+          throw new Error('no heartbeat within the deadline');
+        }
+        return step();
+      });
+    return step();
+  };
+
+  test('emits periodic heartbeat comments to a connected browser client', () => {
+    const controller = new AbortController();
+    return fetch(`http://127.0.0.1:${adminPort}/admin/events`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        expect(res.status).toBe(200);
+        return readUntilHeartbeat(res, Date.now() + 3000);
+      })
+      .finally(() => controller.abort());
+  });
+
+  test('heartbeats do not prevent idle teardown after the browser disconnects', () => {
+    const controller = new AbortController();
+    return fetch(`http://127.0.0.1:${adminPort}/admin/events`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        expect(res.status).toBe(200);
+        return readUntilHeartbeat(res, Date.now() + 3000);
+      })
+      .then(() => {
+        expect(adminServer.__testing__.sseClient.isConnected()).toBe(true);
+        controller.abort();
+        return waitForCondition(
+          () =>
+            rmService.sseCount === 0 && cpService.sseCount === 0
+              ? true
+              : `rm=${rmService.sseCount} cp=${cpService.sseCount}`,
+          5000,
+          50,
+          'upstream SSE down after heartbeating browser disconnects',
+        );
+      })
+      .then(() => {
+        expect(adminServer.__testing__.sseClient.isConnected()).toBe(false);
+      });
+  });
+});

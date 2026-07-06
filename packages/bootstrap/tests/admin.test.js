@@ -219,4 +219,13 @@ describe('startAdmin', () => {
         );
       },
     ));
+
+  test('passes sseHeartbeatMs through to the admin routes as heartbeatMs', () =>
+    startAdmin({ serviceId: 'TEST' }, { ...config, sseHeartbeatMs: 4321 }).then(
+      () => {
+        expect(mockInstallAdminRoutes).toHaveBeenCalledWith(
+          expect.objectContaining({ heartbeatMs: 4321 }),
+        );
+      },
+    ));
 });
