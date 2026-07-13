@@ -54,7 +54,12 @@ jobs:
       - name: Publish to npm
         if: steps.check.outputs.has_changesets == 'true'
         run: |
-          npm install -g npm@latest
+          # Pin to npm 11.x: keeps OIDC trusted-publishing support (needs
+          # npm >= 11.5) while avoiding npm 12, which turned the pnpm
+          # `--no-git-checks` flag that changesets' pnpm publish path passes
+          # down to `npm publish` into a hard EUNKNOWNCONFIG error. See
+          # lazyapps-dev issue tracker (CI publish break, 2026-07-13).
+          npm install -g npm@11
           pnpm run release
 
   snapshot:
@@ -136,7 +141,12 @@ jobs:
       - name: Publish to npm with branch tag
         if: steps.check.outputs.has_changesets == 'true'
         run: |
-          npm install -g npm@latest
+          # Pin to npm 11.x: keeps OIDC trusted-publishing support (needs
+          # npm >= 11.5) while avoiding npm 12, which turned the pnpm
+          # `--no-git-checks` flag that changesets' pnpm publish path passes
+          # down to `npm publish` into a hard EUNKNOWNCONFIG error. See
+          # lazyapps-dev issue tracker (CI publish break, 2026-07-13).
+          npm install -g npm@11
           node scripts/copy-license.js
           npx changeset publish --tag ${{ steps.tag.outputs.tag }}
 
