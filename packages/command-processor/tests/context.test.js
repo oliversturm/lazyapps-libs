@@ -33,7 +33,10 @@ describe('initializeContext', () => {
       expect(context.aggregates).toBe(aggregates);
       expect(context.aggregateStore).toBe(aggregateStoreResult);
       expect(context.eventStore).toBe(eventStoreResult);
-      expect(context.eventBus).toBe(eventBusResult);
+      // eventBus is wrapped (publishEvent instrumented for live counters), so
+      // it is a new object that preserves the adapter's other properties.
+      expect(context.eventBus.name).toBe('eventBus');
+      expect(typeof context.eventBus.publishEvent).toBe('function');
       expect(context.handleCommand).toBe(handleCommand);
       expect(context.correlationConfig).toEqual({ serviceId: 'TEST' });
       expect(aggregateStore).toHaveBeenCalledWith(aggregates);
@@ -95,6 +98,45 @@ describe('initializeContext', () => {
       expect(typeof context.statusTracker.getStatus).toBe('function');
       expect(typeof context.statusTracker.addSseClient).toBe('function');
       expect(typeof context.statusTracker.removeSseClient).toBe('function');
+    });
+  });
+
+  test('wraps publishEvent to advance live counters and delegate (issue #15)', () => {
+    const aggregates = { thing: {} };
+    const eventStoreResult = {
+      name: 'eventStore',
+      replay: vi.fn().mockReturnValue(vi.fn().mockResolvedValue()),
+    };
+    const innerPublish = vi.fn((event) => event);
+    const eventBusResult = {
+      name: 'eventBus',
+      publishEvent: vi.fn().mockReturnValue(innerPublish),
+    };
+
+    const aggregateStore = vi
+      .fn()
+      .mockResolvedValue({ name: 'aggregateStore' });
+    const eventStore = vi.fn().mockResolvedValue(eventStoreResult);
+    const eventBus = vi.fn().mockResolvedValue(eventBusResult);
+
+    return initializeContext(
+      { serviceId: 'TEST' },
+      { aggregateStore, eventStore, eventBus, aggregates },
+      vi.fn(),
+    ).then((context) => {
+      const event = { type: 'X', timestamp: 4321 };
+      const result = context.eventBus.publishEvent('corr-1')(event);
+
+      // Delegates to the underlying adapter and returns its result
+      expect(eventBusResult.publishEvent).toHaveBeenCalledWith('corr-1');
+      expect(innerPublish).toHaveBeenCalledWith(event);
+      expect(result).toBe(event);
+
+      // Advances the live counters on the status tracker
+      const status = context.statusTracker.getStatus();
+      expect(status.commandsProcessed).toBe(1);
+      expect(status.eventsWritten).toBe(1);
+      expect(status.lastEventTimestamp).toBe(4321);
     });
   });
 

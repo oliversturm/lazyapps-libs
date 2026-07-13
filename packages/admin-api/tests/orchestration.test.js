@@ -25,7 +25,7 @@ const createMockSseClient = () => {
       ...cache.readModels,
     })),
     getCommandProcessor: vi.fn().mockReturnValue({
-      state: 'idle',
+      state: 'live',
       activeReplays: [],
       activeCatchUps: [],
     }),

@@ -14,7 +14,7 @@ const mockCreateSseClient = vi.fn().mockReturnValue({
   cache: {
     getAllReadModels: vi.fn().mockReturnValue({}),
     getReadModel: vi.fn(),
-    getCommandProcessor: vi.fn().mockReturnValue({ state: 'idle' }),
+    getCommandProcessor: vi.fn().mockReturnValue({ state: 'live' }),
     updateReadModel: vi.fn(),
   },
   emitter: { on: vi.fn(), off: vi.fn() },

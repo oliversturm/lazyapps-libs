@@ -55,7 +55,7 @@ const createMockSseClient = () => ({
       return null;
     }),
     getCommandProcessor: vi.fn().mockReturnValue({
-      state: 'idle',
+      state: 'live',
       activeReplays: [],
       activeCatchUps: [],
     }),
@@ -242,7 +242,7 @@ describe('createRoutes', () => {
       routes.commandProcessorStatus(req, res);
 
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ state: 'idle' }),
+        expect.objectContaining({ state: 'live' }),
       );
     });
   });
@@ -953,7 +953,7 @@ describe('createRoutes', () => {
       ).then(() => {
         expect(sseClient.fetchAllStatus).toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith(
-          expect.objectContaining({ state: 'idle' }),
+          expect.objectContaining({ state: 'live' }),
         );
       });
     });

@@ -109,7 +109,9 @@ const createStatusCache = () => {
   const data = {
     readModels: {},
     commandProcessor: {
-      state: 'idle',
+      // 'unknown' (not 'live') until the CP actually reports — so a green
+      // 'live' badge always means the CP was reached (issue #15).
+      state: 'unknown',
       activeReplays: [],
       activeCatchUps: [],
     },
@@ -363,16 +365,33 @@ const createSseClient = ({
         }),
     );
 
+    // When the CP can't be reached or returns no valid status, mark it
+    // 'unknown' rather than leaving a stale 'live' — 'live' must always mean
+    // the CP actually reported (issue #15). This runs only while SSE is
+    // disconnected (the HTTP refresh path); a live SSE stream delivers real
+    // CP status directly.
+    const markCpUnknown = () =>
+      cache.updateCommandProcessor({
+        state: 'unknown',
+        activeReplays: [],
+        activeCatchUps: [],
+      });
+
     const cpPromise = commandProcessorUrl
       ? fetch(`${commandProcessorUrl}/admin/commandprocessor/status`, {
           headers,
         })
           .then((r) => (r.ok ? r.json() : null))
           .then((status) => {
-            if (status) cache.updateCommandProcessor(status);
+            if (status) {
+              cache.updateCommandProcessor(status);
+            } else {
+              markCpUnknown();
+            }
           })
           .catch((err) => {
             log.warn(`Failed to fetch CP status: ${err.message}`);
+            markCpUnknown();
           })
       : Promise.resolve();
 

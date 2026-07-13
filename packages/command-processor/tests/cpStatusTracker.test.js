@@ -23,10 +23,12 @@ describe('createCpStatusTracker', () => {
   });
 
   describe('getStatus', () => {
-    test('returns idle status with empty arrays when no operations active', () => {
+    test('returns live status with empty arrays when no operations active', () => {
       const status = tracker.getStatus();
-      expect(status).toEqual({
-        state: 'idle',
+      // The CP is always live — "idle" (no active replay/catch-up) is not a
+      // not-running state (issue #15).
+      expect(status).toMatchObject({
+        state: 'live',
         activeReplays: [],
         activeCatchUps: [],
       });
@@ -69,12 +71,92 @@ describe('createCpStatusTracker', () => {
       expect(status.activeCatchUps).toHaveLength(1);
     });
 
-    test('returns idle after all operations end', () => {
+    test('returns live after all operations end', () => {
       tracker.trackReplayStart('customers', 'ep1', 'corr-1');
       tracker.trackReplayEnd('customers', 'ep1');
       const status = tracker.getStatus();
-      expect(status.state).toBe('idle');
+      expect(status.state).toBe('live');
       expect(status.activeReplays).toHaveLength(0);
+    });
+  });
+
+  describe('live detail (issue #15 B)', () => {
+    test('initial status exposes zeroed counters and empty history', () => {
+      const status = tracker.getStatus();
+      expect(typeof status.startedAt).toBe('number');
+      expect(status.commandsProcessed).toBe(0);
+      expect(status.eventsWritten).toBe(0);
+      expect(status.lastCommandAt).toBeNull();
+      expect(status.lastEventTimestamp).toBeNull();
+      expect(status.recentReplays).toEqual([]);
+    });
+
+    test('trackLiveEvent bumps counters and records timestamps', () => {
+      vi.setSystemTime(5_000);
+      tracker.trackLiveEvent(4_200);
+      const status = tracker.getStatus();
+      expect(status.commandsProcessed).toBe(1);
+      expect(status.eventsWritten).toBe(1);
+      expect(status.lastCommandAt).toBe(5_000);
+      expect(status.lastEventTimestamp).toBe(4_200);
+    });
+
+    test('trackLiveEvent accumulates across calls', () => {
+      tracker.trackLiveEvent(1);
+      tracker.trackLiveEvent(2);
+      tracker.trackLiveEvent(3);
+      const status = tracker.getStatus();
+      expect(status.commandsProcessed).toBe(3);
+      expect(status.eventsWritten).toBe(3);
+      expect(status.lastEventTimestamp).toBe(3);
+    });
+
+    test('trackLiveEvent schedules a debounced SSE push', () => {
+      const mockRes = { write: vi.fn() };
+      tracker.addSseClient(mockRes);
+      mockRes.write.mockClear();
+
+      tracker.trackLiveEvent(100);
+      expect(mockRes.write).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(100);
+      expect(mockRes.write).toHaveBeenCalledTimes(1);
+      const data = JSON.parse(
+        mockRes.write.mock.calls[0][0].split('data: ')[1].split('\n')[0],
+      );
+      expect(data.eventsWritten).toBe(1);
+    });
+
+    test('trackReplayEnd records a completed-replay summary', () => {
+      vi.setSystemTime(9_000);
+      tracker.trackReplayStart('customers', 'ep1', 'corr-1');
+      tracker.trackReplayEvent('customers', 'ep1', 1000);
+      tracker.trackReplayEvent('customers', 'ep1', 2000);
+      tracker.trackReplayEnd('customers', 'ep1');
+
+      const { recentReplays } = tracker.getStatus();
+      expect(recentReplays).toHaveLength(1);
+      expect(recentReplays[0]).toEqual({
+        readModel: 'customers',
+        targetEndpointName: 'ep1',
+        eventsSent: 2,
+        completedAt: 9_000,
+      });
+    });
+
+    test('recentReplays keeps only the last 5, most recent first', () => {
+      for (let i = 1; i <= 7; i++) {
+        tracker.trackReplayStart(`rm${i}`, 'ep1', `corr-${i}`);
+        tracker.trackReplayEnd(`rm${i}`, 'ep1');
+      }
+      const { recentReplays } = tracker.getStatus();
+      expect(recentReplays).toHaveLength(5);
+      expect(recentReplays.map((r) => r.readModel)).toEqual([
+        'rm7',
+        'rm6',
+        'rm5',
+        'rm4',
+        'rm3',
+      ]);
     });
   });
 
@@ -155,7 +237,7 @@ describe('createCpStatusTracker', () => {
         c[0].includes('status-change'),
       );
       const data = JSON.parse(written[0].split('data: ')[1].split('\n')[0]);
-      expect(data.state).toBe('idle');
+      expect(data.state).toBe('live');
     });
 
     test('debounces event pushes — max 1 per 100ms', () => {

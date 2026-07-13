@@ -62,11 +62,11 @@ describe('createStatusCache', () => {
     cache = createStatusCache();
   });
 
-  test('starts with empty readModels and idle CP', () => {
+  test('starts with empty readModels and unknown CP', () => {
     const state = cache.get();
     expect(state.readModels).toEqual({});
     expect(state.commandProcessor).toEqual({
-      state: 'idle',
+      state: 'unknown',
       activeReplays: [],
       activeCatchUps: [],
     });
@@ -294,6 +294,18 @@ describe('createSseClient', () => {
   test('getServiceUrls handles string URL', () => {
     const urls = client.getServiceUrls();
     expect(urls).toEqual(['http://rm:3001']);
+  });
+
+  test('fetchAllStatus marks CP unknown when the CP status fetch fails', () => {
+    // beforeEach stubs fetch to reject — simulate the CP being unreachable.
+    client.cache.updateCommandProcessor({
+      state: 'live',
+      activeReplays: [],
+      activeCatchUps: [],
+    });
+    return client.fetchAllStatus().then(() => {
+      expect(client.cache.getCommandProcessor().state).toBe('unknown');
+    });
   });
 
   test('getServiceUrls handles object URL mapping', () => {

@@ -21,17 +21,30 @@ export const initializeContext = (
     )
     .then((context) => {
       const statusTracker = createCpStatusTracker();
+      // Count live command events transport-agnostically: every command that
+      // writes an event flows through eventBus.publishEvent (handleCommand),
+      // whichever receiver ingested it. Replay/catch-up re-emission use
+      // separate publish methods and the startup replay rebuilds aggregates
+      // without publishing, so neither inflates the live counters (issue #15).
+      const eventBus = {
+        ...context.eventBus,
+        publishEvent: (correlationId) => (event) => {
+          statusTracker.trackLiveEvent(event.timestamp);
+          return context.eventBus.publishEvent(correlationId)(event);
+        },
+      };
       return {
         ...context,
+        eventBus,
         statusTracker,
         replayHandler: createReplayHandler(
           context.eventStore,
-          context.eventBus,
+          eventBus,
           statusTracker,
         ),
         catchupHandler: createCatchupHandler(
           context.eventStore,
-          context.eventBus,
+          eventBus,
           statusTracker,
         ),
       };

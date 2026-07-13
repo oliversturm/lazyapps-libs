@@ -3,7 +3,11 @@ import { writable } from 'svelte/store';
 const createStatusStore = () => {
   const { subscribe, set, update } = writable({
     readModels: [],
-    commandProcessor: { state: 'idle', activeReplays: [], activeCatchUps: [] },
+    commandProcessor: {
+      state: 'unknown',
+      activeReplays: [],
+      activeCatchUps: [],
+    },
     connected: false,
   });
 
