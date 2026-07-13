@@ -23,11 +23,47 @@ export const commandReceiverMqEmitter =
     aggregates,
     handleCommand,
     correlationConfig,
+    statusTracker,
   }) => {
     const initLog = getLogger('CR/MQ', 'INIT');
 
     return Promise.resolve(getSharedMqEmitter('INIT', mqName))
       .then((mq) => {
+        // CP status bridge (issue #23): re-publish CP status changes on the
+        // shared mqemitter and answer status queries, so an in-process bridge
+        // (e.g. the monolith's SvelteKit backend) can serve them as admin SSE
+        // without the CP running an HTTP server. Mirrors the RM status bridge
+        // in readModelListenerMqEmitter (commit d728d08).
+        if (statusTracker) {
+          statusTracker.onStatusChange((statusData) => {
+            mq.emit({
+              topic: 'adminCpStatusUpdate',
+              payload: statusData,
+            });
+          });
+        }
+
+        mq.on('adminCpStatusQuery', ({ payload }, cb) => {
+          let { correlationId, replyTopic } = payload;
+          if (!correlationId) {
+            correlationId = `${
+              correlationConfig?.serviceId || 'UNK'
+            }-${nanoid()}`;
+          }
+
+          const log = getLogger('CR/MQ', correlationId);
+          log.debug(`Admin CP status query (reply ${replyTopic})`);
+
+          const result = statusTracker ? statusTracker.getStatus() : null;
+
+          mq.emit({
+            topic: replyTopic,
+            payload: { correlationId, result },
+          });
+
+          cb();
+        });
+
         mq.on('command', ({ payload: messagePayload }, cb) => {
           let { correlationId } = messagePayload;
           if (!correlationId) {

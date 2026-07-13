@@ -229,4 +229,149 @@ describe('commandReceiverMqEmitter', () => {
       expect(cb).toHaveBeenCalled();
     });
   });
+
+  // CP status bridge (issue #23) — the CP analog of the RM status bridge in
+  // readModelListenerMqEmitter (commit d728d08). Lets an in-process bridge
+  // (monolith SvelteKit) subscribe to CP status and re-serve it as admin SSE.
+  describe('CP status bridge', () => {
+    test('subscribes to adminCpStatusQuery topic', () => {
+      context.statusTracker = {
+        getStatus: vi.fn(),
+        onStatusChange: vi.fn(),
+      };
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          expect(mockEmitter.on).toHaveBeenCalledWith(
+            'adminCpStatusQuery',
+            expect.any(Function),
+          );
+        },
+      );
+    });
+
+    test('adminCpStatusQuery replies with the current CP status', () => {
+      const mockStatus = {
+        state: 'live',
+        commandsProcessed: 7,
+        eventsWritten: 7,
+      };
+      context.statusTracker = {
+        getStatus: vi.fn().mockReturnValue(mockStatus),
+        onStatusChange: vi.fn(),
+      };
+
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          const cb = vi.fn();
+          mockHandlers['adminCpStatusQuery'](
+            {
+              payload: {
+                correlationId: 'corr-cp',
+                replyTopic: 'cp-status-reply-1',
+              },
+            },
+            cb,
+          );
+
+          expect(cb).toHaveBeenCalled();
+          expect(context.statusTracker.getStatus).toHaveBeenCalled();
+          expect(mockEmitter.emit).toHaveBeenCalledWith({
+            topic: 'cp-status-reply-1',
+            payload: { correlationId: 'corr-cp', result: mockStatus },
+          });
+        },
+      );
+    });
+
+    test('adminCpStatusQuery generates a correlationId when absent', () => {
+      context.statusTracker = {
+        getStatus: vi.fn().mockReturnValue({ state: 'live' }),
+        onStatusChange: vi.fn(),
+      };
+
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          const cb = vi.fn();
+          mockHandlers['adminCpStatusQuery'](
+            { payload: { replyTopic: 'cp-status-reply-2' } },
+            cb,
+          );
+
+          expect(mockEmitter.emit).toHaveBeenCalledWith({
+            topic: 'cp-status-reply-2',
+            payload: {
+              correlationId: 'TEST-mock-nano-id',
+              result: { state: 'live' },
+            },
+          });
+        },
+      );
+    });
+
+    test('adminCpStatusQuery replies null when no statusTracker', () => {
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          const cb = vi.fn();
+          mockHandlers['adminCpStatusQuery'](
+            {
+              payload: {
+                correlationId: 'corr-cp',
+                replyTopic: 'cp-status-reply-3',
+              },
+            },
+            cb,
+          );
+
+          expect(mockEmitter.emit).toHaveBeenCalledWith({
+            topic: 'cp-status-reply-3',
+            payload: { correlationId: 'corr-cp', result: null },
+          });
+        },
+      );
+    });
+
+    test('registers onStatusChange listener when statusTracker exists', () => {
+      const onStatusChange = vi.fn();
+      context.statusTracker = { getStatus: vi.fn(), onStatusChange };
+
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          expect(onStatusChange).toHaveBeenCalledWith(expect.any(Function));
+        },
+      );
+    });
+
+    test('publishes status changes on adminCpStatusUpdate topic', () => {
+      let capturedListener;
+      context.statusTracker = {
+        getStatus: vi.fn(),
+        onStatusChange: vi.fn((listener) => {
+          capturedListener = listener;
+        }),
+      };
+
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          const statusData = { state: 'replaying', commandsProcessed: 3 };
+          capturedListener(statusData);
+
+          expect(mockEmitter.emit).toHaveBeenCalledWith({
+            topic: 'adminCpStatusUpdate',
+            payload: statusData,
+          });
+        },
+      );
+    });
+
+    test('does not register onStatusChange when statusTracker is absent', () => {
+      return commandReceiverMqEmitter({ mqName: 'test-mq' })(context).then(
+        () => {
+          // No adminCpStatusUpdate emissions and no crash without a tracker.
+          expect(mockEmitter.emit).not.toHaveBeenCalledWith(
+            expect.objectContaining({ topic: 'adminCpStatusUpdate' }),
+          );
+        },
+      );
+    });
+  });
 });

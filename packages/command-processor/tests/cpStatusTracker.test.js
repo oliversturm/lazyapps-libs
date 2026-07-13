@@ -280,4 +280,68 @@ describe('createCpStatusTracker', () => {
       expect(mockRes.write).not.toHaveBeenCalled();
     });
   });
+
+  // onStatusChange lets an in-process bridge (e.g. the monolith's mqemitter
+  // command receiver) subscribe to CP status changes and re-publish them on
+  // the message bus, so the admin can receive them without an HTTP server —
+  // the CP analog of the RM statusTracker.onStatusChange (issue #23).
+  describe('onStatusChange', () => {
+    test('notifies listeners on a forced push (replay start)', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.trackReplayStart('customers', 'ep1', 'corr-1');
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({ state: 'replaying' }),
+      );
+    });
+
+    test('notifies listeners on a debounced push (live event)', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.trackLiveEvent(1234);
+
+      // Debounced — nothing yet
+      expect(listener).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(100);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          state: 'live',
+          commandsProcessed: 1,
+          eventsWritten: 1,
+          lastEventTimestamp: 1234,
+        }),
+      );
+    });
+
+    test('supports multiple listeners', () => {
+      const listener1 = vi.fn();
+      const listener2 = vi.fn();
+      tracker.onStatusChange(listener1);
+      tracker.onStatusChange(listener2);
+
+      tracker.trackReplayStart('orders', 'ep1', 'corr-2');
+
+      expect(listener1).toHaveBeenCalledOnce();
+      expect(listener2).toHaveBeenCalledOnce();
+    });
+
+    test('provides a snapshot, not a live reference', () => {
+      const listener = vi.fn();
+      tracker.onStatusChange(listener);
+
+      tracker.trackReplayStart('customers', 'ep1', 'corr-1');
+      const snapshot = listener.mock.calls[0][0];
+      expect(snapshot.state).toBe('replaying');
+
+      // A later transition must not mutate the earlier snapshot.
+      tracker.trackReplayEnd('customers', 'ep1');
+      expect(snapshot.state).toBe('replaying');
+    });
+  });
 });

@@ -5,6 +5,10 @@ export const createCpStatusTracker = () => {
   const activeReplays = new Map();
   const activeCatchUps = new Map();
   const sseClients = new Set();
+  // In-process listeners (e.g. an mqemitter bridge) that re-publish CP status
+  // changes on the message bus so the admin can receive them without an HTTP
+  // server — the CP analog of the RM statusTracker.onStatusChange (issue #23).
+  const statusChangeListeners = [];
 
   // Live-detail counters (issue #15 B). The CP is always live; these give an
   // operator proof of health beyond the status badge.
@@ -82,6 +86,9 @@ export const createCpStatusTracker = () => {
     sseClients.forEach((res) => {
       res.write(data);
     });
+    // getStatus() already returns a fresh object with copied arrays, so it is
+    // a safe snapshot to hand to bus listeners.
+    statusChangeListeners.forEach((listener) => listener(status));
     eventsSinceLastPush = 0;
   };
 
@@ -227,10 +234,15 @@ export const createCpStatusTracker = () => {
     sseClients.delete(res);
   };
 
+  const onStatusChange = (listener) => {
+    statusChangeListeners.push(listener);
+  };
+
   return {
     getStatus,
     addSseClient,
     removeSseClient,
+    onStatusChange,
     trackLiveEvent,
     trackReplayStart,
     trackReplayEvent,
